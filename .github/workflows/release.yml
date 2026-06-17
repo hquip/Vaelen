@@ -7,9 +7,22 @@ on:
 permissions:
   contents: write
 
+# 每个平台在各自的 runner 上本地编译:CLI 是纯 Go 零 CGO(可顺带交叉编 arm64),
+# GUI 是 Wails(Windows 用 go-webview2 免 CGO;macOS/Linux 需 CGO + 系统 WebView,
+# 无法在 Windows 上交叉编译,故必须分平台 runner 本地构建)。
 jobs:
-  release:
-    runs-on: ubuntu-latest
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            label: windows
+          - os: macos-latest
+            label: macos
+          - os: ubuntu-22.04
+            label: linux
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
 
@@ -18,18 +31,91 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Cross-compile CLI
+      # Linux GUI 依赖 GTK3 + WebKit2GTK(Wails v2 默认 4.0)
+      - name: Install Linux GUI deps
+        if: matrix.label == 'linux'
+        run: sudo apt-get update && sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.0-dev
+
+      # ---------- CLI(零 CGO,交叉编译该 OS 家族的 amd64/arm64)----------
+      - name: Build CLI
+        shell: bash
         env:
           CGO_ENABLED: "0"
         run: |
           mkdir -p dist
-          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64; do
-            os=${target%/*}; arch=${target#*/}
-            out=dist/vsm-${os}-${arch}
-            [ "$os" = windows ] && out=${out}.exe
-            echo "building $out"
-            GOOS=$os GOARCH=$arch go build -trimpath -ldflags "-s -w" -o "$out" .
-          done
+          case "${{ matrix.label }}" in
+            windows)
+              GOOS=windows GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o dist/vsm-windows-amd64.exe .
+              GOOS=windows GOARCH=arm64 go build -trimpath -ldflags "-s -w" -o dist/vsm-windows-arm64.exe .
+              ;;
+            macos)
+              GOOS=darwin GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o dist/vsm-darwin-amd64 .
+              GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags "-s -w" -o dist/vsm-darwin-arm64 .
+              ;;
+            linux)
+              GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o dist/vsm-linux-amd64 .
+              GOOS=linux GOARCH=arm64 go build -trimpath -ldflags "-s -w" -o dist/vsm-linux-arm64 .
+              ;;
+          esac
+
+      # ---------- GUI(各平台本地构建)----------
+      - name: Build GUI (Windows)
+        if: matrix.label == 'windows'
+        shell: bash
+        run: go build -tags production -ldflags "-H windowsgui -s -w" -o dist/vsm-gui-windows-amd64.exe ./gui
+
+      - name: Build GUI (macOS, .app)
+        if: matrix.label == 'macos'
+        shell: bash
+        env:
+          CGO_ENABLED: "1"
+        run: |
+          go build -tags production -ldflags "-s -w" -o vsm-gui ./gui
+          APP="dist/VSM.app"
+          mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+          mv vsm-gui "$APP/Contents/MacOS/vsm-gui"
+          cp gui/appicon.png "$APP/Contents/Resources/appicon.png" || true
+          printf '%s\n' \
+            '<?xml version="1.0" encoding="UTF-8"?>' \
+            '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">' \
+            '<plist version="1.0"><dict>' \
+            '<key>CFBundleName</key><string>VSM</string>' \
+            '<key>CFBundleExecutable</key><string>vsm-gui</string>' \
+            '<key>CFBundleIdentifier</key><string>com.vsm.gui</string>' \
+            '<key>CFBundlePackageType</key><string>APPL</string>' \
+            '<key>CFBundleShortVersionString</key><string>0.1.0</string>' \
+            '<key>NSHighResolutionCapable</key><true/>' \
+            '</dict></plist>' > "$APP/Contents/Info.plist"
+          ( cd dist && zip -r -q vsm-gui-macos-arm64-app.zip VSM.app && rm -rf VSM.app )
+
+      - name: Build GUI (Linux)
+        if: matrix.label == 'linux'
+        shell: bash
+        env:
+          CGO_ENABLED: "1"
+        run: go build -tags production -ldflags "-s -w" -o dist/vsm-gui-linux-amd64 ./gui
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ matrix.label }}
+          path: dist/*
+          if-no-files-found: error
+
+  # 汇总三平台产物,统一发布到 GitHub Release
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Collect files
+        run: |
+          mkdir -p dist
+          find artifacts -type f -exec cp {} dist/ \;
+          ls -lh dist
 
       - name: Publish release
         uses: softprops/action-gh-release@v2

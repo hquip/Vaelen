@@ -4,6 +4,7 @@
 /vsm-gui.exe
 *.exe
 *~
+/dist/
 
 # 本地测试 / 数据目录
 /.vsmtest/

@@ -82,11 +82,24 @@ GOOS=darwin  GOARCH=arm64 go build -o vsm .
 GOOS=windows GOARCH=amd64 go build -o vsm.exe .
 ```
 
-GUI（Windows，零 CGO，无需 wails CLI）：
+GUI 各平台构建 —— CLI 可零 CGO 一键交叉编译，但 GUI 用 Wails：macOS/Linux 依赖系统 WebView + CGO，**必须在对应平台本地编译**（不能从 Windows 交叉编译）；Windows GUI 用 go-webview2，免 CGO：
 
 ```powershell
+# Windows（免 CGO，无需 wails CLI）
 go build -tags production -ldflags "-H windowsgui" -o vsm-gui.exe ./gui
 ```
+
+```bash
+# macOS（在 Mac 上，需 Xcode 命令行工具）
+CGO_ENABLED=1 go build -tags production -o vsm-gui ./gui
+
+# Linux（需 GTK3 + WebKit2GTK 开发库）
+sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.0-dev
+CGO_ENABLED=1 go build -tags production -o vsm-gui ./gui
+```
+
+> 打 `v*` tag 即可由 GitHub Actions 在 Windows / macOS / Linux 三个 runner 上分别本地编译，
+> 自动产出**全平台 CLI + GUI** 并发布到 Release（见 `.github/workflows/release.yml`）。
 
 ## 命令
 
