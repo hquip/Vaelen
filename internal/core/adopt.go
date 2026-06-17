@@ -71,6 +71,7 @@ func sameDir(a, b string) bool {
 func linkDir(target, link string) error {
 	if runtime.GOOS == "windows" {
 		cmd := exec.Command("cmd", "/c", "mklink", "/J", link, target)
+		hideConsole(cmd)
 		if out, err := cmd.CombinedOutput(); err != nil {
 			if serr := os.Symlink(target, link); serr != nil {
 				return fmt.Errorf("创建 junction 失败: %v (%s)；符号链接亦失败: %v",

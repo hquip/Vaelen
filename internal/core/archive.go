@@ -87,6 +87,7 @@ func extractTarXz(src, dst string) error {
 		return fmt.Errorf(".tar.xz 需要系统 tar 解压，但未找到 tar 命令（%s）", src)
 	}
 	cmd := exec.Command("tar", "-xf", src, "-C", dst)
+	hideConsole(cmd)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("解压 .tar.xz 失败: %v: %s", err, strings.TrimSpace(string(out)))
 	}

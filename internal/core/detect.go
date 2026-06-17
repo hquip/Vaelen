@@ -193,7 +193,9 @@ func normDir(p string) string {
 func probeVersion(bin string) string {
 	for _, args := range [][]string{{"--version"}, {"version"}, {"-version"}} {
 		ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
-		out, _ := exec.CommandContext(ctx, bin, args...).CombinedOutput()
+		c := exec.CommandContext(ctx, bin, args...)
+		hideConsole(c)
+		out, _ := c.CombinedOutput()
 		cancel()
 		if m := versionRe.FindString(string(out)); m != "" {
 			return m

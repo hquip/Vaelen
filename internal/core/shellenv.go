@@ -138,7 +138,9 @@ else {
   [Environment]::SetEnvironmentVariable('Path', ((@($d)+$parts) -join ';'), 'User')
   'added'
 }`, shimsDir)
-	out, err := exec.Command("powershell", "-NoProfile", "-Command", ps).CombinedOutput()
+	c := exec.Command("powershell", "-NoProfile", "-Command", ps)
+	hideConsole(c)
+	out, err := c.CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("写入用户 PATH 失败: %v (%s)", err, strings.TrimSpace(string(out)))
 	}
