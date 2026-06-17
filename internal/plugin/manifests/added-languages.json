@@ -1,0 +1,32 @@
+[
+  { "name": "typst", "source": { "type": "github-releases", "repo": "typst/typst", "stripPrefix": "v" },
+    "url": "https://github.com/typst/typst/releases/download/v{version}/{asset}",
+    "assets": {
+      "windows/amd64": "typst-x86_64-pc-windows-msvc.zip",
+      "linux/amd64":   "typst-x86_64-unknown-linux-musl.tar.xz",
+      "linux/arm64":   "typst-aarch64-unknown-linux-musl.tar.xz",
+      "darwin/amd64":  "typst-x86_64-apple-darwin.tar.xz",
+      "darwin/arm64":  "typst-aarch64-apple-darwin.tar.xz"
+    }, "bin": "", "env": {} },
+  { "name": "just", "source": { "type": "github-releases", "repo": "casey/just", "stripPrefix": "" },
+    "url": "https://github.com/casey/just/releases/download/{version}/{asset}",
+    "assets": {
+      "windows/amd64": "just-{version}-x86_64-pc-windows-msvc.zip",
+      "linux/amd64":   "just-{version}-x86_64-unknown-linux-musl.tar.gz",
+      "linux/arm64":   "just-{version}-aarch64-unknown-linux-musl.tar.gz",
+      "darwin/amd64":  "just-{version}-x86_64-apple-darwin.tar.gz",
+      "darwin/arm64":  "just-{version}-aarch64-apple-darwin.tar.gz"
+    }, "bin": "", "env": {} },
+  { "name": "uv", "source": { "type": "github-releases", "repo": "astral-sh/uv", "stripPrefix": "" },
+    "url": "https://github.com/astral-sh/uv/releases/download/{version}/{asset}",
+    "assets": {
+      "windows/amd64": "uv-x86_64-pc-windows-msvc.zip",
+      "linux/amd64":   "uv-x86_64-unknown-linux-gnu.tar.gz",
+      "linux/arm64":   "uv-aarch64-unknown-linux-gnu.tar.gz",
+      "darwin/amd64":  "uv-x86_64-apple-darwin.tar.gz",
+      "darwin/arm64":  "uv-aarch64-apple-darwin.tar.gz"
+    }, "bin": "", "env": {} },
+  { "name": "haskell", "source": { "type": "github-tags", "repo": "ghc/ghc", "stripPrefix": "ghc-" }, "url": "", "assets": {}, "bin": "", "env": {} },
+  { "name": "r", "source": { "type": "github-tags", "repo": "wch/r-source", "stripPrefix": "R-" }, "url": "", "assets": {}, "bin": "", "env": {} },
+  { "name": "vala", "source": { "type": "github-tags", "repo": "vala-lang/vala", "stripPrefix": "" }, "url": "", "assets": {}, "bin": "", "env": {} }
+]

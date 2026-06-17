@@ -1,0 +1,15 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "vsm-gui",
+  "outputfilename": "vsm-gui",
+  "frontend:install": "",
+  "frontend:build": "",
+  "frontend:dev:watcher": "",
+  "frontend:dev:serverUrl": "auto",
+  "wailsjsdir": "./frontend",
+  "info": {
+    "companyName": "vsm",
+    "productName": "VSM 多语言版本管理器",
+    "productVersion": "0.1.0"
+  }
+}

@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # 只校验 CLI 与核心包：GUI（Wails）在 Linux 上需要 webkit2gtk 等原生依赖，单独构建。
+      - name: Vet
+        run: go vet ./internal/... .
+
+      - name: Test
+        run: go test ./internal/... .
+
+      - name: Build CLI (cross-compile, zero-CGO)
+        env:
+          CGO_ENABLED: "0"
+        run: |
+          mkdir -p dist
+          GOOS=linux   GOARCH=amd64 go build -o dist/vsm-linux-amd64 .
+          GOOS=linux   GOARCH=arm64 go build -o dist/vsm-linux-arm64 .
+          GOOS=darwin  GOARCH=amd64 go build -o dist/vsm-darwin-amd64 .
+          GOOS=darwin  GOARCH=arm64 go build -o dist/vsm-darwin-arm64 .
+          GOOS=windows GOARCH=amd64 go build -o dist/vsm-windows-amd64.exe .

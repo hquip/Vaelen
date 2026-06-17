@@ -1,0 +1,30 @@
+[
+  {
+    "name": "deno",
+    "source": { "type": "github-releases", "repo": "denoland/deno", "stripPrefix": "v" },
+    "url": "https://github.com/denoland/deno/releases/download/v{version}/{asset}",
+    "assets": {
+      "windows/amd64": "deno-x86_64-pc-windows-msvc.zip",
+      "linux/amd64": "deno-x86_64-unknown-linux-gnu.zip",
+      "linux/arm64": "deno-aarch64-unknown-linux-gnu.zip",
+      "darwin/amd64": "deno-x86_64-apple-darwin.zip",
+      "darwin/arm64": "deno-aarch64-apple-darwin.zip"
+    },
+    "bin": "",
+    "env": {}
+  },
+  {
+    "name": "bun",
+    "source": { "type": "github-releases", "repo": "oven-sh/bun", "stripPrefix": "bun-v" },
+    "url": "https://github.com/oven-sh/bun/releases/download/bun-v{version}/{asset}",
+    "assets": {
+      "windows/amd64": "bun-windows-x64.zip",
+      "linux/amd64": "bun-linux-x64.zip",
+      "linux/arm64": "bun-linux-aarch64.zip",
+      "darwin/amd64": "bun-darwin-x64.zip",
+      "darwin/arm64": "bun-darwin-aarch64.zip"
+    },
+    "bin": "",
+    "env": {}
+  }
+]

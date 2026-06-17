@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VSM</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" xmlns="http://www.w3.org/2000/svg" aria-label="VSM"><path d="M12 1.6 L21.5 7 V17 L12 22.4 L2.5 17 V7 Z" fill="#5b8cff" stroke="#7aa2ff" stroke-width="1" stroke-linejoin="round"/><text x="12" y="16.4" text-anchor="middle" font-size="12" font-weight="800" fill="#ffffff" font-family="Segoe UI, sans-serif">V</text></svg></span>
+      <div class="brand-text">
+        <h1>VSM</h1>
+        <p>多语言版本管理器</p>
+      </div>
+    </div>
+    <div class="topbar-right">
+      <span id="stat" class="stat"></span>
+      <select id="themeSel" class="mirror-sel" title="主题配色">
+        <option value="dark">主题: 深蓝</option>
+        <option value="midnight">主题: 纯黑</option>
+        <option value="emerald">主题: 祖母绿</option>
+        <option value="violet">主题: 紫罗兰</option>
+        <option value="amber">主题: 琥珀</option>
+        <option value="rose">主题: 玫红</option>
+        <option value="light">主题: 浅色</option>
+      </select>
+      <select id="mirrorSel" class="mirror-sel" title="下载镜像">
+        <option value="off">镜像: 关闭</option>
+        <option value="cn">镜像: 国内</option>
+      </select>
+      <button id="proxyBtn" class="ghost-btn" title="网络代理">🌐 代理</button>
+      <button id="detectBtn" class="ghost-btn">🔎 系统检测</button>
+      <button id="pathBtn" class="ghost-btn">⚡ 激活PATH</button>
+      <button id="refreshBtn" class="ghost-btn">↻ 刷新</button>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="filter-wrap">
+        <span class="filter-icon">🔍</span>
+        <input id="filter" class="filter" placeholder="过滤语言…" autocomplete="off" />
+      </div>
+      <div id="toolList" class="tool-scroll"></div>
+      <div id="installRootWrap" class="sidebar-foot" title="安装根目录（所有版本存放处）">
+        <span class="foot-icon">📦</span>
+        <div class="foot-text">
+          <span class="foot-label">安装目录 <button id="setRootBtn" class="foot-edit">改</button></span>
+          <span id="installRoot" class="foot-path">~/.vsm/installs</span>
+        </div>
+      </div>
+      <div id="dataDirWrap" class="sidebar-foot" title="VSM 数据目录">
+        <span class="foot-icon">🗂</span>
+        <div class="foot-text">
+          <span class="foot-label">数据目录</span>
+          <span id="dataDir" class="foot-path">~/.vsm</span>
+        </div>
+      </div>
+    </aside>
+
+    <main id="detail" class="detail">
+      <div class="placeholder">
+        <div class="ph-logo">⬡</div>
+        <p class="ph-title">选择一门语言开始</p>
+        <p class="ph-sub">从左侧列表挑选运行时，管理它的安装与版本切换</p>
+      </div>
+    </main>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <div id="proxyModal" class="modal hidden">
+    <div class="modal-card">
+      <h3 class="modal-title">网络代理</h3>
+      <p class="modal-sub">支持 http / https / socks5。留空＝跟随系统环境变量；点“强制直连”忽略系统代理。</p>
+      <input id="proxyInput" class="modal-input" placeholder="http://127.0.0.1:7890 或 socks5://127.0.0.1:1080" autocomplete="off" spellcheck="false" />
+      <div class="modal-actions">
+        <button id="proxyDirectBtn" class="ghost-btn">强制直连</button>
+        <span class="modal-spacer"></span>
+        <button id="proxyCancelBtn" class="ghost-btn">取消</button>
+        <button id="proxySaveBtn" class="primary-btn">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

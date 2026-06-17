@@ -1,0 +1,18 @@
+# 构建产物
+/vsm
+/vsm.exe
+/vsm-gui.exe
+*.exe
+*~
+
+# 本地测试 / 数据目录
+/.vsmtest/
+/.vsm/
+
+# 编辑器 / 插件本地文件（含绝对路径、token、对话历史，勿提交）
+.specstory/
+.cursor/
+
+# 操作系统
+.DS_Store
+Thumbs.db

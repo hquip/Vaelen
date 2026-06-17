@@ -1,0 +1,51 @@
+[
+  { "name": "elm",        "source": { "type": "github-tags", "repo": "elm/compiler", "stripPrefix": "" },                    "url": "", "assets": {}, "bin": "", "env": {} },
+  { "name": "purescript", "source": { "type": "github-releases", "repo": "purescript/purescript", "stripPrefix": "v" },      "url": "", "assets": {}, "bin": "", "env": {} },
+  { "name": "rescript",   "source": { "type": "github-releases", "repo": "rescript-lang/rescript", "stripPrefix": "v" },     "url": "", "assets": {}, "bin": "", "env": {} },
+  { "name": "reason",     "source": { "type": "github-tags", "repo": "reasonml/reason", "stripPrefix": "" },                 "url": "", "assets": {}, "bin": "", "env": {} },
+  { "name": "ldc",        "source": { "type": "github-tags", "repo": "ldc-developers/ldc", "stripPrefix": "v" },            "url": "", "assets": {}, "bin": "", "env": {} },
+  { "name": "pony",       "source": { "type": "github-tags", "repo": "ponylang/ponyc", "stripPrefix": "" },                 "url": "", "assets": {}, "bin": "", "env": {} },
+  { "name": "c3",         "source": { "type": "github-releases", "repo": "c3lang/c3c", "stripPrefix": "v" },                "url": "", "assets": {}, "bin": "", "env": {} },
+  { "name": "janet",      "source": { "type": "github-tags", "repo": "janet-lang/janet", "stripPrefix": "v" },             "url": "", "assets": {}, "bin": "", "env": {} },
+  { "name": "chapel",     "source": { "type": "github-tags", "repo": "chapel-lang/chapel", "stripPrefix": "" },             "url": "", "assets": {}, "bin": "", "env": {} },
+  { "name": "solidity",   "source": { "type": "github-tags", "repo": "ethereum/solidity", "stripPrefix": "v" },            "url": "", "assets": {}, "bin": "", "env": {} },
+  { "name": "lean",       "source": { "type": "github-tags", "repo": "leanprover/lean4", "stripPrefix": "v" },             "url": "", "assets": {}, "bin": "", "env": {} },
+  { "name": "idris2",     "source": { "type": "github-tags", "repo": "idris-lang/Idris2", "stripPrefix": "v" },            "url": "", "assets": {}, "bin": "", "env": {} },
+  { "name": "agda",       "source": { "type": "github-tags", "repo": "agda/agda", "stripPrefix": "v" },                    "url": "", "assets": {}, "bin": "", "env": {} },
+  { "name": "coq",        "source": { "type": "github-tags", "repo": "coq/coq", "stripPrefix": "V" },                      "url": "", "assets": {}, "bin": "", "env": {} },
+  { "name": "chez",       "source": { "type": "github-tags", "repo": "cisco/ChezScheme", "stripPrefix": "v" },            "url": "", "assets": {}, "bin": "", "env": {} },
+  { "name": "carbon",     "source": { "type": "github-tags", "repo": "carbon-language/carbon-lang", "stripPrefix": "" },   "url": "", "assets": {}, "bin": "", "env": {} },
+  { "name": "wasmtime",   "source": { "type": "github-releases", "repo": "bytecodealliance/wasmtime", "stripPrefix": "v" }, "url": "", "assets": {}, "bin": "", "env": {} },
+  { "name": "wasmer",     "source": { "type": "github-releases", "repo": "wasmerio/wasmer", "stripPrefix": "v" },          "url": "", "assets": {}, "bin": "", "env": {} },
+  { "name": "maven",      "source": { "type": "github-tags", "repo": "apache/maven", "stripPrefix": "maven-" },            "url": "", "assets": {}, "bin": "", "env": {} },
+  { "name": "gradle",     "source": { "type": "github-tags", "repo": "gradle/gradle", "stripPrefix": "v" },               "url": "", "assets": {}, "bin": "", "env": {} },
+  { "name": "sbt",        "source": { "type": "github-releases", "repo": "sbt/sbt", "stripPrefix": "v" },                  "url": "", "assets": {}, "bin": "", "env": {} },
+  { "name": "bazel",      "source": { "type": "github-releases", "repo": "bazelbuild/bazel", "stripPrefix": "" },          "url": "", "assets": {}, "bin": "", "env": {} },
+  { "name": "nushell",    "source": { "type": "github-releases", "repo": "nushell/nushell", "stripPrefix": "" },
+    "url": "https://github.com/nushell/nushell/releases/download/{version}/{asset}",
+    "assets": {
+      "windows/amd64": "nu-{version}-x86_64-pc-windows-msvc.zip",
+      "linux/amd64":   "nu-{version}-x86_64-unknown-linux-gnu.tar.gz",
+      "linux/arm64":   "nu-{version}-aarch64-unknown-linux-gnu.tar.gz",
+      "darwin/amd64":  "nu-{version}-x86_64-apple-darwin.tar.gz",
+      "darwin/arm64":  "nu-{version}-aarch64-apple-darwin.tar.gz"
+    }, "bin": "", "env": {} },
+  { "name": "cmake",      "source": { "type": "github-releases", "repo": "Kitware/CMake", "stripPrefix": "v" },
+    "url": "https://github.com/Kitware/CMake/releases/download/v{version}/{asset}",
+    "assets": {
+      "windows/amd64": "cmake-{version}-windows-x86_64.zip",
+      "linux/amd64":   "cmake-{version}-linux-x86_64.tar.gz",
+      "linux/arm64":   "cmake-{version}-linux-aarch64.tar.gz",
+      "darwin/amd64":  "cmake-{version}-macos-universal.tar.gz",
+      "darwin/arm64":  "cmake-{version}-macos-universal.tar.gz"
+    }, "bin": "bin", "env": {} },
+  { "name": "ninja",      "source": { "type": "github-releases", "repo": "ninja-build/ninja", "stripPrefix": "v" },
+    "url": "https://github.com/ninja-build/ninja/releases/download/v{version}/{asset}",
+    "assets": {
+      "windows/amd64": "ninja-win.zip",
+      "linux/amd64":   "ninja-linux.zip",
+      "linux/arm64":   "ninja-linux-aarch64.zip",
+      "darwin/amd64":  "ninja-mac.zip",
+      "darwin/arm64":  "ninja-mac.zip"
+    }, "bin": "", "env": {} }
+]
