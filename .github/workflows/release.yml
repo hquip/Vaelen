@@ -59,14 +59,17 @@ jobs:
           esac
 
       # ---------- GUI(各平台本地构建)----------
+      # GUI 用 Wails,任一平台 GUI 编译失败不应阻断整个发布(CLI 才是主产物)。
+      # 故标记 continue-on-error:失败时仅缺该平台 GUI,CLI 与其它平台产物照常上传与发布。
       - name: Build GUI (Windows)
         if: matrix.label == 'windows'
+        continue-on-error: true
         shell: bash
         run: go build -tags production -ldflags "-H windowsgui -s -w" -o dist/vsm-gui-windows-amd64.exe ./gui
 
       - name: Build GUI (macOS, .app)
         if: matrix.label == 'macos'
-        shell: bash
+        continue-on-error: true
         env:
           CGO_ENABLED: "1"
         run: |
@@ -83,28 +86,31 @@ jobs:
             '<key>CFBundleExecutable</key><string>vsm-gui</string>' \
             '<key>CFBundleIdentifier</key><string>com.vsm.gui</string>' \
             '<key>CFBundlePackageType</key><string>APPL</string>' \
-            '<key>CFBundleShortVersionString</key><string>0.1.0</string>' \
+            '<key>CFBundleShortVersionString</key><string>1.0.0</string>' \
             '<key>NSHighResolutionCapable</key><true/>' \
             '</dict></plist>' > "$APP/Contents/Info.plist"
           ( cd dist && zip -r -q vsm-gui-macos-arm64-app.zip VSM.app && rm -rf VSM.app )
 
       - name: Build GUI (Linux)
         if: matrix.label == 'linux'
-        shell: bash
+        continue-on-error: true
         env:
           CGO_ENABLED: "1"
         run: go build -tags production -ldflags "-s -w" -o dist/vsm-gui-linux-amd64 ./gui
 
       - name: Upload artifacts
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: dist-${{ matrix.label }}
           path: dist/*
           if-no-files-found: error
 
-  # 汇总三平台产物,统一发布到 GitHub Release
+  # 汇总三平台产物,统一发布到 GitHub Release。
+  # if: always() 确保即便某个 build job 异常,也用已成功上传的产物照常发布。
   release:
     needs: build
+    if: always()
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
