@@ -23,7 +23,7 @@ jobs:
         include:
           - os: windows-latest
             label: windows
-          - os: macos-latest
+          - os: macos-14
             label: macos
           - os: ubuntu-22.04
             label: linux
