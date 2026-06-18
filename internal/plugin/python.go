@@ -46,21 +46,35 @@ func (p *pythonPlugin) triple(t Target) (string, error) {
 	return "", fmt.Errorf("python 不支持的平台: %s/%s", t.OS, t.Arch)
 }
 
-// releases 拉取 python-build-standalone 的近 20 个 release（长超时 + 带重试）。
-// per_page 不取满 100，是因为该仓库每个 release 含数百个 asset，拉满会让响应过大、
-// 触发 GitHub 504；20 个配合长超时既能稳定返回、又能覆盖各系列的多个历史 patch。
+// maxPythonPages 限制翻页上限。该仓库每个 release 含数百个 asset，单页响应可达数 MB，
+// per_page 取满 100 会过大、易触发 GitHub 504；故用 per_page=20 翻多页，在响应大小与
+// 历史 patch 覆盖之间取平衡（约 80 个 release，足以覆盖各系列的大量历史 patch）。
+const maxPythonPages = 4
+
+// releases 翻页拉取 python-build-standalone 的多个 release（长超时 + 每页带重试）。
 func (p *pythonPlugin) releases() ([]ghRelease, error) {
-	url := "https://api.github.com/repos/astral-sh/python-build-standalone/releases?per_page=20"
-	var lastErr error
-	for i := 0; i < 3; i++ {
-		var rels []ghRelease
-		err := fetchJSONSlow(url, &rels)
-		if err == nil {
-			return rels, nil
+	var all []ghRelease
+	for page := 1; page <= maxPythonPages; page++ {
+		url := fmt.Sprintf("https://api.github.com/repos/astral-sh/python-build-standalone/releases?per_page=20&page=%d", page)
+		var pageRels []ghRelease
+		var err error
+		for i := 0; i < 3; i++ {
+			if err = fetchJSONSlow(url, &pageRels); err == nil {
+				break
+			}
 		}
-		lastErr = err
+		if err != nil {
+			if page == 1 {
+				return nil, err
+			}
+			break // 后续页失败：用已取到的
+		}
+		all = append(all, pageRels...)
+		if len(pageRels) < 20 {
+			break // 不足一页 = 最后一页
+		}
 	}
-	return nil, lastErr
+	return all, nil
 }
 
 func (p *pythonPlugin) ListAll() ([]string, error) {

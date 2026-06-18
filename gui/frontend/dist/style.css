@@ -185,10 +185,23 @@ body { display: flex; flex-direction: column; height: 100vh; }
   font-family: Consolas, monospace; font-size: 11px; color: var(--text);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.tool-item .tname { text-transform: capitalize; }
-.tool-item .tbadge { font-size: 11px; color: var(--green); font-family: Consolas, monospace; }
-.tool-item .tdot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); display: inline-block; }
+.titem-left { display: flex; align-items: center; gap: 9px; min-width: 0; flex: 1 1 auto; }
+.tool-item .tname { text-transform: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tool-item .tbadge { flex: 0 0 auto; font-size: 11px; color: var(--green); font-family: Consolas, monospace; }
+.tool-item .tdot { flex: 0 0 auto; width: 7px; height: 7px; border-radius: 50%; background: var(--muted); display: inline-block; }
 .tool-item .tdot.on { background: var(--green); box-shadow: 0 0 6px var(--green); }
+
+/* 语言彩色图标徽标 */
+.lang-icon {
+  flex: 0 0 auto;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-weight: 800; font-family: "Segoe UI", system-ui, sans-serif;
+  line-height: 1; letter-spacing: -.4px; text-transform: none;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .28), inset 0 1px 0 rgba(255, 255, 255, .2);
+}
+.detail-head .lang-icon {
+  box-shadow: 0 3px 10px rgba(0, 0, 0, .32), inset 0 1px 0 rgba(255, 255, 255, .22);
+}
 
 /* 详情区 */
 .detail { flex: 1 1 auto; overflow-y: auto; padding: 24px 28px; min-width: 0; }
@@ -204,7 +217,7 @@ body { display: flex; flex-direction: column; height: 100vh; }
 .placeholder .ph-sub { font-size: 12.5px; color: var(--muted); }
 
 .detail-head { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
-.detail-head h2 { font-size: 22px; text-transform: capitalize; }
+.detail-head h2 { font-size: 22px; text-transform: none; }
 .head-badge { font-family: Consolas, monospace; font-size: 12px; padding: 3px 11px; border-radius: 20px; }
 .head-badge.on { background: rgba(63,185,80,.14); color: var(--green); border: 1px solid rgba(63,185,80,.35); }
 .head-badge.off { background: var(--border-soft); color: var(--muted); border: 1px solid var(--border); }
@@ -256,8 +269,7 @@ input, select {
   padding: 9px 12px; border-radius: 8px; font-family: inherit; font-size: 13px; outline: none;
 }
 input:focus, select:focus { border-color: var(--accent); }
-#versionInput { width: 150px; }
-#remoteSelect { min-width: 170px; }
+#versionInput { width: 280px; max-width: 100%; }
 
 .log {
   margin-top: 14px; min-height: 0; max-height: 180px; overflow: auto;

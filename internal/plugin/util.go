@@ -73,13 +73,27 @@ type ghRelease struct {
 	Assets     []ghAsset `json:"assets"`
 }
 
+// maxGitHubPages 限制 GitHub 列表接口的翻页上限：per_page=100，最多 maxGitHubPages 页
+// （约 1000 条）。既能覆盖几乎所有历史版本，又给匿名接口 60 次/小时的限流留足余量。
+const maxGitHubPages = 10
+
 func githubReleases(owner, repo string) ([]ghRelease, error) {
-	var rels []ghRelease
-	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases?per_page=100", owner, repo)
-	if err := fetchJSON(url, &rels); err != nil {
-		return nil, err
+	var all []ghRelease
+	for page := 1; page <= maxGitHubPages; page++ {
+		var rels []ghRelease
+		url := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases?per_page=100&page=%d", owner, repo, page)
+		if err := fetchJSON(url, &rels); err != nil {
+			if page == 1 {
+				return nil, err
+			}
+			break // 后续页失败：用已取到的，不让单页出错毁掉整个列表
+		}
+		all = append(all, rels...)
+		if len(rels) < 100 {
+			break // 不足一页 = 最后一页
+		}
 	}
-	return rels, nil
+	return all, nil
 }
 
 func githubLatest(owner, repo string) (ghRelease, error) {
@@ -94,14 +108,22 @@ type ghTag struct {
 }
 
 func githubTags(owner, repo string) ([]string, error) {
-	var tags []ghTag
-	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/tags?per_page=100", owner, repo)
-	if err := fetchJSON(url, &tags); err != nil {
-		return nil, err
-	}
-	out := make([]string, 0, len(tags))
-	for _, t := range tags {
-		out = append(out, t.Name)
+	var out []string
+	for page := 1; page <= maxGitHubPages; page++ {
+		var tags []ghTag
+		url := fmt.Sprintf("https://api.github.com/repos/%s/%s/tags?per_page=100&page=%d", owner, repo, page)
+		if err := fetchJSON(url, &tags); err != nil {
+			if page == 1 {
+				return nil, err
+			}
+			break // 后续页失败：用已取到的
+		}
+		for _, t := range tags {
+			out = append(out, t.Name)
+		}
+		if len(tags) < 100 {
+			break // 不足一页 = 最后一页
+		}
 	}
 	return out, nil
 }

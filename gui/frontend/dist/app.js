@@ -20,6 +20,106 @@ let sysCache = {};
 let curDir = "";
 let installDir = "";
 
+// ====== 语言图标 & 规范显示名 ======
+// 仅需特殊大小写 / 符号的显示名在此覆盖，其余按首字母大写兜底。
+const DISPLAY_NAMES = {
+  node: "Node.js", dotnet: ".NET", csharp: "C#", fsharp: "F#", cpp: "C++",
+  php: "PHP", tinygo: "TinyGo", cmake: "CMake", purescript: "PureScript",
+  typescript: "TypeScript", javascript: "JavaScript", nushell: "Nushell",
+  ocaml: "OCaml", vlang: "V", uv: "uv", graalvm: "GraalVM", openjdk: "OpenJDK",
+};
+
+function displayName(tool) {
+  if (DISPLAY_NAMES[tool]) return DISPLAY_NAMES[tool];
+  return tool.charAt(0).toUpperCase() + tool.slice(1);
+}
+
+// 品牌色（c=主色, c2=渐变副色可选, fg=文字色可选, g=徽标文字）。
+// 未登记的语言走名字 hash 生成稳定彩色 + 首字母，保证人人有彩色图标。
+const BRAND = {
+  go:        { c: "#00ADD8", c2: "#0094b8", g: "Go" },
+  node:      { c: "#5FA04E", c2: "#3c873a", g: "n" },
+  python:    { c: "#3776AB", c2: "#FFD343", g: "Py" },
+  java:      { c: "#E76F00", c2: "#C7300C", g: "J" },
+  zig:       { c: "#F7A41D", c2: "#ec8a00", fg: "#1a1a1a", g: "Z" },
+  deno:      { c: "#2b2b2b", c2: "#4a4a4a", g: "D" },
+  bun:       { c: "#FBF0DF", c2: "#f2e3c8", fg: "#1a1a1a", g: "B" },
+  gleam:     { c: "#FFAFF3", c2: "#ff7eea", fg: "#1a1a1a", g: "★" },
+  vlang:     { c: "#5D87BF", c2: "#3f6aa6", g: "V" },
+  kotlin:    { c: "#7F52FF", c2: "#E44857", g: "K" },
+  tinygo:    { c: "#00ADD8", c2: "#0094b8", g: "tG" },
+  nushell:   { c: "#4E9A06", c2: "#3a7404", g: "Nu" },
+  cmake:     { c: "#064F8C", c2: "#0a6bbd", g: "C" },
+  ninja:     { c: "#3b3b3b", c2: "#5a5a5a", g: "Nj" },
+  typst:     { c: "#239DAD", c2: "#1b7a87", g: "t" },
+  just:      { c: "#384EFF", c2: "#1f33d6", g: "ju" },
+  uv:        { c: "#DE5FE9", c2: "#7E56C2", g: "uv" },
+  rust:      { c: "#33332f", c2: "#5a5852", g: "Rs" },
+  dart:      { c: "#0175C2", c2: "#00C7B7", g: "Dt" },
+  php:       { c: "#777BB4", c2: "#565f97", g: "php" },
+  dotnet:    { c: "#512BD4", c2: "#7a4ef0", g: ".N" },
+  csharp:    { c: "#512BD4", c2: "#7a4ef0", g: "C#" },
+  fsharp:    { c: "#378BBA", c2: "#2a6f96", g: "F#" },
+  ruby:      { c: "#CC342D", c2: "#9b1c16", g: "Rb" },
+  elixir:    { c: "#4B275F", c2: "#6e3d8a", g: "Ex" },
+  swift:     { c: "#F05138", c2: "#d63a1f", g: "Sw" },
+  scala:     { c: "#DC322F", c2: "#a81e1b", g: "Sc" },
+  elm:       { c: "#1293D8", c2: "#0e76ad", g: "El" },
+  purescript:{ c: "#1d222a", c2: "#3b4250", g: "Ps" },
+  lean:      { c: "#6b4fbb", c2: "#4f388f", g: "Le" },
+  solidity:  { c: "#363636", c2: "#5a5a5a", g: "Sol" },
+  maven:     { c: "#C71A36", c2: "#9b1228", g: "Mv" },
+  gradle:    { c: "#02303A", c2: "#0B7B8E", g: "Gr" },
+  haskell:   { c: "#5D4F85", c2: "#453a66", g: "Hs" },
+  r:         { c: "#276DC3", c2: "#1c5499", g: "R" },
+  vala:      { c: "#7239B3", c2: "#552a87", g: "Va" },
+  perl:      { c: "#39457E", c2: "#2a3460", g: "Pl" },
+  lua:       { c: "#2C2D72", c2: "#1f2057", g: "Lua" },
+  julia:     { c: "#9558B2", c2: "#CB3C33", g: "Jl" },
+  crystal:   { c: "#222", c2: "#444", g: "Cr" },
+  nim:       { c: "#FFE953", c2: "#F3D400", fg: "#1a1a1a", g: "Nim" },
+  ocaml:     { c: "#EC6813", c2: "#c2530c", g: "Ml" },
+  erlang:    { c: "#A90533", c2: "#7d0426", g: "Er" },
+  clojure:   { c: "#5881D8", c2: "#63B132", g: "Cl" },
+  groovy:    { c: "#4298B8", c2: "#317890", g: "Gv" },
+  typescript:{ c: "#3178C6", c2: "#2461a8", g: "TS" },
+  javascript:{ c: "#F7DF1E", c2: "#e6cf00", fg: "#1a1a1a", g: "JS" },
+};
+
+// 字符串稳定 hash → 色相，给未登记语言兜底彩色（同名永远同色）。
+function hashHue(s) {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) % 360;
+  return h;
+}
+
+// 生成一个语言图标（圆角彩色徽标）。size 为像素边长。
+function langIcon(tool, size) {
+  const sz = size || 24;
+  const b = BRAND[tool];
+  let c1, c2, fg, glyph;
+  if (b) {
+    c1 = b.c;
+    c2 = b.c2 || b.c;
+    fg = b.fg || "#fff";
+    glyph = b.g;
+  } else {
+    const hue = hashHue(tool);
+    c1 = `hsl(${hue},52%,42%)`;
+    c2 = `hsl(${(hue + 26) % 360},56%,52%)`;
+    fg = "#fff";
+    glyph = (tool[0] || "?").toUpperCase();
+  }
+  const ratio = glyph.length >= 3 ? 0.34 : glyph.length === 2 ? 0.44 : 0.52;
+  const fs = Math.round(sz * ratio);
+  const radius = Math.round(sz * 0.28);
+  return (
+    `<span class="lang-icon" style="width:${sz}px;height:${sz}px;` +
+    `border-radius:${radius}px;background:linear-gradient(135deg,${c1},${c2});` +
+    `color:${fg};font-size:${fs}px">${escapeHtml(glyph)}</span>`
+  );
+}
+
 async function load() {
   try {
     state = await call("Status");
@@ -76,7 +176,9 @@ function buildGroup(label, items) {
     const badge = s.current
       ? `<span class="tbadge">${escapeHtml(s.current)}</span>`
       : `<span class="tdot ${hasInstalled ? "on" : ""}"></span>`;
-    li.innerHTML = `<span class="tname">${escapeHtml(s.tool)}</span>${badge}`;
+    li.innerHTML =
+      `<span class="titem-left">${langIcon(s.tool, 24)}` +
+      `<span class="tname">${escapeHtml(displayName(s.tool))}</span></span>${badge}`;
     li.addEventListener("click", () => select(s.tool));
     ul.appendChild(li);
   }
@@ -159,7 +261,7 @@ function renderDetail(tool) {
   }
 
   detail.innerHTML = `
-    <div class="detail-head"><h2>${escapeHtml(tool)}</h2>${headBadge}</div>
+    <div class="detail-head">${langIcon(tool, 42)}<h2>${escapeHtml(displayName(tool))}</h2>${headBadge}</div>
     ${cards}
     ${hint}
 
@@ -176,8 +278,8 @@ function renderDetail(tool) {
     <div class="section">
       <p class="section-title">安装新版本</p>
       <div class="install-row">
-        <input id="versionInput" placeholder="latest" autocomplete="off" />
-        <select id="remoteSelect"><option value="">远端版本（点击加载）</option></select>
+        <input id="versionInput" placeholder="latest（聚焦可加载远端版本，输入可筛选）" autocomplete="off" list="remoteList" />
+        <datalist id="remoteList"></datalist>
         <button id="installBtn" class="primary-btn">安装</button>
       </div>
       <div class="install-path">
@@ -193,11 +295,9 @@ function renderDetail(tool) {
   });
   const ata = document.getElementById("adoptToolAllBtn");
   if (ata) ata.addEventListener("click", () => onAdoptToolAll(tool));
-  const sel = document.getElementById("remoteSelect");
-  sel.addEventListener("mousedown", () => loadRemote(tool, sel), { once: true });
-  sel.addEventListener("change", () => {
-    if (sel.value) document.getElementById("versionInput").value = sel.value;
-  });
+  const verInput = document.getElementById("versionInput");
+  const dlist = document.getElementById("remoteList");
+  verInput.addEventListener("focus", () => loadRemote(tool, verInput, dlist), { once: true });
   document.getElementById("installBtn").addEventListener("click", () => doInstall(tool));
   const pickBtn = document.getElementById("pickDirBtn");
   if (pickBtn) {
@@ -365,15 +465,19 @@ async function showDetectOverview() {
   bindAdopt(box);
 }
 
-async function loadRemote(tool, sel) {
-  sel.innerHTML = `<option value="">加载中…</option>`;
+async function loadRemote(tool, input, dlist) {
+  const ph = input.placeholder;
+  input.placeholder = "加载远端版本中…";
   try {
     const vers = await call("RemoteVersions", tool);
-    sel.innerHTML =
-      `<option value="">— 选择版本 —</option>` +
-      vers.slice(0, 100).map((v) => `<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join("");
+    // 全量填入 datalist：浏览器原生按输入子串筛选，版本再多也能搜到。
+    dlist.innerHTML = vers.map((v) => `<option value="${escapeHtml(v)}"></option>`).join("");
+    input.placeholder = vers.length
+      ? `latest（共 ${vers.length} 个远端版本，输入可筛选）`
+      : ph;
   } catch (e) {
-    sel.innerHTML = `<option value="">加载失败（网络 / 无下载源）</option>`;
+    input.placeholder = ph;
+    toast("远端版本加载失败：" + e.message, true);
   }
 }
 
