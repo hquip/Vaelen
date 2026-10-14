@@ -228,9 +228,9 @@ function renderDetail(tool) {
         <div class="sc-label">已安装</div>
         <div class="sc-value">${installedCount} 个</div>
       </div>
-      <div class="stat-card">
-        <div class="sc-label">当前目录 (local)</div>
-        <div class="sc-value ${curDir ? "" : "muted"}" title="${escapeHtml(curDir)}">${curDir ? escapeHtml(curDir) : "—"}</div>
+      <div class="stat-card clickable" id="projDirCard" title="点击选择项目目录（「设为本目录」写入其中的 .tool-versions）">
+        <div class="sc-label">项目目录 (local) ✎</div>
+        <div class="sc-value ${curDir ? "" : "muted"}">${curDir ? escapeHtml(curDir) : "未选择，点击选择"}</div>
       </div>
     </div>`;
 
@@ -295,6 +295,8 @@ function renderDetail(tool) {
   });
   const ata = document.getElementById("adoptToolAllBtn");
   if (ata) ata.addEventListener("click", () => onAdoptToolAll(tool));
+  const pdc = document.getElementById("projDirCard");
+  if (pdc) pdc.addEventListener("click", () => pickProjectDir(tool));
   const verInput = document.getElementById("versionInput");
   const dlist = document.getElementById("remoteList");
   verInput.addEventListener("focus", () => loadRemote(tool, verInput, dlist), { once: true });
@@ -383,22 +385,32 @@ async function onAdoptToolAll(tool) {
   try {
     const n = await call("AdoptToolAll", tool);
     toast(`已纳管 ${tool} ${n} 个版本`);
-    await load();
-    if (selected === tool) renderDetail(tool);
   } catch (e) {
-    toast("全部纳管失败: " + e.message, true);
+    // 部分成功时后端也会返回错误（列出失败项），这里照样刷新界面
+    toast(errMsg(e), true);
   }
+  sysCache = {};
+  await load();
+  if (selected === tool) renderDetail(tool);
 }
 
 async function onAdoptAll() {
   try {
     const n = await call("AdoptAll");
     toast(`已纳管 ${n} 个系统版本`);
-    await load();
-    showDetectOverview();
   } catch (e) {
-    toast("全部纳管失败: " + e.message, true);
+    toast(errMsg(e), true);
   }
+  sysCache = {};
+  await load();
+  showDetectOverview();
+}
+
+// Wails 把 Go 的 error 以字符串或 Error 对象形式抛给前端，这里统一取文本。
+function errMsg(e) {
+  if (!e) return "未知错误";
+  if (typeof e === "string") return e;
+  return e.message || String(e);
 }
 
 async function loadSysVers(tool) {
@@ -506,11 +518,34 @@ async function doInstall(tool) {
   }
 }
 
+// pickProjectDir 让用户选择项目目录；返回是否选中（取消返回 false）。
+async function pickProjectDir(tool) {
+  try {
+    const d = await call("PickProjectDir");
+    if (!d) return false;
+    curDir = d;
+    toast("项目目录已设为 " + d);
+    await load();
+    if (tool && selected === tool) renderDetail(tool);
+    return true;
+  } catch (e) {
+    toast(errMsg(e), true);
+    return false;
+  }
+}
+
 async function onVerAction(tool, act, ver) {
   try {
     if (act === "local") {
-      await call("SetLocal", tool, ver);
-      toast(`已设 ${tool} 当前目录 = ${ver}`);
+      try {
+        await call("SetLocal", tool, ver);
+      } catch (e) {
+        // 从 Finder / 资源管理器启动时没有项目目录：先让用户选，再写入
+        if (!/请先选择项目目录/.test(errMsg(e))) throw e;
+        if (!(await pickProjectDir())) return;
+        await call("SetLocal", tool, ver);
+      }
+      toast(`已设 ${tool} = ${ver}（${curDir}）`);
     } else if (act === "global") {
       await call("SetGlobal", tool, ver);
       toast(`已设 ${tool} 全局 = ${ver}`);
@@ -521,7 +556,7 @@ async function onVerAction(tool, act, ver) {
     await load();
     renderDetail(tool);
   } catch (e) {
-    toast(e.message, true);
+    toast(errMsg(e), true);
   }
 }
 
@@ -621,10 +656,12 @@ document.getElementById("proxyInput").addEventListener("keydown", (e) => {
 });
 document.getElementById("pathBtn").addEventListener("click", async () => {
   try {
-    const res = await call("PathInit");
-    toast(res === "added" ? "已写入用户 PATH 并广播，新终端生效" : "shims 已在用户 PATH 中");
+    const res = (await call("PathInit")) || {};
+    toast(res.status === "added"
+      ? `已写入 ${res.target}，新开终端生效`
+      : `${res.target || "PATH"} 中已配置 vsm`);
   } catch (e) {
-    toast("写入 PATH 失败: " + e.message, true);
+    toast("激活 PATH 失败: " + errMsg(e), true);
   }
 });
 document.getElementById("setRootBtn").addEventListener("click", async (e) => {
@@ -710,9 +747,33 @@ async function loadInstallRoot() {
   }
 }
 
+// 标记运行平台：macOS 隐藏标题栏后需要给左上角红绿灯按钮留位（见 style.css）。
+// 先用 UA 立即判断避免首屏跳动，再以后端返回值为准。
+function applyPlatform(p) {
+  if (!p) return;
+  const root = document.documentElement;
+  root.classList.remove("platform-windows", "platform-darwin", "platform-linux");
+  root.classList.add("platform-" + p);
+}
+(function () {
+  const ua = navigator.userAgent || "";
+  if (/Mac OS X|Macintosh/.test(ua)) applyPlatform("darwin");
+  else if (/Windows/.test(ua)) applyPlatform("windows");
+  else if (/Linux/.test(ua)) applyPlatform("linux");
+})();
+
+async function loadPlatform() {
+  try {
+    applyPlatform(await call("Platform"));
+  } catch (e) {
+    // 后端未就绪时保留 UA 推断结果
+  }
+}
+
 window.addEventListener("DOMContentLoaded", () => {
   bindEvents();
   setTimeout(() => {
+    loadPlatform();
     load();
     loadDataDir();
     loadCurrentDir();
