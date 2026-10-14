@@ -325,7 +325,7 @@ A:不会。`adopt` 全程只建链接,不动你原始目录;卸载纳管版本�
 A:不用。vsm 是单个可执行文件,拷过去就能用,没有任何运行时依赖。
 
 **Q:支持 Mac/Linux 吗?**
-A:CLI 全平台支持(零 CGO 交叉编译);桌面 GUI 目前是 Windows 版,Mac/Linux 用命令行。
+A:都支持。CLI 零 CGO 交叉编译全平台;桌面 GUI 提供 Windows / macOS(Apple Silicon + Intel 通用版,内置 CLI)/ Linux 三个版本。
 
 **Q:老项目已经有 `.tool-versions` / `.nvmrc`,要改吗?**
 A:不用改。vsm 直接读它们,完全兼容。

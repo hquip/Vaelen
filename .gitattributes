@@ -1,0 +1,2 @@
+# 脚本必须是 LF 换行：Windows 上 core.autocrlf=true 检出的 CRLF 会让 bash 报错
+*.sh text eol=lf

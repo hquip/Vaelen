@@ -6,7 +6,42 @@ on:
   pull_request:
 
 jobs:
+  # 三平台都跑测试：项目把 Windows 当一等公民（junction / shim / PATH 广播 / BOM 处理
+  # 都有平台分支），且 shell 脚本测试会在各平台真实存在的 shell 里执行生成的脚本
+  # （Linux: bash/sh，macOS: bash/sh/zsh，Windows: Git Bash/PowerShell/cmd）。
   test:
+    name: test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-14, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install fish & zsh (shell script tests)
+        if: matrix.os == 'ubuntu-latest'
+        timeout-minutes: 5
+        continue-on-error: true
+        run: sudo apt-get update -o Acquire::Retries=3 && sudo apt-get install -y --no-install-recommends fish zsh
+
+      - name: Vet
+        run: go vet ./internal/... .
+
+      - name: Test
+        run: go test ./internal/... .
+
+      - name: Test (race)
+        if: matrix.os == 'ubuntu-latest'
+        run: go test -race ./internal/... .
+
+  build-cli:
+    name: build CLI (zero-CGO cross-compile)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -16,20 +51,76 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      # 只校验 CLI 与核心包：GUI（Wails）在 Linux 上需要 webkit2gtk 等原生依赖，单独构建。
-      - name: Vet
-        run: go vet ./internal/... .
-
-      - name: Test
-        run: go test ./internal/... .
-
-      - name: Build CLI (cross-compile, zero-CGO)
+      # CLI 无第三方依赖，可零 CGO 一键交叉编译全平台
+      - name: Build
         env:
           CGO_ENABLED: "0"
         run: |
           mkdir -p dist
-          GOOS=linux   GOARCH=amd64 go build -o dist/vsm-linux-amd64 .
-          GOOS=linux   GOARCH=arm64 go build -o dist/vsm-linux-arm64 .
-          GOOS=darwin  GOARCH=amd64 go build -o dist/vsm-darwin-amd64 .
-          GOOS=darwin  GOARCH=arm64 go build -o dist/vsm-darwin-arm64 .
-          GOOS=windows GOARCH=amd64 go build -o dist/vsm-windows-amd64.exe .
+          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64; do
+            os=${target%/*}; arch=${target#*/}
+            GOOS=$os GOARCH=$arch go build -trimpath -ldflags "-s -w" -o dist/vsm-$os-$arch .
+          done
+          GOOS=windows GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o dist/vsm-windows-amd64.exe .
+          GOOS=windows GOARCH=arm64 go build -trimpath -ldflags "-s -w" -o dist/vsm-windows-arm64.exe .
+
+  # GUI 必须各平台本地编译（Windows 免 CGO；macOS / Linux 依赖系统 WebView + CGO）。
+  # 不加 continue-on-error：此前 Release 里 macOS GUI 连续编译失败，却因
+  # continue-on-error 被显示为「成功」，v1.0.0 因此静默缺了 macOS 安装包。
+  build-gui:
+    name: build GUI (${{ matrix.label }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            label: macos
+          - os: ubuntu-22.04
+            label: linux
+          - os: windows-latest
+            label: windows
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install Linux WebKit deps
+        if: matrix.label == 'linux'
+        timeout-minutes: 10
+        run: |
+          sudo apt-get update -o Acquire::Retries=3
+          sudo apt-get install -y --no-install-recommends libgtk-3-dev libwebkit2gtk-4.0-dev
+
+      - name: Test GUI backend
+        shell: bash
+        env:
+          CGO_ENABLED: ${{ matrix.label == 'windows' && '0' || '1' }}
+        run: go test -tags production ./gui
+
+      - name: Build GUI (windows, no CGO)
+        if: matrix.label == 'windows'
+        run: go build -tags production -ldflags "-H windowsgui -s -w" -o vsm-gui.exe ./gui
+
+      # 与 Release 共用同一脚本：通用二进制 + .app + 图标 + 签名 + 冒烟测试全流程
+      - name: Package macOS app (universal)
+        if: matrix.label == 'macos'
+        run: bash scripts/package-macos.sh "0.0.0-ci.${{ github.run_number }}" dist
+
+      - name: Upload macOS app
+        if: matrix.label == 'macos'
+        uses: actions/upload-artifact@v4
+        with:
+          name: vsm-gui-macos-universal
+          path: dist/vsm-gui-macos-universal.zip
+          retention-days: 14
+
+      - name: Build GUI (linux)
+        if: matrix.label == 'linux'
+        env:
+          CGO_ENABLED: "1"
+        run: go build -tags production -ldflags "-s -w" -o vsm-gui ./gui

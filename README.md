@@ -10,7 +10,7 @@
 > 下载源可按需在 manifest 中补充即变为可安装）。另支持 `~/.vsm/plugins/*.json` 无限扩展、
 > `vsm detect` 双路探测系统已装版本（PATH + 环境变量）、`vsm adopt` 一键纳管——不止管"自己装的"，更能接管机器上"已有的"。
 > 打通 `install / use / list / current / which / exec` 主流程。
-> 可选的桌面 GUI（`gui/`，Wails v2 + WebView2）：语言列表与安装/卸载、系统版本检测与一键纳管、
+> 跨平台桌面 GUI（`gui/`，Wails v2；**Windows / macOS / Linux**）：语言列表与安装/卸载、系统版本检测与一键纳管、
 > 镜像切换、网络代理设置、安装进度条、当前目录 local 设置、一键写入用户级 PATH。
 
 ## 设计要点
@@ -62,7 +62,7 @@
         ├── manifest.go          # 声明式 manifest 引擎（数据驱动 + 外部加载）
         └── manifests/           # 内置 manifest（gleam / vlang / kotlin …）
 
-gui/                             # 可选 Windows GUI（Wails v2 + WebView2）
+gui/                             # 跨平台桌面 GUI（Wails v2：Windows / macOS / Linux）
 ├── main.go  app.go  wails.json
 └── frontend/dist/{index.html, style.css, app.js}
 ```
@@ -98,6 +98,29 @@ sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.0-dev
 CGO_ENABLED=1 go build -tags production -o vsm-gui ./gui
 ```
 
+### macOS GUI
+
+Release 提供 **Universal 通用版** `vsm-gui-macos-universal.zip`（一个 `.app` 同时支持 Apple Silicon 与 Intel Mac），
+已做 ad-hoc 签名。首次打开如提示「无法验证开发者」：右键 `VSM.app` → 打开，或执行
+
+```bash
+xattr -dr com.apple.quarantine /Applications/VSM.app
+```
+
+`VSM.app` **内置了 vsm CLI**（`VSM.app/Contents/MacOS/vsm`），拖到「应用程序」即可使用；
+点界面顶部「⚡ 激活PATH」会把激活语句写进 `~/.zshrc`，之后新开的终端里 `go` / `node` 等即按目录自动切换。
+想在终端直接敲 `vsm`，可再建一个软链：
+
+```bash
+sudo ln -sf /Applications/VSM.app/Contents/MacOS/vsm /usr/local/bin/vsm
+```
+
+自行打包（需在 Mac 上，产出与 Release 相同的通用版 zip）：
+
+```bash
+bash scripts/package-macos.sh 1.1.0 dist
+```
+
 > 打 `v*` tag 即可由 GitHub Actions 在 Windows / macOS / Linux 三个 runner 上分别本地编译，
 > 自动产出**全平台 CLI + GUI** 并发布到 Release（见 `.github/workflows/release.yml`）。
 
@@ -122,6 +145,14 @@ CGO_ENABLED=1 go build -tags production -o vsm-gui ./gui
 | `vsm mirror [cn\|off]` | 设置下载镜像（cn 国内加速 go/node/github / off 关闭） |
 | `vsm proxy [url\|off\|system]` | 设置网络代理（http/https/socks5；off 强制直连 / system 跟随系统环境变量） |
 | `vsm path-init` | [Windows] 把 shims 写入用户级 PATH 并广播（新终端免改配置） |
+| `vsm doctor [--json]` | 环境体检：shims 是否在 PATH、是否被同名命令抢占、PATH 重复、shim 残留、配置异常 |
+| `vsm shell <tool> <ver>` | 打开临时子 shell 使用某版本（不写任何配置，`exit` 即恢复） |
+| `vsm completion <shell>` | 输出 bash / zsh / fish / powershell 补全脚本 |
+| `vsm size [tool] [--json]` | 统计各版本占用的磁盘空间 |
+| `vsm clean` | 清理下载缓存（安装完成后的压缩包） |
+
+`list` / `list-all` / `current` / `detect` / `doctor` / `size` 均支持 `--json`，便于编辑器插件与 CI 集成。
+`vsm exec` 会**原样透传子进程退出码**，可直接用于 `vsm exec go test ./... && deploy` 这类脚本。
 
 ## 快速上手
 
@@ -133,23 +164,39 @@ vsm current
 vsm exec go version
 ```
 
+## Shell 补全
+
+```bash
+eval "$(vsm completion bash)"                                   # bash（写进 ~/.bashrc 永久生效）
+eval "$(vsm completion zsh)"                                    # zsh
+vsm completion fish | source                                    # fish
+vsm completion powershell | Out-String | Invoke-Expression      # PowerShell（写进 $PROFILE）
+```
+
 ## 激活（让 PATH 自动指向所选版本）
 
 ```bash
 vsm reshim                 # 生成 shim
 ```
 
-PowerShell：
-
-```powershell
-vsm activate powershell    # 输出把 shims 加入 PATH 的语句，可写进 $PROFILE
-```
-
-bash / zsh：
+最省事的方式——一条命令配置好新终端：
 
 ```bash
-vsm activate bash >> ~/.bashrc
+vsm path-init              # Windows：写入用户级 PATH；macOS / Linux：写入 ~/.zshrc、~/.bashrc 等
 ```
+
+也可以手动写进 shell 配置（用 `eval` 的动态写法，vsm 升级后无需重写）：
+
+```bash
+echo 'eval "$(vsm activate zsh)"'  >> ~/.zshrc     # zsh（macOS 默认）
+echo 'eval "$(vsm activate bash)"' >> ~/.bashrc    # bash
+```
+
+```powershell
+Add-Content $PROFILE 'vsm activate powershell | Out-String | Invoke-Expression'
+```
+
+离开项目目录时，PATH 与 `GOROOT` / `JAVA_HOME` 等变量会自动还原，不会把上一个项目的版本带到别处。
 
 激活后，在配置了 `.tool-versions` 的目录里直接运行 `go` / `node`，会自动解析到对应版本。
 
@@ -197,9 +244,13 @@ vsm activate bash >> ~/.bashrc
 当下载/版本逻辑需要特殊处理（如重定向、解析 assets）时，实现 `internal/plugin.Plugin`
 接口并在 `init()` 中 `register`。参考 `golang.go` / `java.go` / `zig.go`。
 
+## 许可证
+
+[MIT](LICENSE)
+
 ## 路线图
 
-- **已完成**：7 个语言插件（go / node / java / python / zig / deno / bun）、CLI 全流程、Windows GUI（Wails）。
+- **已完成**：7 个语言插件（go / node / java / python / zig / deno / bun）、CLI 全流程、桌面 GUI（Wails）。
 - **已完成（增强）**：
   - 系统版本探测 `detect`（双路发现：扫全 PATH + 从 `JAVA_HOME`/`GOROOT`/各 `*_HOME` 环境变量定位；识别同一语言多版本、过滤 WindowsApps 占位、两路合并去重）。
   - 一键纳管 `adopt`（junction/symlink 链接系统版本，卸载只删链接、不动原目录）。
@@ -213,5 +264,6 @@ vsm activate bash >> ~/.bashrc
     + `go.mod`/`package.json` engines/`pyproject.toml`/`Gemfile`/`runtime.txt`），无需手写 `.tool-versions`。
   - 核心单元测试 + GitHub Actions（CI 跨平台编译、打 tag 自动 release）。
   - GUI：系统检测面板与一键纳管、镜像切换、安装进度条、当前目录 local 设置。
-- **v1（待办）**：Lua 插件运行时（gopher-lua）外部扩展、`vsm shell`（会话级临时切换）、`.zst` 解压。
+- **已完成（v1.1）**：`vsm doctor` 环境体检、`vsm shell` 会话级临时切换、shell 补全、`--json` 输出、`vsm size` / `vsm clean`、`vsm exec` 退出码透传、macOS 原生 GUI（Universal，内置 CLI）、`vsm path-init` 支持 macOS / Linux。
+- **v1（待办）**：Lua 插件运行时（gopher-lua）外部扩展、`.zst` 解压。
 - **v2（待办）**：Bubble Tea TUI（`vsm ui`）、远程插件仓库。
