@@ -60,3 +60,6 @@ func MirrorURL(url string) string {
 	}
 	return url
 }
+
+// MirrorMode 返回当前镜像模式（"" / "off" / "cn"），供 doctor 等命令展示状态。
+func MirrorMode() string { return mirrorMode() }

@@ -70,7 +70,9 @@ func sameDir(a, b string) bool {
 // 免管理员权限），失败再退回符号链接；其它平台直接用符号链接。
 func linkDir(target, link string) error {
 	if runtime.GOOS == "windows" {
-		cmd := exec.Command("cmd", "/c", "mklink", "/J", link, target)
+		// mklink 的参数由 cmd.exe 解析，路径含空格（如 C:\Program Files\Java\...）
+		// 时必须加引号，否则会被按空格切成多个参数而失败。
+		cmd := exec.Command("cmd", "/c", "mklink", "/J", `"`+link+`"`, `"`+target+`"`)
 		hideConsole(cmd)
 		if out, err := cmd.CombinedOutput(); err != nil {
 			if serr := os.Symlink(target, link); serr != nil {
@@ -98,6 +100,28 @@ func isLink(path string) bool {
 		return true
 	}
 	return false
+}
+
+// InstallTarget 返回版本目录的真实位置，以及它是否归 vsm 所有：
+//   - vsm 直接安装的目录：返回自身，owned=true；
+//   - --path 装到自定义位置（链接 + .vsm-install 标记）：返回真实目录，owned=true；
+//   - 纳管的系统版本（链接、无标记）：返回系统目录，owned=false。
+//
+// 与 Installer.Uninstall 的判定规则一致，供 size 等命令区分「vsm 占用的空间」。
+func InstallTarget(dir string) (real string, owned bool) {
+	if !isLink(dir) {
+		return dir, true
+	}
+	target, _ := os.Readlink(dir)
+	if target == "" {
+		if r, err := filepath.EvalSymlinks(dir); err == nil {
+			target = r
+		}
+	}
+	if target == "" {
+		return dir, false
+	}
+	return target, fileExists(filepath.Join(target, installMarker))
 }
 
 func pathExists(p string) bool {

@@ -66,6 +66,11 @@ func extractTarGz(src, dst string) error {
 		case tar.TypeSymlink:
 			_ = os.MkdirAll(filepath.Dir(target), 0o755)
 			_ = os.Remove(target)
+			// 链接目标同样要限制在解压目录内：否则归档里可以先放一个
+			// 指向外部的软链，再用后续条目通过它写到目标目录之外。
+			if !linkTargetInside(dst, filepath.Dir(target), hdr.Linkname) {
+				return fmt.Errorf("压缩包内存在越界符号链接: %s -> %s", hdr.Name, hdr.Linkname)
+			}
 			if err := os.Symlink(hdr.Linkname, target); err != nil {
 				// 某些平台（如无权限的 Windows）创建符号链接失败可忽略。
 				continue
@@ -140,10 +145,27 @@ func writeFile(target string, r io.Reader, mode os.FileMode) error {
 
 // safeJoin 防御 zip-slip / 路径穿越：确保解出的路径仍在 dst 之内。
 func safeJoin(dst, name string) (string, error) {
-	target := filepath.Join(dst, name)
 	cleanRoot := filepath.Clean(dst)
+	// 归档内条目为绝对路径时（/etc/passwd 或 C:\evil），filepath.Join 会把它
+	// 相对化为 dst/etc/passwd，看似安全但已扭曲原意；直接拒绝更明确。
+	if filepath.IsAbs(name) || (len(name) > 1 && name[1] == ':') {
+		return "", fmt.Errorf("压缩包内存在绝对路径: %s", name)
+	}
+	target := filepath.Join(cleanRoot, name)
 	if target != cleanRoot && !strings.HasPrefix(target, cleanRoot+string(os.PathSeparator)) {
 		return "", fmt.Errorf("压缩包内存在非法路径: %s", name)
 	}
 	return target, nil
+}
+
+// linkTargetInside 判断软链（位于 linkDir 下、指向 linkTarget）解析后是否仍落在 root 内。
+func linkTargetInside(root, linkDir, linkTarget string) bool {
+	var resolved string
+	if filepath.IsAbs(linkTarget) {
+		resolved = filepath.Clean(linkTarget)
+	} else {
+		resolved = filepath.Clean(filepath.Join(linkDir, linkTarget))
+	}
+	cleanRoot := filepath.Clean(root)
+	return resolved == cleanRoot || strings.HasPrefix(resolved, cleanRoot+string(os.PathSeparator))
 }

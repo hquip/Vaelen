@@ -1,6 +1,7 @@
 package core
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -63,8 +64,29 @@ func (a Activator) Run(tool, startDir, cmdName string, cmdArgs []string) error {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Env = buildEnv(binDirs, p.ExecEnv(installDir))
-	return cmd.Run()
+	if err := cmd.Run(); err != nil {
+		// 透传子进程退出码：`vsm exec go test ./...` 失败时必须让脚本/CI 感知真实状态码，
+		// 否则 `vsm exec ... && deploy` 这类串联会失效，lint 用 2、git 用 128 也全被抹平。
+		var ee *exec.ExitError
+		if errors.As(err, &ee) {
+			return exitCodeError{code: ee.ExitCode(), err: err}
+		}
+		return err
+	}
+	return nil
 }
+
+// exitCodeError 携带子进程退出码，供 CLI 层透传给 os.Exit。
+type exitCodeError struct {
+	code int
+	err  error
+}
+
+func (e exitCodeError) Error() string { return e.err.Error() }
+func (e exitCodeError) Unwrap() error { return e.err }
+
+// ExitCode 实现 cli 层的退出码透传约定。
+func (e exitCodeError) ExitCode() int { return e.code }
 
 // GenerateShims 为所有已安装工具生成 shim（无 shell hook 环境下的兜底激活）。
 func (a Activator) GenerateShims() error {
@@ -92,10 +114,12 @@ func (a Activator) writeShim(tool string) error {
 		vsm = "vsm"
 	}
 	if runtime.GOOS == "windows" {
-		content := "@echo off\r\n\"" + vsm + "\" exec " + tool + " %*\r\n"
+		// .cmd 里 % 会被展开，路径中的 % 需写成 %%
+		content := "@echo off\r\n\"" + quoteCmd(vsm) + "\" exec " + tool + " %*\r\n"
 		return os.WriteFile(filepath.Join(a.Paths.Shims(), tool+".cmd"), []byte(content), 0o644)
 	}
-	content := "#!/bin/sh\nexec \"" + vsm + "\" exec " + tool + " \"$@\"\n"
+	// 单引号字面量：路径里的 $、反引号、空格都不会被 shell 解释
+	content := "#!/bin/sh\nexec " + quotePOSIX(vsm) + " exec " + tool + " \"$@\"\n"
 	return os.WriteFile(filepath.Join(a.Paths.Shims(), tool), []byte(content), 0o755)
 }
 
