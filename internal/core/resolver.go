@@ -1,6 +1,7 @@
 package core
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -25,6 +26,7 @@ type Resolution struct {
 	Spec    string // 配置中写的版本要求，如 "20" / "1.22.0" / "latest"
 	Version string // 匹配到的已安装具体版本；为空表示未装或未配置
 	Source  string // 版本要求的来源描述
+	Error   string // Invalid configuration/registry; never silently fall back.
 }
 
 // Resolve 解析单个工具当前应使用的版本。startDir 通常是当前工作目录。
@@ -33,19 +35,28 @@ func (r Resolver) Resolve(tool, startDir string) Resolution {
 	if v := os.Getenv(envKey); v != "" {
 		return r.match(tool, v, "环境变量 "+envKey)
 	}
-	if spec, src, ok := findToolVersion(tool, startDir); ok {
+	spec, src, err := findToolVersionChecked(tool, startDir)
+	if err != nil {
+		return Resolution{Tool: tool, Error: err.Error()}
+	}
+	if src != "" {
 		return r.match(tool, spec, src)
 	}
 	if tv, err := config.Load(r.Paths.GlobalToolVersions()); err == nil {
 		if spec, ok := tv.Get(tool); ok {
 			return r.match(tool, spec, "全局")
 		}
+	} else if !os.IsNotExist(err) {
+		return Resolution{Tool: tool, Error: err.Error()}
 	}
 	return Resolution{Tool: tool}
 }
 
 func (r Resolver) match(tool, spec, source string) Resolution {
-	installed, _ := r.Registry.Installed(tool)
+	installed, err := r.Registry.Installed(tool)
+	if err != nil {
+		return Resolution{Tool: tool, Spec: spec, Source: source, Error: err.Error()}
+	}
 	return Resolution{
 		Tool:    tool,
 		Spec:    spec,
@@ -55,22 +66,39 @@ func (r Resolver) match(tool, spec, source string) Resolution {
 }
 
 func findToolVersion(tool, startDir string) (spec, source string, ok bool) {
-	dir := startDir
+	spec, source, err := findToolVersionChecked(tool, startDir)
+	return spec, source, source != "" && err == nil
+}
+
+func findToolVersionChecked(tool, startDir string) (spec, source string, err error) {
+	dir, err := filepath.Abs(startDir)
+	if err != nil {
+		return "", "", err
+	}
 	for {
 		// 同一目录内：.tool-versions 的显式声明优先，其次各生态惯用版本文件
 		// （.nvmrc / go.mod / .python-version 等）。越靠近当前目录的越优先。
 		path := filepath.Join(dir, ".tool-versions")
 		if tv, err := config.Load(path); err == nil {
 			if spec, has := tv.Get(tool); has {
-				return spec, path, true
+				return spec, path, nil
 			}
+			if warnings := tv.Warnings(); len(warnings) > 0 {
+				return "", "", fmt.Errorf("invalid version declaration in %s: %s", path, strings.Join(warnings, ", "))
+			}
+		} else if !os.IsNotExist(err) {
+			return "", "", fmt.Errorf("read %s: %w", path, err)
 		}
-		if spec, src, has := projectVersion(tool, dir); has {
-			return spec, src, true
+		spec, src, err := projectVersionChecked(tool, dir)
+		if err != nil {
+			return "", "", err
+		}
+		if src != "" {
+			return spec, src, nil
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
-			return "", "", false
+			return "", "", nil
 		}
 		dir = parent
 	}

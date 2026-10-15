@@ -3,6 +3,7 @@ package plugin
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -27,7 +28,7 @@ func fetchJSON(url string, out any) error {
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("请求 %s 失败: HTTP %d", url, resp.StatusCode)
 	}
-	return json.NewDecoder(resp.Body).Decode(out)
+	return json.NewDecoder(io.LimitReader(resp.Body, 16<<20)).Decode(out)
 }
 
 // slowHTTPClient 用更长超时，应对体积很大的 API 响应（如 python-build-standalone 的 releases，
@@ -49,7 +50,7 @@ func fetchJSONSlow(url string, out any) error {
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("请求 %s 失败: HTTP %d", url, resp.StatusCode)
 	}
-	return json.NewDecoder(resp.Body).Decode(out)
+	return json.NewDecoder(io.LimitReader(resp.Body, 16<<20)).Decode(out)
 }
 
 // extFor 返回某平台下官方发行包常用的压缩扩展名。
@@ -63,8 +64,9 @@ func extFor(goos string) string {
 // --- GitHub releases 通用工具（供 deno/bun/python 等基于 GitHub 发布的插件复用）---
 
 type ghAsset struct {
-	Name string `json:"name"`
-	URL  string `json:"browser_download_url"`
+	Name   string `json:"name"`
+	URL    string `json:"browser_download_url"`
+	Digest string `json:"digest"`
 }
 
 type ghRelease struct {

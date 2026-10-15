@@ -3,6 +3,7 @@ package core
 import (
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // Registry 提供对已安装版本的查询。
@@ -12,6 +13,17 @@ type Registry struct {
 
 // Installed 返回某工具已安装的所有版本（目录名）。
 func (r Registry) Installed(tool string) ([]string, error) {
+	if err := validateComponent(tool); err != nil {
+		return nil, err
+	}
+	guard, err := r.Paths.openInstalls(tool, false)
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	guard.Close()
 	return dirNames(r.Paths.ToolInstalls(tool))
 }
 
@@ -37,6 +49,10 @@ func dirNames(dir string) ([]string, error) {
 	}
 	var names []string
 	for _, e := range entries {
+		// 点开头的条目是 vsm 的内部暂存（如安装中的 .1.22.0.partial），不是工具或版本
+		if strings.HasPrefix(e.Name(), ".") {
+			continue
+		}
 		if isDirFollow(filepath.Join(dir, e.Name()), e) {
 			names = append(names, e.Name())
 		}

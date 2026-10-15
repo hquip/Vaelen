@@ -7,14 +7,14 @@ on:
 permissions:
   contents: write
 
-# 同一 ref 的新发布会取消仍在跑的旧 run(避免卡死的 run 阻塞队列或重复发布)。
+# 同一 ref 的新发布会取消仍在跑的旧 run（避免卡死的 run 阻塞队列或重复发布）。
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: true
 
-# 每个平台在各自的 runner 上本地编译:CLI 是纯 Go 零 CGO(可顺带交叉编 arm64),
-# GUI 是 Wails(Windows 用 go-webview2 免 CGO;macOS/Linux 需 CGO + 系统 WebView,
-# 无法在 Windows 上交叉编译,故必须分平台 runner 本地构建)。
+# 每个平台在各自的 runner 上本地编译：CLI 是纯 Go 零 CGO（可顺带交叉编 arm64），
+# GUI 是 Wails（Windows 用 go-webview2 免 CGO；macOS/Linux 需 CGO + 系统 WebView，
+# 无法在 Windows 上交叉编译，故必须分平台 runner 本地构建）。
 jobs:
   build:
     strategy:
@@ -28,7 +28,10 @@ jobs:
           - os: ubuntu-22.04
             label: linux
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 25
+    timeout-minutes: 30
+    env:
+      # 版本号统一取自 tag（v1.2.3 → 1.2.3），注入到 `vsm version` 与 macOS Info.plist
+      VSM_VERSION: ${{ github.ref_name }}
     steps:
       - uses: actions/checkout@v4
 
@@ -37,97 +40,110 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      # Linux GUI 依赖 GTK3 + WebKit2GTK(Wails v2 默认 4.0)。
-      # 加 timeout + continue-on-error:apt 偶发卡死时最多等 8 分钟即跳过,
-      # 不阻塞后续(Linux CLI 不依赖这些库,GUI 缺失则由其 continue-on-error 容忍)。
+      # Linux GUI 依赖 GTK3 + WebKit2GTK（Wails v2 默认 4.0）。
+      # 缺少任一平台的构建依赖时停止发布，避免公开不完整版本。
       - name: Install Linux GUI deps
         if: matrix.label == 'linux'
         timeout-minutes: 8
-        continue-on-error: true
         run: sudo apt-get update && sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.0-dev
 
-      # ---------- CLI(零 CGO,交叉编译该 OS 家族的 amd64/arm64)----------
+      # ---------- CLI（零 CGO，交叉编译该 OS 家族的 amd64/arm64）----------
       - name: Build CLI
         shell: bash
         env:
           CGO_ENABLED: "0"
         run: |
+          set -euo pipefail
+          VERSION="${VSM_VERSION#v}"
+          LDFLAGS="-s -w -X vsm/internal/buildinfo.Version=${VERSION}"
           mkdir -p dist
           case "${{ matrix.label }}" in
-            windows)
-              GOOS=windows GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o dist/vsm-windows-amd64.exe .
-              GOOS=windows GOARCH=arm64 go build -trimpath -ldflags "-s -w" -o dist/vsm-windows-arm64.exe .
-              ;;
-            macos)
-              GOOS=darwin GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o dist/vsm-darwin-amd64 .
-              GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags "-s -w" -o dist/vsm-darwin-arm64 .
-              ;;
-            linux)
-              GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o dist/vsm-linux-amd64 .
-              GOOS=linux GOARCH=arm64 go build -trimpath -ldflags "-s -w" -o dist/vsm-linux-arm64 .
-              ;;
+            windows) targets="windows/amd64 windows/arm64" ;;
+            macos)   targets="darwin/amd64 darwin/arm64" ;;
+            linux)   targets="linux/amd64 linux/arm64" ;;
           esac
+          for t in $targets; do
+            os=${t%/*}; arch=${t#*/}; ext=""
+            [ "$os" = windows ] && ext=".exe"
+            GOOS=$os GOARCH=$arch go build -trimpath -ldflags "$LDFLAGS" -o "dist/vsm-$os-$arch$ext" .
+          done
+          ls -lh dist
 
-      # ---------- GUI(各平台本地构建)----------
-      # GUI 用 Wails,任一平台 GUI 编译失败不应阻断整个发布(CLI 才是主产物),故 continue-on-error。
-      # 另加「失败→go clean -cache→重试」循环:应对 setup-go build cache 在多 run 并发下
-      # 偶发污染导致 go build 立即失败的情况(同一代码有时成功有时 1 秒即挂)。
+      - name: Verify CLI release version
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${VSM_VERSION#v}"
+          case "${{ matrix.label }}" in
+            windows) native="dist/vsm-windows-amd64.exe" ;;
+            macos) native="dist/vsm-darwin-$(go env GOARCH)" ;;
+            linux) native="dist/vsm-linux-amd64" ;;
+          esac
+          actual="$("./$native" version | tr -d '\r')"
+          test "$actual" = "vsm v${VERSION}"
+          echo "$actual"
+
+      - name: Generate Windows version resources
+        if: matrix.label == 'windows'
+        shell: bash
+        working-directory: gui
+        run: go run github.com/tc-hib/go-winres@v0.3.3 make --file-version "${VSM_VERSION#v}" --product-version "${VSM_VERSION#v}"
+
+      # ---------- GUI（各平台本地构建）----------
+      # GUI 和 CLI 必须全部成功，release job 才能发布。
       - name: Build GUI (Windows)
         if: matrix.label == 'windows'
-        continue-on-error: true
         shell: bash
         run: |
           for i in 1 2 3; do
-            go build -tags production -ldflags "-H windowsgui -s -w" -o dist/vsm-gui-windows-amd64.exe ./gui && exit 0
+            go build -tags production -ldflags "-H windowsgui -s -w -X vsm/internal/buildinfo.Version=${VSM_VERSION#v}" -o dist/vsm-gui-windows-amd64.exe ./gui && exit 0
             echo "GUI build attempt $i failed; cleaning cache and retrying..."
             go clean -cache
             sleep 5
           done
           exit 1
 
-      - name: Build GUI (macOS, .app)
+      # 与 CI 共用同一脚本：arm64 + amd64 通用二进制、内置 CLI、.icns 图标、
+      # Info.plist、ad-hoc 签名与冒烟测试
+      - name: Build GUI (macOS, universal .app)
         if: matrix.label == 'macos'
-        continue-on-error: true
-        env:
-          CGO_ENABLED: "1"
-        run: |
-          for i in 1 2 3; do
-            go build -tags production -ldflags "-s -w" -o vsm-gui ./gui && break
-            echo "GUI build attempt $i failed; cleaning cache and retrying..."
-            go clean -cache
-            sleep 5
-            [ "$i" = "3" ] && { echo "macOS GUI build failed after retries"; exit 1; }
-          done
-          APP="dist/VSM.app"
-          mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-          mv vsm-gui "$APP/Contents/MacOS/vsm-gui"
-          cp gui/appicon.png "$APP/Contents/Resources/appicon.png" || true
-          printf '%s\n' \
-            '<?xml version="1.0" encoding="UTF-8"?>' \
-            '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">' \
-            '<plist version="1.0"><dict>' \
-            '<key>CFBundleName</key><string>VSM</string>' \
-            '<key>CFBundleExecutable</key><string>vsm-gui</string>' \
-            '<key>CFBundleIdentifier</key><string>com.vsm.gui</string>' \
-            '<key>CFBundlePackageType</key><string>APPL</string>' \
-            '<key>CFBundleShortVersionString</key><string>1.0.0</string>' \
-            '<key>NSHighResolutionCapable</key><true/>' \
-            '</dict></plist>' > "$APP/Contents/Info.plist"
-          ( cd dist && zip -r -q vsm-gui-macos-arm64-app.zip VSM.app && rm -rf VSM.app )
+        run: bash scripts/package-macos.sh "${VSM_VERSION#v}" dist
 
       - name: Build GUI (Linux)
         if: matrix.label == 'linux'
-        continue-on-error: true
         env:
           CGO_ENABLED: "1"
         run: |
           for i in 1 2 3; do
-            go build -tags production -ldflags "-s -w" -o dist/vsm-gui-linux-amd64 ./gui && exit 0
+            go build -tags production -ldflags "-s -w -X vsm/internal/buildinfo.Version=${VSM_VERSION#v}" -o dist/vsm-gui-linux-amd64 ./gui && exit 0
             echo "GUI build attempt $i failed; cleaning cache and retrying..."
             go clean -cache
             sleep 5
           done
           exit 1
+
+      - name: Verify Windows GUI version
+        if: matrix.label == 'windows'
+        shell: pwsh
+        run: |
+          $expected = $env:VSM_VERSION.TrimStart('v')
+          $info = [System.Diagnostics.FileVersionInfo]::GetVersionInfo((Join-Path $PWD 'dist/vsm-gui-windows-amd64.exe'))
+          if ($info.FileVersion -ne $expected -or $info.ProductVersion -ne $expected) {
+            throw "GUI version mismatch: $($info.FileVersion) / $($info.ProductVersion), expected $expected"
+          }
+
+      - name: Smoke-launch macOS release app
+        if: matrix.label == 'macos'
+        timeout-minutes: 2
+        run: python3 scripts/smoke-macos.py dist/vsm-gui-macos-universal.zip macos-release-screenshot.png
+
+      - name: Upload macOS release screenshot
+        if: always() && matrix.label == 'macos'
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-release-screenshot
+          path: macos-release-screenshot.png
+          if-no-files-found: warn
 
       - name: Upload artifacts
         if: always()
@@ -137,16 +153,17 @@ jobs:
           path: dist/*
           if-no-files-found: error
 
-  # 汇总三平台产物,统一发布到 GitHub Release。
-  # if: always() 确保即便某个 build job 异常,也用已成功上传的产物照常发布。
+  # 汇总三平台产物，统一发布到 GitHub Release。
   release:
     needs: build
-    if: always()
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
+          pattern: dist-*
 
       - name: Collect files
         run: |
@@ -154,8 +171,30 @@ jobs:
           find artifacts -type f -exec cp {} dist/ \;
           ls -lh dist
 
+      # 公开 Release 之前验证所有 CLI / GUI 包，避免部分平台静默缺失。
+      - name: Verify expected assets
+        run: |
+          missing=0
+          for f in vsm-windows-amd64.exe vsm-windows-arm64.exe vsm-darwin-amd64 vsm-darwin-arm64 vsm-linux-amd64 vsm-linux-arm64 vsm-gui-windows-amd64.exe vsm-gui-macos-universal.zip vsm-gui-linux-amd64; do
+            if [ -f "dist/$f" ]; then
+              echo "✓ $f"
+            else
+              echo "::error title=Release 缺少安装包::$f 未生成，请查看对应平台的构建日志"
+              echo "- ❌ 缺少 \`$f\`" >> "$GITHUB_STEP_SUMMARY"
+              missing=1
+            fi
+          done
+          exit $missing
+
+      - name: Generate checksums
+        run: |
+          cd dist
+          sha256sum * > SHA256SUMS
+
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
+          name: ${{ github.ref_name }}
+          body_path: docs/releases/${{ github.ref_name }}.md
           files: dist/*
-          generate_release_notes: true
+          fail_on_unmatched_files: true

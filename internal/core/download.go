@@ -22,6 +22,7 @@ const (
 	dlAttempts    = 3
 	dlConnections = 4
 	dlMinParallel = 8 << 20 // 小于 8MB 不分块，避免徒增连接开销
+	dlMaxBytes    = 8 << 30
 )
 
 // downloadResolve 下载 url（自动跟随重定向），按“最终 URL”的后缀决定压缩格式扩展名，
@@ -46,7 +47,16 @@ func downloadResolve(url, dir, base string, progress ProgressFunc) (string, erro
 }
 
 func downloadOnce(url, dir, base string, progress ProgressFunc) (string, error) {
-	finalURL, size, acceptRanges := probe(url)
+	if err := netcfg.ValidateURL(url); err != nil {
+		return "", err
+	}
+	if err := validateComponent(base); err != nil {
+		return "", err
+	}
+	finalURL, size, acceptRanges, etag := probe(url)
+	if size > dlMaxBytes {
+		return "", fmt.Errorf("download exceeds size limit")
+	}
 	// 扩展名优先取原始 URL（含真实资产名），再退回重定向后的 URL；都没有则暂定 tar.gz，
 	// 最后用内容魔数纠正——因为很多源重定向后会丢掉 .zip/.tar.gz 后缀（GitHub objects、Adoptium）。
 	ext := archiveExt(url)
@@ -59,11 +69,20 @@ func downloadOnce(url, dir, base string, progress ProgressFunc) (string, error) 
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
 	}
-	dest := filepath.Join(dir, base+ext)
+	tmp, err := os.CreateTemp(dir, "."+base+"-*.partial")
+	if err != nil {
+		return "", err
+	}
+	dest := tmp.Name()
+	if err := tmp.Close(); err != nil {
+		os.Remove(dest)
+		return "", err
+	}
+	defer func() { os.Remove(tmp.Name()) }()
 
 	done := false
-	if acceptRanges && size >= dlMinParallel {
-		if err := downloadParallel(finalURL, dest, size, dlConnections, progress); err == nil {
+	if acceptRanges && size >= dlMinParallel && etag != "" && !strings.HasPrefix(etag, "W/") {
+		if err := downloadParallel(finalURL, dest, size, dlConnections, progress, etag); err == nil {
 			done = true
 		} else {
 			progress(fmt.Sprintf("并行下载失败，回退单连接：%v", err))
@@ -75,13 +94,16 @@ func downloadOnce(url, dir, base string, progress ProgressFunc) (string, error) 
 		}
 	}
 	// 用内容魔数纠正扩展名，确保 Extract 用对解压器。
-	if sniff := sniffArchiveExt(dest); sniff != "" && sniff != ext {
-		nd := filepath.Join(dir, base+sniff)
-		if os.Rename(dest, nd) == nil {
-			dest = nd
-		}
+	sniff := sniffArchiveExt(dest)
+	if sniff == "" {
+		return "", fmt.Errorf("download is not a supported archive (possible HTML/error response)")
 	}
-	return dest, nil
+	ext = sniff
+	nd := filepath.Join(dir, strings.TrimSuffix(strings.TrimPrefix(filepath.Base(dest), "."), ".partial")+ext)
+	if err := os.Rename(dest, nd); err != nil {
+		return "", err
+	}
+	return nd, nil
 }
 
 // sniffArchiveExt 读取文件头部魔数判断压缩格式，返回 .zip / .tar.gz / .tar.xz；无法判断返回 ""。
@@ -106,23 +128,26 @@ func sniffArchiveExt(path string) string {
 }
 
 // probe 用 HEAD 探测最终 URL、内容大小与是否支持 Range；HEAD 不可用时返回 size=-1。
-func probe(url string) (finalURL string, size int64, acceptRanges bool) {
+func probe(url string) (finalURL string, size int64, acceptRanges bool, etag string) {
 	finalURL = url
 	client := netcfg.Client(30 * time.Second)
 	req, err := http.NewRequest(http.MethodHead, url, nil)
 	if err != nil {
-		return url, -1, false
+		return url, -1, false, ""
 	}
 	req.Header.Set("User-Agent", "vsm")
 	resp, err := client.Do(req)
 	if err != nil {
-		return url, -1, false
+		return url, -1, false, ""
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return url, -1, false, ""
+	}
 	if resp.Request != nil && resp.Request.URL != nil {
 		finalURL = resp.Request.URL.String()
 	}
-	return finalURL, resp.ContentLength, strings.EqualFold(resp.Header.Get("Accept-Ranges"), "bytes")
+	return finalURL, resp.ContentLength, strings.EqualFold(resp.Header.Get("Accept-Ranges"), "bytes"), resp.Header.Get("ETag")
 }
 
 func downloadStream(url, dest string, size int64, progress ProgressFunc) error {
@@ -132,6 +157,8 @@ func downloadStream(url, dest string, size int64, progress ProgressFunc) error {
 		return err
 	}
 	req.Header.Set("User-Agent", "vsm")
+	req.Header.Set("Accept-Encoding", "identity")
+	req.Header.Set("Accept-Encoding", "identity")
 	resp, err := client.Do(req)
 	if err != nil {
 		return err
@@ -143,20 +170,33 @@ func downloadStream(url, dest string, size int64, progress ProgressFunc) error {
 	if size <= 0 {
 		size = resp.ContentLength
 	}
+	if size > dlMaxBytes || (size > 0 && resp.ContentLength >= 0 && size != resp.ContentLength) {
+		return fmt.Errorf("download length changed or exceeds limit")
+	}
 	out, err := os.Create(dest)
 	if err != nil {
 		return err
 	}
-	defer out.Close()
 	cw := &countingWriter{total: size, label: "下载中", progress: progress}
-	if _, err := io.Copy(out, io.TeeReader(resp.Body, cw)); err != nil {
-		return err
+	n, copyErr := io.Copy(out, io.LimitReader(io.TeeReader(resp.Body, cw), dlMaxBytes+1))
+	closeErr := out.Close()
+	if copyErr != nil {
+		return copyErr
+	}
+	if closeErr != nil {
+		return closeErr
+	}
+	if n > dlMaxBytes || (size >= 0 && n != size) {
+		return fmt.Errorf("download size mismatch: got %d, expected %d", n, size)
 	}
 	cw.finish()
 	return nil
 }
 
-func downloadParallel(url, dest string, size int64, conns int, progress ProgressFunc) error {
+func downloadParallel(url, dest string, size int64, conns int, progress ProgressFunc, etag string) error {
+	if size <= 0 || size > dlMaxBytes || conns <= 0 || int64(conns) > size {
+		return fmt.Errorf("invalid download range layout")
+	}
 	out, err := os.Create(dest)
 	if err != nil {
 		return err
@@ -182,7 +222,7 @@ func downloadParallel(url, dest string, size int64, conns int, progress Progress
 		wg.Add(1)
 		go func(start, end int64) {
 			defer wg.Done()
-			if err := downloadChunk(url, dest, start, end, cw); err != nil {
+			if err := downloadChunk(url, dest, start, end, size, cw, etag); err != nil {
 				mu.Lock()
 				if firstErr == nil {
 					firstErr = err
@@ -200,7 +240,7 @@ func downloadParallel(url, dest string, size int64, conns int, progress Progress
 	return nil
 }
 
-func downloadChunk(url, dest string, start, end int64, cw *countingWriter) error {
+func downloadChunk(url, dest string, start, end, total int64, cw *countingWriter, etag string) error {
 	client := netcfg.Client(30 * time.Minute)
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
@@ -208,6 +248,10 @@ func downloadChunk(url, dest string, start, end int64, cw *countingWriter) error
 	}
 	req.Header.Set("User-Agent", "vsm")
 	req.Header.Set("Range", fmt.Sprintf("bytes=%d-%d", start, end))
+	req.Header.Set("Accept-Encoding", "identity")
+	if etag != "" {
+		req.Header.Set("If-Match", etag)
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		return err
@@ -215,6 +259,10 @@ func downloadChunk(url, dest string, start, end int64, cw *countingWriter) error
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusPartialContent {
 		return fmt.Errorf("服务器不支持 Range: HTTP %d", resp.StatusCode)
+	}
+	want := end - start + 1
+	if resp.Header.Get("Content-Range") != fmt.Sprintf("bytes %d-%d/%d", start, end, total) || (resp.ContentLength >= 0 && resp.ContentLength != want) || (etag != "" && resp.Header.Get("ETag") != "" && resp.Header.Get("ETag") != etag) {
+		return fmt.Errorf("invalid Content-Range, length, or entity tag")
 	}
 	f, err := os.OpenFile(dest, os.O_WRONLY, 0o644)
 	if err != nil {
@@ -224,23 +272,14 @@ func downloadChunk(url, dest string, start, end int64, cw *countingWriter) error
 	if _, err := f.Seek(start, io.SeekStart); err != nil {
 		return err
 	}
-	buf := make([]byte, 64*1024)
-	for {
-		n, rerr := resp.Body.Read(buf)
-		if n > 0 {
-			if _, werr := f.Write(buf[:n]); werr != nil {
-				return werr
-			}
-			cw.add(int64(n))
-		}
-		if rerr == io.EOF {
-			break
-		}
-		if rerr != nil {
-			return rerr
-		}
+	if _, err := io.CopyN(f, io.TeeReader(resp.Body, cw), want); err != nil {
+		return err
 	}
-	return nil
+	var extra [1]byte
+	if n, err := resp.Body.Read(extra[:]); n != 0 || err != io.EOF {
+		return fmt.Errorf("range response exceeds expected length")
+	}
+	return f.Close()
 }
 
 // countingWriter 聚合下载字节数并按节流频率回报进度，既可作为 io.Writer（TeeReader），
@@ -319,6 +358,10 @@ func archiveExt(url string) string {
 
 // verifyChecksum 计算文件 sha256 并与期望值（小写十六进制）比较。
 func verifyChecksum(path, expected string) error {
+	decoded, err := hex.DecodeString(expected)
+	if err != nil || len(decoded) != sha256.Size {
+		return fmt.Errorf("invalid SHA256 metadata")
+	}
 	f, err := os.Open(path)
 	if err != nil {
 		return err

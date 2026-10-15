@@ -3,6 +3,7 @@
 package core
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -32,11 +33,23 @@ func DefaultPaths() (Paths, error) {
 		}
 		root = filepath.Join(home, DirName)
 	}
-	p := Paths{Root: root}
-	if data, err := os.ReadFile(filepath.Join(root, "install-root")); err == nil {
+	abs, err := filepath.Abs(root)
+	if err != nil {
+		return Paths{}, err
+	}
+	p := Paths{Root: abs}
+	if data, err := os.ReadFile(filepath.Join(p.Root, "install-root")); err == nil {
 		if d := strings.TrimSpace(string(data)); d != "" {
+			if !filepath.IsAbs(d) {
+				d = filepath.Join(p.Root, d)
+			}
 			p.InstallsRoot = d
 		}
+	} else if !os.IsNotExist(err) {
+		return Paths{}, err
+	}
+	if err := p.ValidateInstallRoot(p.Installs()); err != nil {
+		return Paths{}, err
 	}
 	return p, nil
 }
@@ -74,9 +87,71 @@ func (p Paths) GlobalToolVersions() string { return filepath.Join(p.Root, ".tool
 
 // EnsureDirs 创建基础目录结构。
 func (p Paths) EnsureDirs() error {
-	for _, d := range []string{p.Root, p.Installs(), p.Shims(), p.Downloads()} {
-		if err := os.MkdirAll(d, 0o755); err != nil {
+	if err := p.ValidateInstallRoot(p.Installs()); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(p.Root, 0o755); err != nil {
+		return err
+	}
+	r, err := os.OpenRoot(p.Root)
+	if err != nil {
+		return err
+	}
+	defer r.Close()
+	for _, name := range []string{"shims", "downloads"} {
+		if err := r.Mkdir(name, 0o755); err != nil && !os.IsExist(err) {
 			return err
+		}
+		fi, err := r.Lstat(name)
+		if err != nil {
+			return err
+		}
+		if !fi.IsDir() || fi.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("%s must be an isolated directory, not a link", name)
+		}
+		if _, err := r.Readlink(name); err == nil {
+			return fmt.Errorf("%s cannot be a junction", name)
+		}
+	}
+	if pathWithin(p.Root, p.Installs()) {
+		rel, err := filepath.Rel(p.Root, p.Installs())
+		if err != nil {
+			return err
+		}
+		if err := r.MkdirAll(rel, 0o755); err != nil {
+			return err
+		}
+		fi, err := r.Lstat(rel)
+		if err != nil {
+			return err
+		}
+		if !fi.IsDir() || fi.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("install root cannot be a link")
+		}
+		if _, err := r.Readlink(rel); err == nil {
+			return fmt.Errorf("install root cannot be a junction")
+		}
+		return nil
+	}
+	return os.MkdirAll(p.Installs(), 0o755)
+}
+
+func (p Paths) ValidateInstallRoot(dir string) error {
+	abs, err := canonicalPath(dir)
+	if err != nil {
+		return err
+	}
+	root, err := canonicalPath(p.Root)
+	if err != nil {
+		return err
+	}
+	if filepath.Dir(abs) == abs || pathWithin(abs, root) {
+		return fmt.Errorf("install root must not be a filesystem root or contain VSM_HOME")
+	}
+	for _, name := range []string{"shims", "downloads", "plugins"} {
+		d := filepath.Join(root, name)
+		if pathWithin(d, abs) || pathWithin(abs, d) {
+			return fmt.Errorf("install root overlaps vsm %s directory", name)
 		}
 	}
 	return nil

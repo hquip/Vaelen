@@ -73,7 +73,7 @@ func TestProxyForRequest(t *testing.T) {
 	t.Setenv("HTTP_PROXY", "")
 	t.Setenv("HTTPS_PROXY", "")
 
-	req, _ := http.NewRequest(http.MethodGet, "http://example.com", nil)
+	req, _ := http.NewRequest(http.MethodGet, "https://example.com", nil)
 
 	// 显式 URL：走该代理
 	if err := writeProxyFile(dir, "http://127.0.0.1:7890"); err != nil {

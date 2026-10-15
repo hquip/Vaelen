@@ -113,6 +113,7 @@ body { display: flex; flex-direction: column; height: 100vh; }
 .logo { display: inline-flex; align-items: center; color: var(--accent); filter: drop-shadow(0 0 8px var(--logo-glow)); }
 .logo svg { display: block; }
 .brand-text h1 { font-size: 17px; letter-spacing: 1px; }
+.app-version { font-size: 11px; font-weight: 500; letter-spacing: 0; color: var(--muted); }
 .brand-text p { font-size: 11px; color: var(--muted); margin-top: 1px; }
 .topbar-right { display: flex; align-items: center; gap: 14px; }
 .stat { font-size: 12px; color: var(--muted); }
@@ -122,6 +123,7 @@ body { display: flex; flex-direction: column; height: 100vh; }
 
 .sidebar {
   flex: 0 0 240px;
+  min-width: 0;
   border-right: 1px solid var(--border);
   background: var(--bg-soft);
   display: flex;
@@ -360,3 +362,49 @@ button { cursor: pointer; font-family: inherit; border: none; border-radius: 8px
   .install-row { flex-direction: column; align-items: stretch; }
   .install-row #versionInput, .install-row #remoteSelect { width: 100%; }
 }
+
+/* ===== macOS 适配 =====
+   macOS 用「隐藏标题栏 + 内嵌红绿灯」（TitleBarHiddenInset），三个窗口按钮
+   会悬浮在窗口左上角 ~78px 宽的区域里。给顶栏左侧留出空间，并把整条顶栏
+   设为可拖拽区域（否则隐藏标题栏后窗口就拖不动了）。 */
+html.platform-darwin .topbar {
+  padding-left: 88px;
+  --wails-draggable: drag;
+}
+/* 顶栏里的可交互控件不能参与拖拽，否则点不动 */
+html.platform-darwin .topbar button,
+html.platform-darwin .topbar select,
+html.platform-darwin .topbar input {
+  --wails-draggable: no-drag;
+}
+/* macOS 系统字体优先，中文走苹方 */
+html.platform-darwin body {
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Hiragino Sans GB", sans-serif;
+}
+html.platform-darwin code,
+html.platform-darwin .foot-path,
+html.platform-darwin .sc-value,
+html.platform-darwin .tbadge {
+  font-family: "SF Mono", Menlo, Monaco, monospace;
+}
+
+/* 顶栏控件一律不折行：窄窗口（或 macOS 给红绿灯留位后）宁可收紧间距，
+   也不要把「代理」「刷新」拆成两行。 */
+.topbar { gap: 16px; min-width: 0; }
+.brand, .brand-text h1, .brand-text p, .stat { white-space: nowrap; }
+.topbar-right { flex-wrap: nowrap; min-width: 0; }
+.topbar-right .ghost-btn,
+.topbar-right .mirror-sel { white-space: nowrap; flex: 0 0 auto; }
+/* 中等宽度：收紧间距与内边距 */
+@media (max-width: 1100px) {
+  .topbar-right { gap: 8px; }
+  .topbar-right .ghost-btn { padding: 7px 10px; }
+}
+/* 更窄时：隐藏副标题与统计文字，把空间留给可操作的控件 */
+@media (max-width: 1000px) {
+  .brand-text p, .stat { display: none; }
+}
+
+/* 可点击的统计卡片（项目目录） */
+.stat-card.clickable { cursor: pointer; transition: border-color .12s; }
+.stat-card.clickable:hover { border-color: var(--accent); }
