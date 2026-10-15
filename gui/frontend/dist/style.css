@@ -122,6 +122,7 @@ body { display: flex; flex-direction: column; height: 100vh; }
 
 .sidebar {
   flex: 0 0 240px;
+  min-width: 0;
   border-right: 1px solid var(--border);
   background: var(--bg-soft);
   display: flex;
