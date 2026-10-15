@@ -47,13 +47,17 @@ func TestProjectEnvironmentSwitchAndInit(t *testing.T) {
 			t.Fatalf("wrong initialized project: %+v", p)
 		}
 		status, err := a.ProjectEnvironment()
-		if err != nil || status == nil || *status != *p {
+		if err != nil || status == nil || status.Schema != p.Schema || status.Mode != p.Mode || status.Image != p.Image {
 			t.Fatalf("status does not reflect initialization: %+v, %v", status, err)
+		}
+		statusRoot, err := core.ProjectDirectory(status.Root)
+		if err != nil || statusRoot != root {
+			t.Fatalf("status refers to another project: %q, want %q; %v", statusRoot, root, err)
 		}
 		if _, err := os.Stat(filepath.Join(dir, ".vsm", "project.json")); err != nil {
 			t.Fatal(err)
 		}
-		if mode == "local" && !samePath(a.GetInstallRoot(), filepath.Join(root, ".vsm", "env", "installs")) {
+		if mode == "local" && !samePath(a.GetInstallRoot(), filepath.Join(status.Root, ".vsm", "env", "installs")) {
 			t.Fatalf("GUI still uses the shared installation directory: %s", a.GetInstallRoot())
 		}
 	}
