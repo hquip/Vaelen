@@ -10,8 +10,10 @@
 > 下载源可按需在 manifest 中补充即变为可安装）。另支持 `~/.vsm/plugins/*.json` 无限扩展、
 > `vsm detect` 双路探测系统已装版本（PATH + 环境变量）、`vsm adopt` 一键纳管——不止管"自己装的"，更能接管机器上"已有的"。
 > 打通 `install / use / list / current / which / exec` 主流程。
+> 
 > 跨平台桌面 GUI（`gui/`，Wails v2；**Windows / macOS / Linux**）：语言列表与安装/卸载、系统版本检测与一键纳管、
 > 镜像切换、网络代理设置、安装进度条、当前目录 local 设置、一键写入用户级 PATH。
+> **macOS 版为 Universal 通用二进制**（Apple Silicon + Intel），隐藏式标题栏 + 原生菜单，内置 CLI，一个 `.app` 开箱即用。
 
 ## 设计要点
 
@@ -246,7 +248,7 @@ Add-Content $PROFILE 'vsm activate powershell | Out-String | Invoke-Expression'
 
 ## 许可证
 
-[MIT](LICENSE)
+[Apache 2.0](LICENSE)
 
 ## 路线图
 
