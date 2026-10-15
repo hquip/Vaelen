@@ -120,7 +120,7 @@ sudo ln -sf /Applications/VSM.app/Contents/MacOS/vsm /usr/local/bin/vsm
 自行打包（需在 Mac 上，产出与 Release 相同的通用版 zip）：
 
 ```bash
-bash scripts/package-macos.sh 1.0.3 dist
+bash scripts/package-macos.sh 1.0.4 dist
 ```
 
 > 打 `v*` tag 即可由 GitHub Actions 在 Windows / macOS / Linux 三个 runner 上分别本地编译，
@@ -157,9 +157,21 @@ bash scripts/package-macos.sh 1.0.3 dist
 | `vsm completion <shell>` | 输出 bash / zsh / fish / powershell 补全脚本 |
 | `vsm size [tool] [--json]` | 统计各版本占用的磁盘空间 |
 | `vsm clean` | 清理下载缓存（安装完成后的压缩包） |
+| `vsm help [command [subcommand]]` | 查看总览或指定命令的详细用法、选项与示例；支持命令别名 |
 
 `list` / `list-all` / `current` / `detect` / `doctor` / `size` / `clean` / `context` 均支持 `--json`，便于编辑器插件与 CI 集成。
 `vsm exec` 会**原样透传子进程退出码**，可直接用于 `vsm exec go test ./... && deploy` 这类脚本。
+
+查看单个命令的详细帮助：
+
+```bash
+vsm help install
+vsm install --help
+vsm help project init
+vsm help mcp config
+```
+
+`help` 支持别名，例如 `vsm help i` 等同于 `vsm help install`。未知命令或子命令会给出提示并返回非零退出码。帮助可在项目配置损坏时查看，不会初始化环境或执行安装。`vsm run -- node --help`、`vsm exec node --help` 仍将帮助参数交给对应工具。
 
 ## 快速上手
 
@@ -302,5 +314,6 @@ GUI 安装区提供「要求发布方 SHA256 校验」选项。Go、Node 从官�
 - **已完成（v1.0.1）**：`vsm doctor` 环境体检、`vsm shell` 会话级临时切换、shell 补全、`--json` 输出、`vsm size` / `vsm clean`、`vsm exec` 退出码透传、macOS 原生 GUI（Universal，内置 CLI）、`vsm path-init` 支持 macOS / Linux。
 - **已完成（v1.0.2）**：MCP stdio 服务与 7 个 AI 工具、每项目独立环境（`local` / `versions` / `docker`）、Python venv、GUI「隔离环境 / MCP」入口，并修复 Go 版本探测与项目版本约束。详见 [发布说明](docs/releases/v1.0.2.md)。
 - **已完成（v1.0.3）**：多 AI 客户端配置预设与只读模式、项目选择和使用引导、Docker 镜像工具视图，以及 Python venv、预发布版本选择和 MCP 安装超时修复。详见 [发布说明](docs/releases/v1.0.3.md)。
+- **已完成（v1.0.4）**：`help <command>` 详细帮助、嵌套子命令帮助、命令别名与 `-h` / `--help`，以及帮助主题的 shell 补全。详见 [发布说明](docs/releases/v1.0.4.md)。
 - **v1（待办）**：Lua 插件运行时（gopher-lua）外部扩展、`.zst` 解压。
 - **v2（待办）**：Bubble Tea TUI（`vsm ui`）、远程插件仓库。

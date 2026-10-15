@@ -69,10 +69,14 @@ func Run(args []string) int {
 		return 1
 	}
 	cmd, rest := args[0], args[1:]
+	cmd = canonicalCommand(cmd)
+	if cmd == "help" {
+		return printCommandHelp(rest)
+	}
+	if topic, requested := helpTopicForArgs(cmd, rest); requested {
+		return printCommandHelp(topic)
+	}
 	switch cmd {
-	case "help", "-h", "--help":
-		printUsage()
-		return 0
 	case "version", "-v", "--version":
 		fmt.Println("vsm " + buildinfo.DisplayVersion())
 		return 0
@@ -199,7 +203,7 @@ const usageText = `vsm - 多语言版本管理器 (%s)
   size      [tool]             统计各版本占用的磁盘空间
   clean                        清理下载缓存
   version                      显示版本
-  help                         显示帮助
+  help [command [subcommand]]  查看总览或指定命令的用法、选项与示例
 
   list / list-all / current / detect / doctor / size / clean / context 支持 --json 结构化输出
 
@@ -210,4 +214,6 @@ const usageText = `vsm - 多语言版本管理器 (%s)
   vsm use go 1.22.0
   vsm exec go version
   vsm activate powershell
+  vsm help install
+  vsm help project init
 `
