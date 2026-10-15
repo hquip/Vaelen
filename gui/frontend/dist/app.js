@@ -23,6 +23,7 @@ let projectMode = "";
 let projectEnvironment = null;
 let projectEnvBusy = false;
 let projectEnvFailed = false;
+let mcpClients = [];
 
 function projectEnvError(message) {
   const box = document.getElementById("projectEnvError");
@@ -45,7 +46,10 @@ function renderProjectEnvControls() {
   const init = document.getElementById("projectEnvInit");
   init.disabled = locked || !!projectEnvironment;
   init.textContent = projectEnvironment ? "环境已初始化" : "为此项目初始化环境";
-  document.getElementById("projectMCPGenerate").disabled = locked;
+  document.getElementById("projectMCPGenerate").disabled = locked || !mcpClients.length;
+  document.getElementById("projectMCPClient").disabled = projectEnvBusy || !mcpClients.length;
+  document.getElementById("projectMCPReadOnly").disabled = projectEnvBusy;
+  document.getElementById("projectMCPCopy").disabled = projectEnvBusy;
   document.getElementById("projectEnvTools").disabled = projectEnvBusy;
 }
 
@@ -60,6 +64,36 @@ function renderProjectEnvMode() {
   document.getElementById("projectEnvImageRow").classList.toggle("hidden", mode !== "docker");
   document.getElementById("projectEnvCommands").textContent = "vsm use go 1.25.11\nvsm run " +
     (mode === "local" ? "--install-missing " : "") + "-- go version";
+}
+
+function renderMCPClient() {
+  clearMCPConfig();
+  const client = mcpClients.find(item => item.id === document.getElementById("projectMCPClient").value);
+  if (!client) return;
+  document.getElementById("projectMCPLocation").textContent = client.location;
+  document.getElementById("projectMCPInstructions").textContent = client.instructions;
+  document.getElementById("projectMCPGenerate").textContent = "生成 " + client.format.toUpperCase() + " 配置";
+  document.getElementById("projectMCPConfig").setAttribute("aria-label", client.name + " MCP 配置");
+  document.getElementById("projectMCPToolsHint").textContent = document.getElementById("projectMCPReadOnly").checked
+    ? "只读连接提供 3 个查看工具。"
+    : "连接后提供 7 个工具，可读取要求、设置版本、安装工具和运行命令；安装与运行受项目隔离模式约束。";
+}
+
+async function loadMCPClients() {
+  if (mcpClients.length) return;
+  const clients = await call("MCPClients");
+  if (!Array.isArray(clients) || !clients.length) throw new Error("无法加载 AI 客户端预设，请使用新版 GUI");
+  mcpClients = clients;
+  const select = document.getElementById("projectMCPClient");
+  select.replaceChildren(...clients.map(client => {
+    const option = document.createElement("option");
+    option.value = client.id; option.textContent = client.name;
+    return option;
+  }));
+  let preferred = "cursor";
+  try { preferred = localStorage.getItem("vsm-mcp-client") || preferred; } catch (_) {}
+  select.value = clients.some(client => client.id === preferred) ? preferred : clients[0].id;
+  renderMCPClient();
 }
 
 async function projectEnvTask(action) {
@@ -108,7 +142,7 @@ async function refreshProjectEnvironment() {
 
 document.getElementById("projectEnvBtn").addEventListener("click", async () => {
   document.getElementById("projectEnvModal").classList.remove("hidden");
-  await projectEnvTask(refreshProjectEnvironment);
+  await projectEnvTask(async () => { await refreshProjectEnvironment(); await loadMCPClients(); });
 });
 document.getElementById("projectEnvPick").addEventListener("click", async () => {
   await projectEnvTask(async () => {
@@ -138,12 +172,21 @@ document.getElementById("projectEnvInit").addEventListener("click", async () => 
 document.getElementById("projectMCPGenerate").addEventListener("click", async () => {
   clearMCPConfig();
   await projectEnvTask(async () => {
-    const config = JSON.stringify(await call("MCPConfig"), null, 2);
-    const box = document.getElementById("projectMCPConfig"); box.value = config; box.classList.remove("hidden");
+    const client = document.getElementById("projectMCPClient").value;
+    const readOnly = document.getElementById("projectMCPReadOnly").checked;
+    const result = await call("MCPConfigForClient", client, readOnly);
+    if (!result || typeof result.content !== "string" || !result.content.trim()) throw new Error("未能生成客户端配置，请检查 CLI 后重试");
+    const box = document.getElementById("projectMCPConfig"); box.value = result.content; box.classList.remove("hidden");
     document.getElementById("projectMCPCopy").classList.remove("hidden");
     box.scrollIntoView({ block: "nearest" });
   });
 });
+document.getElementById("projectMCPClient").addEventListener("change", () => {
+  projectEnvError("");
+  renderMCPClient();
+  try { localStorage.setItem("vsm-mcp-client", document.getElementById("projectMCPClient").value); } catch (_) {}
+});
+document.getElementById("projectMCPReadOnly").addEventListener("change", renderMCPClient);
 document.getElementById("projectMCPCopy").addEventListener("click", async () => {
   const box = document.getElementById("projectMCPConfig");
   try { await navigator.clipboard.writeText(box.value); toast("MCP 配置已复制，请加入 AI 客户端的 MCP 设置"); }

@@ -127,7 +127,13 @@
       </section>
       <section class="project-section">
         <h4>3. 连接 AI（可选）</h4>
-        <p class="project-hint">生成配置，将其中的 <code>vsm</code> 项加入 AI 客户端的 MCP 设置，再重新连接。之后可让 AI「读取项目要求，使用对应版本运行测试」。</p>
+        <p class="project-hint">选择你使用的客户端，生成对应格式的配置。连接后可让 AI「读取项目要求，使用对应版本运行测试」。</p>
+        <label class="project-field-label" for="projectMCPClient">AI 客户端</label>
+        <select id="projectMCPClient" class="modal-input"><option value="">正在加载客户端…</option></select>
+        <label class="project-readonly"><input id="projectMCPReadOnly" type="checkbox" /> 只读模式：仅查看环境和版本</label>
+        <p class="project-hint">保存位置：<span id="projectMCPLocation">选择客户端后显示</span></p>
+        <p id="projectMCPInstructions" class="project-hint"></p>
+        <p id="projectMCPToolsHint" class="project-hint">支持本地 stdio MCP 的客户端可连接此服务。</p>
         <div class="project-action-row">
           <button id="projectMCPGenerate" class="ghost-btn">生成 MCP 配置</button>
           <button id="projectMCPCopy" class="ghost-btn hidden">复制配置</button>

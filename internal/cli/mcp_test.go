@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,6 +14,65 @@ import (
 	"testing"
 	"time"
 )
+
+func TestMCPClientConfigurationOutput(t *testing.T) {
+	bin := buildVsm(t)
+	project := t.TempDir()
+	global := t.TempDir()
+	for _, client := range []string{"generic", "cursor", "claude-desktop", "claude-code", "codex", "vscode", "windsurf"} {
+		cmd := exec.Command(bin, "mcp", "config", "--project", project, "--client", client, "--read-only")
+		cmd.Dir = project
+		cmd.Env = append(os.Environ(), "VSM_HOME="+global)
+		output, err := cmd.Output()
+		if err != nil {
+			t.Fatalf("%s: %v", client, err)
+		}
+		if client == "codex" {
+			if !bytes.HasPrefix(output, []byte("[mcp_servers.vsm]")) || !bytes.Contains(output, []byte("--read-only")) {
+				t.Fatalf("invalid Codex configuration: %s", output)
+			}
+		} else {
+			var config map[string]map[string]struct {
+				Command string   `json:"command"`
+				Args    []string `json:"args"`
+			}
+			if err := json.Unmarshal(output, &config); err != nil {
+				t.Fatal(err)
+			}
+			key := "mcpServers"
+			if client == "vscode" {
+				key = "servers"
+			}
+			server := config[key]["vsm"]
+			if len(server.Args) != 5 || server.Args[4] != "--read-only" {
+				t.Fatalf("invalid %s connection: %s", client, output)
+			}
+			for _, pair := range [][2]string{{server.Command, bin}, {server.Args[3], project}} {
+				actual, actualErr := os.Stat(pair[0])
+				expected, expectedErr := os.Stat(pair[1])
+				if actualErr != nil || expectedErr != nil || !os.SameFile(actual, expected) {
+					t.Fatalf("configuration points to another executable/project: %q / %q", pair[0], pair[1])
+				}
+			}
+		}
+	}
+	for _, args := range [][]string{
+		{"mcp", "config", "--project", project, "--client", "unknown"},
+		{"mcp", "config", "--project", project, "--client"},
+		{"mcp", "config", "--project", project, "--client", ""},
+		{"mcp", "serve", "--project", project, "--client", "cursor"},
+	} {
+		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+		err := exec.CommandContext(ctx, bin, args...).Run()
+		cancel()
+		if err == nil {
+			t.Fatalf("invalid client arguments were accepted: %v", args)
+		}
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			t.Fatalf("invalid client arguments started a server instead of being rejected: %v", args)
+		}
+	}
+}
 
 func TestMCPManagesOnlyItsBoundProject(t *testing.T) {
 	bin := buildVsm(t)

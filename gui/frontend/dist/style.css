@@ -366,6 +366,8 @@ button { cursor: pointer; font-family: inherit; border: none; border-radius: 8px
 .project-env-card select { font-family: inherit; }
 .project-env-card button:disabled { opacity: .5; cursor: default; }
 #projectMCPConfig { resize: vertical; min-height: 140px; }
+.project-readonly { display: flex; align-items: center; gap: 7px; font-size: 12px; margin-top: 10px; }
+#projectMCPLocation { user-select: text; -webkit-user-select: text; }
 
 ::-webkit-scrollbar { width: 9px; height: 9px; }
 ::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: 5px; }
