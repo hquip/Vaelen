@@ -146,7 +146,7 @@ bash scripts/package-macos.sh 1.1.0 dist
 | `vsm adopt [--all] <tool> [ver]` | 纳管系统已装版本（链接进 vsm，可 use/卸载，不动原目录） |
 | `vsm mirror [cn\|off]` | 设置下载镜像（cn 国内加速 go/node/github / off 关闭） |
 | `vsm proxy [url\|off\|system]` | 设置网络代理（http/https/socks5；off 强制直连 / system 跟随系统环境变量） |
-| `vsm path-init` | [Windows] 把 shims 写入用户级 PATH 并广播（新终端免改配置） |
+| `vsm path-init` | Windows 写入用户级 PATH 并广播；macOS / Linux 写入当前 shell 的启动配置 |
 | `vsm doctor [--json]` | 环境体检：shims 是否在 PATH、是否被同名命令抢占、PATH 重复、shim 残留、配置异常 |
 | `vsm shell <tool> <ver>` | 打开临时子 shell 使用某版本（不写任何配置，`exit` 即恢复） |
 | `vsm completion <shell>` | 输出 bash / zsh / fish / powershell 补全脚本 |
