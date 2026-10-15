@@ -29,7 +29,7 @@ func TestProjectsHaveIndependentInstallsAndRequirements(t *testing.T) {
 		if err := paths.EnsureDirs(); err != nil {
 			t.Fatal(err)
 		}
-		if !pathWithin(dir, paths.Installs()) {
+		if !pathWithin(p.Root, paths.Installs()) {
 			t.Fatal("install root is outside project")
 		}
 	}
