@@ -232,6 +232,24 @@ func TestUpdateSourceAndVersionBoundaries(t *testing.T) {
 	}
 }
 
+func TestAdjacentGUIFindsUnrenamedReleaseDownload(t *testing.T) {
+	dir := t.TempDir()
+	download := filepath.Join(dir, "vsm-gui-windows-amd64.exe")
+	if err := os.WriteFile(download, []byte("old"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if got := adjacentGUI(dir, "vsm-gui.exe", filepath.Base(download)); got != download {
+		t.Fatalf("old GUI would be left behind: %s", got)
+	}
+	canonical := filepath.Join(dir, "vsm-gui.exe")
+	if err := os.WriteFile(canonical, []byte("canonical"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if got := adjacentGUI(dir, "vsm-gui.exe", filepath.Base(download)); got != canonical {
+		t.Fatal("canonical GUI was ignored")
+	}
+}
+
 func TestChecksumManifestFallback(t *testing.T) {
 	data := []byte("verified payload")
 	digest := sha256.Sum256(data)

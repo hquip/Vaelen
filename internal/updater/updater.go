@@ -289,7 +289,11 @@ func (c Client) Apply(ctx context.Context, info Info, executable string, withGUI
 		cliName += ".exe"
 		guiName += ".exe"
 	}
-	if strings.HasPrefix(name, "vsm-gui") {
+	isGUI := strings.HasPrefix(name, "vsm-gui")
+	if bi, err := buildinfo.ReadFile(exe); err == nil && bi.Path == "vsm/gui" {
+		isGUI = true
+	}
+	if isGUI {
 		asset, err := guiAsset()
 		if err != nil {
 			return result, err
@@ -303,7 +307,7 @@ func (c Client) Apply(ctx context.Context, info Info, executable string, withGUI
 			if err != nil {
 				return result, err
 			}
-			items = append(items, replacement{Target: filepath.Join(parent, guiName), Asset: asset, Main: "vsm/gui"})
+			items = append(items, replacement{Target: adjacentGUI(parent, guiName, asset), Asset: asset, Main: "vsm/gui"})
 		}
 	}
 	for n := range items {
@@ -326,6 +330,18 @@ func (c Client) Apply(ctx context.Context, info Info, executable string, withGUI
 }
 
 type replacement struct{ Target, Staged, Asset, Main string }
+
+func adjacentGUI(parent, canonical, asset string) string {
+	// Preserve an unrenamed GitHub GUI download rather than leaving an outdated
+	// launcher next to a second, newly created executable.
+	for _, name := range []string{canonical, asset} {
+		candidate := filepath.Join(parent, name)
+		if _, err := os.Lstat(candidate); err == nil {
+			return candidate
+		}
+	}
+	return filepath.Join(parent, canonical)
+}
 
 func replaceFiles(version, stage string, items []replacement) (Result, error) {
 	result := Result{Version: version, RestartRequired: true}
