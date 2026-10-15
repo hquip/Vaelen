@@ -4,9 +4,38 @@ import (
 	"encoding/binary"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"syscall"
+	"unsafe"
 )
+
+var finalPathByHandle = syscall.NewLazyDLL("kernel32.dll").NewProc("GetFinalPathNameByHandleW")
+
+// EvalSymlinks may keep junction paths unchanged. Resolve the opened object's
+// physical path, including mount points, before comparing directory boundaries.
+func platformCanonicalExistingPath(name string) (string, error) {
+	f, err := os.Open(name)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	buf := make([]uint16, 32768)
+	n, _, callErr := finalPathByHandle.Call(f.Fd(), uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf)), 0)
+	if n == 0 {
+		return "", fmt.Errorf("resolve directory handle: %w", callErr)
+	}
+	if n >= uintptr(len(buf)) {
+		return "", fmt.Errorf("resolved Windows path exceeds limit")
+	}
+	path := syscall.UTF16ToString(buf[:n])
+	if strings.HasPrefix(path, `\\?\UNC\`) {
+		path = `\\` + strings.TrimPrefix(path, `\\?\UNC\`)
+	} else {
+		path = strings.TrimPrefix(path, `\\?\`)
+	}
+	return filepath.Clean(path), nil
+}
 
 // Create the junction using the Windows API, never cmd.exe. Shell metacharacters
 // and %VAR% sequences in legal paths must remain literal directory names.

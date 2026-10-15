@@ -106,7 +106,7 @@ func canonicalPath(name string) (string, error) {
 	}
 	var suffix []string
 	for cur := abs; ; cur = filepath.Dir(cur) {
-		real, err := filepath.EvalSymlinks(cur)
+		real, err := platformCanonicalExistingPath(cur)
 		if err == nil {
 			for i := len(suffix) - 1; i >= 0; i-- {
 				real = filepath.Join(real, suffix[i])

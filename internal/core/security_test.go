@@ -178,7 +178,9 @@ func TestInstallRootCannotAliasShims(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := p.ValidateInstallRoot(alias); err == nil {
-		t.Fatal("symlink alias bypassed installation isolation")
+		a, _ := canonicalPath(alias)
+		r, _ := canonicalPath(p.Root)
+		t.Fatalf("symlink alias bypassed installation isolation: alias=%q root=%q", a, r)
 	}
 }
 
