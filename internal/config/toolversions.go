@@ -44,7 +44,7 @@ func New() *ToolVersions {
 
 // Load 读取 .tool-versions；文件不存在时返回错误（调用方用 LoadOrNew 兜底）。
 func Load(path string) (*ToolVersions, error) {
-	f, err := os.Open(path)
+	f, err := os.OpenInRoot(filepath.Dir(path), filepath.Base(path))
 	if err != nil {
 		return nil, err
 	}

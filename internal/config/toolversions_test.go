@@ -258,6 +258,30 @@ func TestSetInPreservesFileOnReadFailure(t *testing.T) {
 	}
 }
 
+func TestVersionConfigCannotReadExternalSymlink(t *testing.T) {
+	outside := filepath.Join(t.TempDir(), "private")
+	if err := os.WriteFile(outside, []byte("sensitive-value"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), ".tool-versions")
+	if err := os.Symlink(outside, path); err != nil {
+		if runtime.GOOS == "windows" {
+			t.Skip("file symlink creation requires Windows developer mode")
+		}
+		t.Fatal(err)
+	}
+	if _, err := Load(path); err == nil {
+		t.Fatal("configuration followed an external symlink")
+	}
+	if err := SetIn(path, "go", "1.23.0"); err == nil {
+		t.Fatal("unsafe configuration link was accepted for writing")
+	}
+	data, err := os.ReadFile(outside)
+	if err != nil || string(data) != "sensitive-value" {
+		t.Fatal("external file was changed")
+	}
+}
+
 // TestSetInUnsetIn 便捷函数行为。
 func TestSetInUnsetIn(t *testing.T) {
 	dir := t.TempDir()

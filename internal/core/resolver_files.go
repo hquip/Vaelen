@@ -52,7 +52,7 @@ func projectVersion(tool, dir string) (spec, source string, ok bool) {
 func projectVersionChecked(tool, dir string) (spec, source string, err error) {
 	for _, src := range versionFileSources[tool] {
 		path := filepath.Join(dir, src.file)
-		f, err := os.Open(path)
+		f, err := os.OpenInRoot(dir, src.file)
 		if os.IsNotExist(err) {
 			continue
 		}
