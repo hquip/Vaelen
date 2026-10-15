@@ -182,6 +182,7 @@ const usageText = `vsm - 多语言版本管理器 (%s)
   project init [--mode local|versions|docker] [--image 镜像] 为项目初始化隔离环境
   project status [--json]      显示项目环境
   mcp [serve|config] --project <目录> [--read-only] MCP 服务或客户端配置
+      config --client <客户端>                 Cursor / Claude / Codex / VS Code / Windsurf 配置
   which     <tool>             打印当前版本主命令的完整路径
   exec      <tool> [--] [args] 在当前解析版本环境下执行命令
   reshim                       为已安装工具重新生成 shim

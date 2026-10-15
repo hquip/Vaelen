@@ -20,6 +20,7 @@ import (
 	"vsm/internal/buildinfo"
 	"vsm/internal/config"
 	"vsm/internal/core"
+	"vsm/internal/mcpconfig"
 	"vsm/internal/mcpserver"
 	"vsm/internal/netcfg"
 	"vsm/internal/plugin"
@@ -498,6 +499,31 @@ func (a *App) MCPConfig() (map[string]any, error) {
 	mcpserver.ConfigureProcess(cmd)
 	cmd.WaitDelay = time.Second
 	return mcpConfigFromCLI(cmd)
+}
+
+func (a *App) MCPClients() []mcpconfig.Client { return mcpconfig.Clients(runtime.GOOS) }
+
+func (a *App) MCPConfigForClient(client string, readOnly bool) (mcpconfig.Configuration, error) {
+	config, err := a.MCPConfig()
+	if err != nil {
+		return mcpconfig.Configuration{}, err
+	}
+	servers := config["mcpServers"].(map[string]any)
+	server := servers["vsm"].(map[string]any)
+	command := server["command"].(string)
+	rawArgs := server["args"].([]any)
+	args := make([]string, 0, len(rawArgs)+1)
+	for _, raw := range rawArgs {
+		arg, ok := raw.(string)
+		if !ok {
+			return mcpconfig.Configuration{}, fmt.Errorf("CLI 返回了无效的 MCP 参数，请更新 CLI 后重试")
+		}
+		args = append(args, arg)
+	}
+	if readOnly {
+		args = append(args, "--read-only")
+	}
+	return mcpconfig.Generate(client, runtime.GOOS, command, args)
 }
 
 // Ask the selected CLI for its configuration so an older executable cannot

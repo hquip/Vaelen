@@ -23,12 +23,38 @@ Windows 示例：
 
 把生成的内容加入支持此配置格式的 AI 客户端。GUI 的「隔离环境 / MCP」也可以生成并复制配置。使用 `--read-only` 启动时仅提供三个只读工具。
 
+## 多客户端接入
+
+GUI 提供 6 类客户端预设与通用预设，按客户端生成 JSON 或 TOML，并显示保存位置和连接步骤。所有连接均绑定所选项目；可选只读模式。生成配置不会修改任何 AI 客户端的设置。
+
+| `--client` | 客户端 | 格式与保存位置 |
+| --- | --- | --- |
+| `cursor` | Cursor | JSON，`mcpServers`；项目 `.cursor/mcp.json` |
+| `claude-desktop` | Claude Desktop | JSON，`mcpServers`；开发者设置中的 `claude_desktop_config.json` |
+| `claude-code` | Claude Code | JSON，`mcpServers`；项目 `.mcp.json` |
+| `codex` | Codex CLI / IDE / 桌面 | TOML，`[mcp_servers.vsm]`；项目 `.codex/config.toml`（受信任项目）或 `~/.codex/config.toml` |
+| `vscode` | VS Code / GitHub Copilot | VS Code 专用 JSON，`servers`；项目 `.vscode/mcp.json` |
+| `windsurf` | Windsurf / Cascade | JSON，`mcpServers`；使用客户端的 Open MCP config file 入口 |
+| `generic`（CLI 默认） | 接受通用格式的 stdio 客户端 | JSON，`mcpServers`；按客户端说明合并 |
+
+```bash
+vsm mcp config --project /path/to/app --client cursor
+vsm mcp config --project /path/to/app --client codex
+vsm mcp config --project /path/to/app --client vscode --read-only
+```
+
+将生成内容中的 `vsm` 项或 `[mcp_servers.vsm]` 段合并到现有配置，再重新连接客户端。已有同名项应更新，避免重复定义。默认提供 7 个工具；只读模式仅提供 `vsm_context`、`vsm_project_status` 和 `vsm_list`，不允许初始化、安装、切换版本或运行命令。
+
+Codex 预设将工具调用超时设置为 600 秒，以覆盖安装和测试；VSM 自身的请求超时仍然生效。VS Code 新版也支持项目根目录 `.mcp.json` 的便携 `mcpServers` 格式，可使用 `generic` / `claude-code` 输出；`vscode` 预设保留专用格式以兼容已有配置。Windsurf/Cascade 的配置路径随版本变化，以客户端打开的实际文件为准。
+
+预设依据官方文档：[Cursor](https://cursor.com/docs/mcp)、[Claude Desktop](https://modelcontextprotocol.io/docs/develop/connect-local-servers)、[Claude Code](https://code.claude.com/docs/en/mcp)、[Codex](https://developers.openai.com/codex/mcp)、[VS Code](https://code.visualstudio.com/docs/agents/reference/mcp-configuration)、[Windsurf / Cascade](https://docs.windsurf.com/windsurf/cascade/mcp)。本地预设面向支持 stdio 的客户端；仅接受远程 HTTP 服务的客户端需要相应的远程服务，当前 VSM 未提供该传输。
+
 ## 在 GUI 中使用
 
 1. 点击侧栏「隔离环境 / MCP」，在弹窗中点击「选择项目目录」或「更换项目目录」，选择代码所在的文件夹。选目录不会初始化环境。
 2. 选择环境模式，点击「为此项目初始化环境」。默认本地隔离会为项目准备独立工具目录和缓存；Docker 模式还需要填写包含所需工具的镜像。
 3. 初始化成功后，点击「去选择语言和版本」，从左侧选择语言、安装版本并「设为本目录」。在项目终端中通过 `vsm run -- <命令>` 使用该环境。
-4. 需要 AI 接入时，在同一弹窗点击「生成 MCP 配置」和「复制配置」，将 `mcpServers` 中的 `vsm` 项加入客户端已有 MCP 设置，重新连接后即可让 AI 读取项目要求并执行命令。生成配置本身不会自动修改客户端设置。
+4. 需要 AI 接入时，在同一弹窗选择客户端及是否只读，点击「生成 JSON / TOML 配置」和「复制配置」，按显示的保存位置与说明合并配置并重新连接，即可让 AI 读取项目要求并执行命令。
 
 Windows / Linux 用户需将对应平台的新版 CLI 重命名为 `vsm.exe` / `vsm`，放在 GUI 同目录，或确保它可通过 PATH 找到。macOS 应用已内置 CLI。GUI 会检查所选 CLI 能否生成 MCP 配置；旧版或缺失时会在弹窗中提示更换，不会生成无法连接的配置。
 

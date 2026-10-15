@@ -140,7 +140,7 @@ bash scripts/package-macos.sh 1.0.2 dist
 | `vsm run [--install-missing] -- <command> [args...]` | 自动采用项目版本执行命令；可补装缺失工具，补装必须校验 SHA256 |
 | `vsm project init [--mode local\|versions\|docker] [--image 镜像]` | 一个项目一个环境，默认本地隔离 |
 | `vsm project status [--json]` | 查看项目环境和隔离模式 |
-| `vsm mcp [serve\|config] --project <目录> [--read-only]` | MCP 服务或 AI 客户端配置，固定绑定项目 |
+| `vsm mcp [serve\|config] --project <目录> [--read-only]` | MCP 服务或 AI 客户端配置，固定绑定项目；`config --client <客户端>` 输出对应 JSON / TOML |
 | `vsm which <tool>` | 打印当前版本主命令的完整路径 |
 | `vsm exec <tool> [args...]` | 在当前解析版本环境下执行工具主命令 |
 | `vsm exec <tool> -- <cmd> [args...]` | 在该工具环境下执行任意命令（如 `npm`） |

@@ -17,6 +17,7 @@ import (
 	"time"
 	"vsm/internal/buildinfo"
 	"vsm/internal/core"
+	"vsm/internal/mcpconfig"
 	"vsm/internal/mcpserver"
 	"vsm/internal/plugin"
 )
@@ -29,6 +30,7 @@ func (a *app) cmdMCP(args []string) error {
 	}
 	project := ""
 	readOnly := false
+	client := ""
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--project":
@@ -39,8 +41,17 @@ func (a *app) cmdMCP(args []string) error {
 			i++
 		case "--read-only":
 			readOnly = true
+		case "--client":
+			if operation != "config" {
+				return fmt.Errorf("--client 仅用于 vsm mcp config")
+			}
+			if i+1 >= len(args) || args[i+1] == "" || strings.HasPrefix(args[i+1], "--") {
+				return fmt.Errorf("--client needs a client name")
+			}
+			client = args[i+1]
+			i++
 		default:
-			return fmt.Errorf("用法: vsm mcp [serve|config] --project <目录> [--read-only]")
+			return fmt.Errorf("用法: vsm mcp [serve|config] --project <目录> [--read-only]；config 可加 --client cursor|claude-desktop|claude-code|codex|vscode|windsurf|generic")
 		}
 	}
 	if project == "" {
@@ -59,7 +70,12 @@ func (a *app) cmdMCP(args []string) error {
 		if readOnly {
 			args = append(args, "--read-only")
 		}
-		return printJSON(map[string]any{"mcpServers": map[string]any{"vsm": map[string]any{"command": executable, "args": args}}})
+		config, err := mcpconfig.Generate(client, runtime.GOOS, executable, args)
+		if err != nil {
+			return err
+		}
+		_, err = fmt.Print(config.Content)
+		return err
 	}
 	server := mcpserver.Server{Version: buildinfo.Version, Tools: mcpTools(readOnly)}
 	server.Call = func(ctx context.Context, name string, raw json.RawMessage) (mcpserver.Result, error) {
