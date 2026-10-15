@@ -120,7 +120,7 @@ sudo ln -sf /Applications/VSM.app/Contents/MacOS/vsm /usr/local/bin/vsm
 自行打包（需在 Mac 上，产出与 Release 相同的通用版 zip）：
 
 ```bash
-bash scripts/package-macos.sh 1.0.1 dist
+bash scripts/package-macos.sh 1.0.2 dist
 ```
 
 > 打 `v*` tag 即可由 GitHub Actions 在 Windows / macOS / Linux 三个 runner 上分别本地编译，
@@ -138,6 +138,9 @@ bash scripts/package-macos.sh 1.0.1 dist
 | `vsm current` | 显示各工具当前生效版本及来源 |
 | `vsm context [--json] [--check]` | Agent/AI 只读版本上下文：项目要求、解析/已激活版本、冲突和建议命令 |
 | `vsm run [--install-missing] -- <command> [args...]` | 自动采用项目版本执行命令；可补装缺失工具，补装必须校验 SHA256 |
+| `vsm project init [--mode local\|versions\|docker] [--image 镜像]` | 一个项目一个环境，默认本地隔离 |
+| `vsm project status [--json]` | 查看项目环境和隔离模式 |
+| `vsm mcp [serve\|config] --project <目录> [--read-only]` | MCP 服务或 AI 客户端配置，固定绑定项目 |
 | `vsm which <tool>` | 打印当前版本主命令的完整路径 |
 | `vsm exec <tool> [args...]` | 在当前解析版本环境下执行工具主命令 |
 | `vsm exec <tool> -- <cmd> [args...]` | 在该工具环境下执行任意命令（如 `npm`） |
@@ -205,6 +208,13 @@ Add-Content $PROFILE 'vsm activate powershell | Out-String | Invoke-Expression'
 激活后，在配置了 `.tool-versions` 的目录里直接运行 `go` / `node`，会自动解析到对应版本。
 
 ## Agent / AI 与切换提示
+
+新增 MCP 与三种项目环境：见 [MCP 接入](docs/mcp.md) 和 [项目隔离](docs/project-environments.md)。GUI 的「隔离环境 / MCP」可初始化环境并生成配置。
+
+```bash
+vsm project init                     # 独立工具、缓存、Python venv
+vsm mcp config --project /path/to/app # 生成 MCP 客户端配置
+```
 
 执行 `vsm context --json` 获取项目要求、版本来源、解析版本、shell 已激活版本以及建议命令；该命令不安装工具、不修改项目和终端环境。
 AI 可直接执行 `vsm run -- go test ./...`、`vsm run -- node app.js`，自动选择项目声明的工具版本；`vsm run --install-missing -- go test ./...` 还会补装缺失工具。
@@ -290,5 +300,6 @@ GUI 安装区提供「要求发布方 SHA256 校验」选项。Go、Node 从官�
   - 核心单元测试 + GitHub Actions（CI 跨平台编译、打 tag 自动 release）。
   - GUI：系统检测面板与一键纳管、镜像切换、安装进度条、当前目录 local 设置。
 - **已完成（v1.0.1）**：`vsm doctor` 环境体检、`vsm shell` 会话级临时切换、shell 补全、`--json` 输出、`vsm size` / `vsm clean`、`vsm exec` 退出码透传、macOS 原生 GUI（Universal，内置 CLI）、`vsm path-init` 支持 macOS / Linux。
+- **已完成（v1.0.2）**：MCP stdio 服务与 7 个 AI 工具、每项目独立环境（`local` / `versions` / `docker`）、Python venv、GUI「隔离环境 / MCP」入口，并修复 Go 版本探测与项目版本约束。详见 [发布说明](docs/releases/v1.0.2.md)。
 - **v1（待办）**：Lua 插件运行时（gopher-lua）外部扩展、`.zst` 解压。
 - **v2（待办）**：Bubble Tea TUI（`vsm ui`）、远程插件仓库。

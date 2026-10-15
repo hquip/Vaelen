@@ -23,6 +23,9 @@ type ProgressFunc func(msg string)
 // 非空时装到 customDir/<tool>/<version> 并在 installs 下建 junction 链接过去
 // （这样既能自选磁盘位置，vsm 又能照常识别/切换/卸载）。
 func (in Installer) Install(p plugin.Plugin, version, customDir string, progress ProgressFunc) error {
+	if in.Paths.ProjectMode == "local" && customDir != "" && !pathWithin(in.Paths.ProjectRoot, customDir) {
+		return fmt.Errorf("项目隔离模式不允许安装到项目目录外")
+	}
 	if err := validateInstall(p.Name(), version); err != nil {
 		return err
 	}
@@ -43,6 +46,16 @@ func (in Installer) Install(p plugin.Plugin, version, customDir string, progress
 		return err
 	}
 	if installed {
+		usable := false
+		for _, name := range plugin.DetectCommands()[p.Name()] {
+			if findExecutable(p.BinPaths(dest), name) != "" {
+				usable = true
+				break
+			}
+		}
+		if !usable {
+			return fmt.Errorf("%s %s 安装不完整，缺少主命令；请先卸载该损坏版本后重新安装", p.Name(), version)
+		}
 		progress(fmt.Sprintf("%s %s 已安装，跳过", p.Name(), version))
 		return nil
 	}

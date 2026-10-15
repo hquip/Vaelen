@@ -113,7 +113,7 @@ func goModVer(s string) string {
 func pkgJSONNode(s string) string {
 	re := regexp.MustCompile(`"engines"\s*:\s*\{[^}]*?"node"\s*:\s*"([^"]+)"`)
 	if m := re.FindStringSubmatch(s); m != nil {
-		return verNumRe.FindString(m[1])
+		return strings.TrimSpace(m[1])
 	}
 	return ""
 }
@@ -121,7 +121,7 @@ func pkgJSONNode(s string) string {
 func pyRequires(s string) string {
 	re := regexp.MustCompile(`(?m)^\s*requires-python\s*=\s*["']([^"']+)["']`)
 	if m := re.FindStringSubmatch(s); m != nil {
-		return verNumRe.FindString(m[1])
+		return strings.TrimSpace(m[1])
 	}
 	return ""
 }

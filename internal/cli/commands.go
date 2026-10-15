@@ -15,6 +15,9 @@ import (
 )
 
 func (a *app) cmdInstall(args []string) error {
+	if a.paths.ProjectMode == "docker" {
+		return fmt.Errorf("Docker 项目的工具由镜像提供；请配置匹配镜像后用 vsm run 执行")
+	}
 	var rest []string
 	customDir := ""
 	requireChecksum := false
@@ -76,6 +79,9 @@ func (a *app) cmdInstall(args []string) error {
 }
 
 func (a *app) cmdInstallRoot(args []string) error {
+	if a.paths.ProjectMode == "local" && len(args) > 0 {
+		return fmt.Errorf("项目环境固定使用 .vsm/env/installs，不修改全局安装根目录")
+	}
 	path := a.paths.InstallRootFile()
 	if len(args) == 0 {
 		fmt.Println("当前安装根目录:", a.paths.Installs())
@@ -170,6 +176,9 @@ func (a *app) cmdUse(args []string) error {
 
 	var target string
 	if global {
+		if a.paths.ProjectMode == "local" {
+			return fmt.Errorf("隔离项目请用 vsm use 设置项目版本，不使用 --global")
+		}
 		if err := a.paths.EnsureDirs(); err != nil {
 			return err
 		}
@@ -399,6 +408,9 @@ func (a *app) cmdEnv(args []string) error {
 //   - macOS / Linux：把 `eval "$(vsm activate <shell>)"` 写入 shell 配置文件
 //     （此前这里直接报错，macOS 用户只能手动改 ~/.zshrc）。
 func (a *app) cmdPathInit(args []string) error {
+	if a.paths.ProjectMode == "local" || a.paths.ProjectMode == "docker" {
+		return fmt.Errorf("隔离项目使用 vsm run 或现有 shell hook，不把项目目录持久写入系统 PATH")
+	}
 	if err := a.paths.EnsureDirs(); err != nil {
 		return err
 	}
@@ -460,6 +472,9 @@ func (a *app) cmdDetect(args []string) error {
 			ver = "?"
 		}
 		fmt.Printf("  %-8s %-14s %s\n", s.Tool, ver, s.Path)
+		if s.VersionError != "" {
+			fmt.Printf("    版本读取失败: %s\n", s.VersionError)
+		}
 	}
 	if env := core.DetectEnvVars(); len(env) > 0 {
 		fmt.Println("\n相关环境变量:")

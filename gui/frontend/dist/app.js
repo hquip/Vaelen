@@ -19,6 +19,48 @@ let selected = null;
 let sysCache = {};
 let curDir = "";
 let installDir = "";
+let projectMode = "";
+
+document.getElementById("projectEnvBtn").addEventListener("click", async () => {
+  try {
+    if (!curDir) { await call("PickProjectDir"); await loadCurrentDir(); }
+    if (!curDir) return;
+    const env = await call("ProjectEnvironment");
+    const mode = document.getElementById("projectEnvMode");
+    mode.value = env ? env.mode : "local";
+    mode.disabled = !!env;
+    document.getElementById("projectEnvImage").value = env ? env.image || "" : "";
+    document.getElementById("projectEnvImage").disabled = !!env;
+    document.getElementById("projectEnvInit").disabled = !!env;
+    document.getElementById("projectEnvStatus").textContent = curDir + (env ? " · 已启用 " + env.mode : " · 尚未初始化");
+    document.getElementById("projectEnvImage").classList.toggle("hidden", mode.value !== "docker");
+    document.getElementById("projectMCPConfig").classList.add("hidden");
+    document.getElementById("projectEnvModal").classList.remove("hidden");
+  } catch (e) { toast(errMsg(e), true); }
+});
+document.getElementById("projectEnvMode").addEventListener("change", e => {
+  document.getElementById("projectEnvImage").classList.toggle("hidden", e.target.value !== "docker");
+});
+document.getElementById("projectEnvClose").addEventListener("click", () => document.getElementById("projectEnvModal").classList.add("hidden"));
+document.getElementById("projectEnvInit").addEventListener("click", async () => {
+  const button = document.getElementById("projectEnvInit"); button.disabled = true;
+  try {
+    const mode = document.getElementById("projectEnvMode").value;
+    const image = mode === "docker" ? document.getElementById("projectEnvImage").value.trim() : "";
+    await call("InitProjectEnvironment", mode, image);
+    document.getElementById("projectEnvModal").classList.add("hidden");
+    await loadCurrentDir(); await load(); await loadDataDir(); await loadInstallRoot();
+    toast("项目环境已初始化：" + mode);
+  } catch (e) { button.disabled = false; toast(errMsg(e), true); }
+});
+document.getElementById("projectMCPCopy").addEventListener("click", async () => {
+  try {
+    const config = JSON.stringify(await call("MCPConfig"), null, 2);
+    const box = document.getElementById("projectMCPConfig"); box.value = config; box.classList.remove("hidden");
+    try { await navigator.clipboard.writeText(config); toast("MCP 配置已复制"); }
+    catch (_) { box.focus(); box.select(); toast("配置已生成，可复制到 AI 客户端"); }
+  } catch (e) { toast(errMsg(e), true); }
+});
 
 // ====== 语言图标 & 规范显示名 ======
 // 仅需特殊大小写 / 符号的显示名在此覆盖，其余按首字母大写兜底。
@@ -234,7 +276,9 @@ function renderDetail(tool) {
       </div>
     </div>`;
 
-  const hint = installedCount
+  const hint = projectMode === "local" || projectMode === "docker"
+    ? `<p class="act-hint">项目隔离模式：在项目目录使用 <code>vsm run -- &lt;命令&gt;</code>，不会修改系统 PATH。可在「隔离环境 / MCP」生成 AI 客户端配置。</p>`
+    : installedCount
     ? `<p class="act-hint">💡 终端里让 <code>${escapeHtml(tool)}</code> 用 vsm 选的版本需先激活：点顶部「⚡ 激活PATH」，或终端运行 <code>vsm activate &lt;shell&gt;</code>。快速验证：<code>vsm exec ${escapeHtml(tool)} -- ${escapeHtml(tool)} --version</code></p>`
     : "";
 
@@ -249,7 +293,7 @@ function renderDetail(tool) {
         <span class="vname">${escapeHtml(v)}</span>
         <span class="vactions">
           <button class="mini" data-act="local" data-ver="${escapeHtml(v)}">设为本目录</button>
-          <button class="mini" data-act="global" data-ver="${escapeHtml(v)}">设为全局</button>
+          ${projectMode === "local" || projectMode === "docker" ? "" : `<button class="mini" data-act="global" data-ver="${escapeHtml(v)}">设为全局</button>`}
           <button class="mini danger" data-act="uninstall" data-ver="${escapeHtml(v)}">卸载</button>
         </span>
       </li>`
@@ -342,6 +386,8 @@ function isInstalledVersion(tool, ver) {
 }
 
 function sysRow(tool, v) {
+  const versionLabel = v.version || "版本读取失败";
+  const versionHint = v.version_error || (v.version ? "" : "已找到可执行文件，但未能读取版本；请检查安装后重新检测。");
   const action = !v.version
     ? ""
     : isInstalledVersion(tool, v.version)
@@ -349,7 +395,7 @@ function sysRow(tool, v) {
       : `<button class="mini" data-tool="${escapeHtml(tool)}" data-adopt="${escapeHtml(v.version)}" data-path="${escapeHtml(v.path)}">纳管</button>`;
   return `
       <li class="ver">
-        <span class="vname">${escapeHtml(v.version || "?")}</span>
+        <span class="vname" title="${escapeHtml(versionHint)}">${escapeHtml(versionLabel)}</span>
         <span class="sys-right">
           <span class="sys-path" title="${escapeHtml(v.path)}">${escapeHtml(v.path)}</span>
           ${action}
@@ -528,8 +574,10 @@ async function pickProjectDir(tool) {
     const d = await call("PickProjectDir");
     if (!d) return false;
     curDir = d;
+    await loadCurrentDir();
     toast("项目目录已设为 " + d);
     await load();
+    await loadDataDir(); await loadInstallRoot();
     if (tool && selected === tool) renderDetail(tool);
     return true;
   } catch (e) {
@@ -696,6 +744,8 @@ async function loadDataDir() {
 async function loadCurrentDir() {
   try {
     curDir = (await call("CurrentDir")) || "";
+    const env = curDir ? await call("ProjectEnvironment") : null;
+    projectMode = env ? env.mode : "";
   } catch (e) {
     curDir = "";
   }

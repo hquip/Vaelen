@@ -34,6 +34,10 @@ type contextTool struct {
 }
 
 func (a *app) cmdContext(args []string) error {
+	project, projectErr := core.FindProject(a.cwd)
+	if projectErr != nil {
+		return projectErr
+	}
 	rest, asJSON := jsonFlag(args)
 	check := false
 	for _, arg := range rest {
@@ -63,6 +67,9 @@ func (a *app) cmdContext(args []string) error {
 		}
 		if item.Error != "" {
 			item.State = "error"
+		} else if project != nil && project.Mode == "docker" {
+			item.State = "container_unverified"
+			item.Suggestions = append(item.Suggestions, suggestedCommand{"vsm", []string{"run", "--", tool, "<args>"}, "在项目 Docker 镜像中验证版本并执行"})
 		} else if r.Version == "" {
 			item.State = "missing_version"
 			item.Suggestions = append(item.Suggestions, suggestedCommand{"vsm", []string{"install", tool, r.Spec, "--require-checksum"}, "安装项目要求的版本，并要求发布方校验值"})
@@ -108,7 +115,7 @@ func (a *app) cmdContext(args []string) error {
 		status = "attention_required"
 	}
 	if asJSON {
-		if err := printJSON(map[string]any{"schema_version": 1, "vsm_version": buildinfo.Version, "directory": a.cwd, "status": status, "tools": items, "read_only": true}); err != nil {
+		if err := printJSON(map[string]any{"schema_version": 1, "vsm_version": buildinfo.Version, "directory": a.cwd, "status": status, "tools": items, "read_only": true, "project": project}); err != nil {
 			return err
 		}
 	} else {

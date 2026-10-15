@@ -36,6 +36,15 @@ func newApp() (*app, error) {
 	if err != nil {
 		return nil, fmt.Errorf("无法获取当前目录: %w", err)
 	}
+	paths, err = core.PathsForDirectory(paths, cwd)
+	if err != nil {
+		return nil, err
+	}
+	if expected := os.Getenv("VSM_MCP_EXPECT_MODE"); expected != "" && paths.ProjectMode != expected {
+		return nil, fmt.Errorf("project isolation mode changed during MCP operation; retry after checking project status")
+	}
+	reg = core.Registry{Paths: paths}
+	res = core.Resolver{Paths: paths, Registry: reg}
 	// 可执行文件路径用于生成 shim；拿不到时退回 PATH 查找（见 shimTarget）。
 	exe, _ := os.Executable()
 	return &app{
@@ -93,6 +102,10 @@ func Run(args []string) int {
 		runErr = a.cmdContext(rest)
 	case "run":
 		runErr = a.cmdRun(rest)
+	case "project":
+		runErr = a.cmdProject(rest)
+	case "mcp":
+		runErr = a.cmdMCP(rest)
 	case "which":
 		runErr = a.cmdWhich(rest)
 	case "exec", "x":
@@ -166,6 +179,9 @@ const usageText = `vsm - 多语言版本管理器 (%s)
   current                      显示各工具当前生效的版本及来源
   context [--json] [--check]    向 Agent/AI 报告项目要求、当前版本与建议命令（只读）
   run [--install-missing] -- <command> [args] 按项目版本自动执行（补装必须校验 SHA256）
+  project init [--mode local|versions|docker] [--image 镜像] 为项目初始化隔离环境
+  project status [--json]      显示项目环境
+  mcp [serve|config] --project <目录> [--read-only] MCP 服务或客户端配置
   which     <tool>             打印当前版本主命令的完整路径
   exec      <tool> [--] [args] 在当前解析版本环境下执行命令
   reshim                       为已安装工具重新生成 shim

@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,10 +14,11 @@ import (
 
 // SystemVersion 描述在系统中（非 vsm 管理）发现的某个语言运行时。
 type SystemVersion struct {
-	Tool    string `json:"tool"`
-	Command string `json:"command"`
-	Path    string `json:"path"`
-	Version string `json:"version"`
+	Tool         string `json:"tool"`
+	Command      string `json:"command"`
+	Path         string `json:"path"`
+	Version      string `json:"version"`
+	VersionError string `json:"version_error,omitempty"`
 }
 
 var versionRe = regexp.MustCompile(`\d+(\.\d+)+`)
@@ -60,7 +62,7 @@ func DetectSystem(commands map[string][]string, excludeDir string) []SystemVersi
 					if seenBin[real] {
 						continue
 					}
-					ver := probeVersion(full)
+					ver, probeErr := probeVersion(tool, full)
 					if ver != "" {
 						key := tool + "@" + ver
 						if seenKey[key] {
@@ -69,7 +71,11 @@ func DetectSystem(commands map[string][]string, excludeDir string) []SystemVersi
 						seenKey[key] = true
 					}
 					seenBin[real] = true
-					out = append(out, SystemVersion{Tool: tool, Command: name + ext, Path: full, Version: ver})
+					sv := SystemVersion{Tool: tool, Command: name + ext, Path: full, Version: ver}
+					if probeErr != nil {
+						sv.VersionError = probeErr.Error()
+					}
+					out = append(out, sv)
 				}
 			}
 		}
@@ -140,7 +146,12 @@ func detectFromEnv() []SystemVersion {
 		if found == "" {
 			continue
 		}
-		out = append(out, SystemVersion{Tool: h.Tool, Command: filepath.Base(found), Path: found, Version: probeVersion(found)})
+		ver, err := probeVersion(h.Tool, found)
+		sv := SystemVersion{Tool: h.Tool, Command: filepath.Base(found), Path: found, Version: ver}
+		if err != nil {
+			sv.VersionError = err.Error()
+		}
+		out = append(out, sv)
 	}
 	return out
 }
@@ -190,18 +201,29 @@ func normDir(p string) string {
 
 // probeVersion 用给定可执行文件依次尝试常见版本子命令，返回首个匹配到的版本号。
 // 覆盖三类约定：`--version`（多数）、`version`（go/zig 等子命令式）、`-version`（java）。
-func probeVersion(bin string) string {
+func probeVersion(tool, bin string) (string, error) {
+	if tool == "go" {
+		return probeGoVersion(bin)
+	}
+	var lastErr error
 	for _, args := range [][]string{{"--version"}, {"version"}, {"-version"}} {
 		ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
 		c := exec.CommandContext(ctx, bin, args...)
 		hideConsole(c)
-		out, _ := c.CombinedOutput()
+		out, err := c.CombinedOutput()
 		cancel()
+		if err != nil {
+			lastErr = fmt.Errorf("%s: %w", args[0], err)
+			continue
+		}
 		if m := versionRe.FindString(string(out)); m != "" {
-			return m
+			return m, nil
 		}
 	}
-	return ""
+	if lastErr != nil {
+		return "", lastErr
+	}
+	return "", fmt.Errorf("版本命令未返回可识别的版本号")
 }
 
 // DetectEnvVars 返回与语言相关、当前已设置的环境变量（用于诊断已有安装）。

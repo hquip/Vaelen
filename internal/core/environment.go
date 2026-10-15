@@ -34,6 +34,18 @@ func (a Activator) PlanProjectEnvironment(startDir string) (EnvironmentPlan, err
 
 func (a Activator) planEnvironment(startDir string, preferProject bool) (EnvironmentPlan, error) {
 	plan := EnvironmentPlan{Variables: map[string]string{}}
+	project, err := FindProject(startDir)
+	if err != nil {
+		return plan, err
+	}
+	if project != nil && project.Mode == "docker" {
+		return plan, fmt.Errorf("Docker 项目使用 vsm run 在容器中执行，不能激活宿主机工具链")
+	}
+	if project != nil {
+		for k, v := range project.Variables() {
+			plan.Variables[k] = v
+		}
+	}
 	seen := map[string]bool{}
 	for _, tool := range plugin.Names() {
 		p, _ := plugin.Get(tool)
@@ -83,6 +95,17 @@ func (a Activator) planEnvironment(startDir string, preferProject bool) (Environ
 			plan.Variables[k] = v
 		}
 		plan.Versions = append(plan.Versions, r)
+		if project != nil && project.Mode == "local" && tool == "python" {
+			venv := project.PythonVenv(r.Version)
+			if fileExists(filepath.Join(venv, "pyvenv.cfg")) {
+				bin := "bin"
+				if os.PathSeparator == '\\' {
+					bin = "Scripts"
+				}
+				plan.Paths = append([]string{filepath.Join(venv, bin)}, plan.Paths...)
+				plan.Variables["VIRTUAL_ENV"] = venv
+			}
+		}
 	}
 	return plan, nil
 }

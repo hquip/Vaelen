@@ -14,7 +14,9 @@ const DirName = ".vsm"
 
 // Paths 描述 VSM 的磁盘布局，所有版本互相隔离地存放在 installs/<tool>/<version>。
 type Paths struct {
-	Root string
+	Root        string
+	ProjectRoot string
+	ProjectMode string
 	// InstallsRoot 可选：自定义“全局安装根目录”（默认 Root/installs）。改它即可把所有版本
 	// 装到别的磁盘/目录（如 D:\vsm-installs 省 C 盘空间）。
 	InstallsRoot string

@@ -1,10 +1,13 @@
 package core
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"vsm/internal/plugin"
 )
@@ -12,6 +15,16 @@ import (
 // RunProject selects the complete project toolchain for one child process.
 // No shell command string is evaluated and the parent/project config is unchanged.
 func (a Activator) RunProject(dir, command string, args []string) error {
+	project, err := FindProject(dir)
+	if err != nil {
+		return err
+	}
+	if project != nil && project.Mode == "docker" {
+		return project.RunDocker(context.Background(), dir, command, args)
+	}
+	if err := a.PrepareProject(context.Background(), dir); err != nil {
+		return err
+	}
 	plan, err := a.PlanProjectEnvironment(dir)
 	if err != nil {
 		return err
@@ -20,11 +33,51 @@ func (a Activator) RunProject(dir, command string, args []string) error {
 		return fmt.Errorf("run requires a command name (for example go, node or python): %w", err)
 	}
 	program := findExecutable(plan.Paths, command)
+	identity := command
+	if runtime.GOOS == "windows" {
+		identity = strings.ToLower(identity)
+		switch filepath.Ext(identity) {
+		case ".exe", ".cmd", ".bat":
+			identity = strings.TrimSuffix(identity, filepath.Ext(identity))
+		}
+	}
+	matchesCommand := func(name string) bool {
+		if runtime.GOOS == "windows" {
+			return identity == strings.ToLower(name)
+		}
+		return command == name
+	}
+	if project != nil && project.Mode == "local" {
+		for tool, names := range plugin.DetectCommands() {
+			for _, name := range names {
+				if matchesCommand(name) {
+					configured := false
+					for _, r := range plan.Versions {
+						if r.Tool == tool {
+							configured = true
+							break
+						}
+					}
+					if !configured {
+						return fmt.Errorf("项目未配置 %s；先执行 vsm use %s <版本> 并在项目环境中安装", tool, tool)
+					}
+				}
+			}
+		}
+	}
 	for _, r := range plan.Versions {
 		for _, name := range plugin.DetectCommands()[r.Tool] {
-			if command == name {
+			if matchesCommand(name) {
 				p, _ := plugin.Get(r.Tool)
-				program = findExecutable(p.BinPaths(a.Paths.InstallDir(r.Tool, r.Version)), command)
+				dirs := p.BinPaths(a.Paths.InstallDir(r.Tool, r.Version))
+				if project != nil && project.Mode == "local" && r.Tool == "python" {
+					bin := "bin"
+					if os.PathSeparator == '\\' {
+						bin = "Scripts"
+					}
+					dirs = append([]string{project.PythonVenv(r.Version) + string(os.PathSeparator) + bin}, dirs...)
+				}
+				program = findExecutable(dirs, command)
 				if program == "" {
 					return fmt.Errorf("%s %s is missing executable %s; refusing system fallback", r.Tool, r.Version, command)
 				}
