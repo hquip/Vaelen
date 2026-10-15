@@ -342,6 +342,8 @@ function isInstalledVersion(tool, ver) {
 }
 
 function sysRow(tool, v) {
+  const versionLabel = v.version || "版本读取失败";
+  const versionHint = v.version_error || (v.version ? "" : "已找到可执行文件，但未能读取版本；请检查安装后重新检测。");
   const action = !v.version
     ? ""
     : isInstalledVersion(tool, v.version)
@@ -349,7 +351,7 @@ function sysRow(tool, v) {
       : `<button class="mini" data-tool="${escapeHtml(tool)}" data-adopt="${escapeHtml(v.version)}" data-path="${escapeHtml(v.path)}">纳管</button>`;
   return `
       <li class="ver">
-        <span class="vname">${escapeHtml(v.version || "?")}</span>
+        <span class="vname" title="${escapeHtml(versionHint)}">${escapeHtml(versionLabel)}</span>
         <span class="sys-right">
           <span class="sys-path" title="${escapeHtml(v.path)}">${escapeHtml(v.path)}</span>
           ${action}

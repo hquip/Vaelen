@@ -460,6 +460,9 @@ func (a *app) cmdDetect(args []string) error {
 			ver = "?"
 		}
 		fmt.Printf("  %-8s %-14s %s\n", s.Tool, ver, s.Path)
+		if s.VersionError != "" {
+			fmt.Printf("    版本读取失败: %s\n", s.VersionError)
+		}
 	}
 	if env := core.DetectEnvVars(); len(env) > 0 {
 		fmt.Println("\n相关环境变量:")
