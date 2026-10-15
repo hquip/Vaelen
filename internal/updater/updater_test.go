@@ -104,8 +104,19 @@ func TestMacOSWholeBundleUpdate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(result.Updated) != 1 || result.Updated[0] != currentApp || len(result.Backups) != 1 {
+	if len(result.Updated) != 1 || len(result.Backups) != 1 {
 		t.Fatalf("not a whole-bundle update: %+v", result)
+	}
+	actual, err := os.Stat(result.Updated[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected, err := os.Stat(currentApp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !os.SameFile(actual, expected) {
+		t.Fatalf("updated another bundle: %+v", result)
 	}
 	if out, err := exec.Command("/usr/bin/codesign", "--verify", "--deep", "--strict", currentApp).CombinedOutput(); err != nil {
 		t.Fatalf("updated signature: %v %s", err, out)
