@@ -88,6 +88,8 @@ func mcpTools(readOnly bool) []mcpserver.Tool {
 	field := func(description string) map[string]any {
 		return map[string]any{"type": "string", "description": description}
 	}
+	timeoutField := map[string]any{"type": "integer", "minimum": 1, "maximum": 600}
+	installTimeoutField := map[string]any{"type": "integer", "minimum": 1, "maximum": 600, "default": 600}
 	makeTool := func(name, description string, properties map[string]any, required []string, read bool) mcpserver.Tool {
 		if required == nil {
 			required = []string{}
@@ -105,8 +107,8 @@ func mcpTools(readOnly bool) []mcpserver.Tool {
 	return append(tools,
 		makeTool("vsm_project_init", "Initialize one environment for the bound project. local is the default; docker needs an explicit image.", map[string]any{"mode": map[string]any{"type": "string", "enum": []string{"local", "versions", "docker"}}, "image": field("Docker image containing the required toolchains")}, nil, false),
 		makeTool("vsm_use", "Set a concrete version or numeric prefix in the bound project's .tool-versions. Does not change system settings.", map[string]any{"tool": field("Registered language/tool name"), "version": field("Concrete version, numeric prefix or latest")}, []string{"tool", "version"}, false),
-		makeTool("vsm_install", "Install a verified tool version in a local project environment. Publisher SHA256 is required.", map[string]any{"tool": field("Registered tool name"), "version": field("Version or latest")}, []string{"tool"}, false),
-		makeTool("vsm_run", "Execute a command using this project's toolchains. This runs project code and can modify project files. Local mode is an environment boundary, not an OS sandbox.", map[string]any{"command": field("Command name, e.g. go, node or python"), "args": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}, "install_missing": map[string]any{"type": "boolean"}, "timeout_seconds": map[string]any{"type": "integer", "minimum": 1, "maximum": 600}}, []string{"command"}, false),
+		makeTool("vsm_install", "Install a verified tool version in a local project environment. Publisher SHA256 is required. timeout_seconds: 1..600; default 600.", map[string]any{"tool": field("Registered tool name"), "version": field("Version or latest"), "timeout_seconds": installTimeoutField}, []string{"tool"}, false),
+		makeTool("vsm_run", "Execute a command using this project's toolchains. This runs project code and can modify project files. Local mode is an environment boundary, not an OS sandbox.", map[string]any{"command": field("Command name, e.g. go, node or python"), "args": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}, "install_missing": map[string]any{"type": "boolean"}, "timeout_seconds": timeoutField}, []string{"command"}, false),
 	)
 }
 
@@ -147,7 +149,10 @@ func mcpCall(ctx context.Context, executable, root, name string, raw json.RawMes
 		return mcpserver.Result{}, fmt.Errorf("arguments must be an object")
 	}
 	timeout := 120
-	if params.Timeout != 0 {
+	if name == "vsm_install" {
+		timeout = 600
+	}
+	if _, explicit := supplied["timeout_seconds"]; explicit {
 		timeout = params.Timeout
 	}
 	if timeout < 1 || timeout > 600 {

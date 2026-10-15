@@ -67,7 +67,7 @@ Windows / Linux 用户需将对应平台的新版 CLI 重命名为 `vsm.exe` / `
 | `vsm_list` | 查看当前项目作用域内已安装版本 |
 | `vsm_project_init` | 初始化 `local`、`versions` 或 `docker` 环境，默认 `local` |
 | `vsm_use` | 写入绑定项目的 `.tool-versions`，只接受具体版本、数字前缀或 `latest` |
-| `vsm_install` | 在 `local` 项目中安装工具，强制校验发布方 SHA256 |
+| `vsm_install` | 在 `local` 项目中安装工具，强制校验发布方 SHA256；`timeout_seconds` 为 1–600 秒，默认 600 秒 |
 | `vsm_run` | 在项目环境运行命令，可指定参数、补装和 1–600 秒超时 |
 
 建议 AI 的工作顺序：读取 `context` → 确认/初始化隔离模式 → 设置项目版本 → 安装缺失工具 → 执行 `run`。`versions` 模式不会通过 MCP 向共享安装目录自动安装工具。
@@ -87,6 +87,14 @@ Windows / Linux 用户需将对应平台的新版 CLI 重命名为 `vsm.exe` / `
 ```
 
 工具结果同时提供文本和结构化数据，包含退出码、stdout、stderr、项目路径及截断标记。命令失败通过 `isError` 呈现；工具输出不会污染 MCP 协议。
+
+安装超时示例：
+
+```json
+{"name":"vsm_install","arguments":{"tool":"go","version":"1.25.11","timeout_seconds":600}}
+```
+
+`vsm_run` 默认 120 秒，安装默认 600 秒，两者都可指定 1–600 秒的 `timeout_seconds`；显式的 0、null 或超出范围值会报错。客户端自己的调用超时也需要足够长；调整 VSM 参数不会改变客户端限制。
 
 ## 边界
 

@@ -15,6 +15,14 @@ func (p Project) PythonVenv(version string) string {
 	return filepath.Join(p.Root, ".vsm", "env", "venvs", "python-"+version)
 }
 
+func (p Project) pythonVenvBin(version string) string {
+	bin := "bin"
+	if os.PathSeparator == '\\' {
+		bin = "Scripts"
+	}
+	return filepath.Join(p.PythonVenv(version), bin)
+}
+
 func (a Activator) PrepareProject(ctx context.Context, dir string) error {
 	p, err := FindProject(dir)
 	if err != nil || p == nil {
@@ -48,6 +56,9 @@ func (a Activator) PrepareProject(ctx context.Context, dir string) error {
 		return err
 	}
 	if data, err := os.ReadFile(filepath.Join(venv, ".vsm-python-version")); err == nil && strings.TrimSpace(string(data)) == res.Version && fileExists(filepath.Join(venv, "pyvenv.cfg")) {
+		if findExecutable([]string{p.pythonVenvBin(res.Version)}, "python") == "" {
+			return fmt.Errorf("项目 Python venv 缺少可执行文件，已停止运行：%s；请使用项目安装的 Python 按原路径修复此 venv", venv)
+		}
 		return nil
 	}
 	if _, err := os.Lstat(venv); err == nil {
@@ -93,6 +104,9 @@ func (a Activator) PrepareProject(ctx context.Context, dir string) error {
 	cmd.Env = env
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("创建项目 Python venv 失败: %w: %.2000s", err, out)
+	}
+	if !fileExists(filepath.Join(venv, "pyvenv.cfg")) || findExecutable([]string{p.pythonVenvBin(res.Version)}, "python") == "" {
+		return fmt.Errorf("创建项目 Python venv 失败，缺少配置或可执行文件：%s", venv)
 	}
 	if err := os.WriteFile(filepath.Join(venv, ".vsm-python-version"), []byte(res.Version+"\n"), 0o644); err != nil {
 		return err

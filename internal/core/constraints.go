@@ -12,8 +12,9 @@ var constraintPart = regexp.MustCompile(`(>=|<=|>|<|=|\^|~)?\s*(v?\d+(?:\.(?:\d+
 // dotted prefixes. Unsupported syntax never silently becomes a numeric prefix.
 func versionMatches(spec, candidate string) bool {
 	spec = strings.TrimSpace(spec)
+	release, prerelease := splitVersion(candidate)
 	if spec == "" || spec == "latest" || spec == "*" {
-		return true
+		return len(prerelease) == 0
 	}
 	if spec == candidate {
 		return true
@@ -21,6 +22,7 @@ func versionMatches(spec, candidate string) bool {
 	for _, alternative := range strings.Split(spec, "||") {
 		rest := strings.TrimSpace(alternative)
 		matched := true
+		allowPrerelease := len(prerelease) == 0
 		count := 0
 		for rest != "" {
 			rest = strings.TrimLeft(rest, " ,\t")
@@ -34,13 +36,17 @@ func versionMatches(spec, candidate string) bool {
 			}
 			parts := constraintPart.FindStringSubmatch(rest[:where[1]])
 			op, want := parts[1], strings.TrimPrefix(parts[2], "v")
+			wantRelease, wantPrerelease := splitVersion(want)
+			if strings.Contains(want, "-") && len(wantPrerelease) > 0 && compareRelease(release, wantRelease) == 0 {
+				allowPrerelease = true
+			}
 			count++
 			if !matchConstraintPart(op, want, candidate) {
 				matched = false
 			}
 			rest = rest[where[1]:]
 		}
-		if matched && count > 0 {
+		if matched && count > 0 && allowPrerelease {
 			return true
 		}
 	}

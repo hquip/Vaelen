@@ -17,6 +17,9 @@ import (
 //
 // execPath 是系统检测得到的主命令可执行文件路径（如 C:\Java\jdk-21\bin\java.exe）。
 func (in Installer) Adopt(p plugin.Plugin, version, execPath string) error {
+	if in.Paths.ProjectMode == "docker" {
+		return ErrDockerHostInstall
+	}
 	if in.Paths.ProjectMode == "local" {
 		return fmt.Errorf("本地隔离模式不链接共享工具；请在项目中独立安装，或使用 versions 模式")
 	}

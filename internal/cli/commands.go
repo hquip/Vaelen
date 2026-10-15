@@ -16,7 +16,7 @@ import (
 
 func (a *app) cmdInstall(args []string) error {
 	if a.paths.ProjectMode == "docker" {
-		return fmt.Errorf("Docker 项目的工具由镜像提供；请配置匹配镜像后用 vsm run 执行")
+		return core.ErrDockerHostInstall
 	}
 	var rest []string
 	customDir := ""

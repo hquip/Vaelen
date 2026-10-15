@@ -13,7 +13,60 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"vsm/internal/core"
 )
+
+func TestMCPInstallAcceptsAndEnforcesTimeout(t *testing.T) {
+	p, err := core.InitProject(t.TempDir(), "local", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := filepath.Join(t.TempDir(), "main.go")
+	source := `package main
+import("encoding/json";"os";"time")
+func main(){if len(os.Args)>3&&os.Args[3]=="1.0.0-slow"{time.Sleep(15*time.Second)};json.NewEncoder(os.Stdout).Encode(map[string]any{"args":os.Args[1:]})}`
+	if err := os.WriteFile(src, []byte(source), 0644); err != nil {
+		t.Fatal(err)
+	}
+	bin := filepath.Join(t.TempDir(), "installer")
+	if runtime.GOOS == "windows" {
+		bin += ".exe"
+	}
+	build := exec.Command("go", "build", "-o", bin, src)
+	if out, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("fixture: %v %s", err, out)
+	}
+	call := func(args string) (bool, error) {
+		result, err := mcpCall(context.Background(), bin, p.Root, "vsm_install", json.RawMessage(args))
+		return result.IsError, err
+	}
+	for _, args := range []string{
+		`{"tool":"go","version":"1.0.0","timeout_seconds":600}`,
+		`{"tool":"go","version":"1.0.0"}`,
+	} {
+		if failed, err := call(args); err != nil || failed {
+			t.Fatalf("install timeout rejected: %v %v", failed, err)
+		}
+	}
+	for _, value := range []string{"0", "-1", "601", "null", "1.5", `"600"`} {
+		if _, err := call(`{"tool":"go","version":"1.0.0","timeout_seconds":` + value + `}`); err == nil {
+			t.Fatalf("invalid timeout accepted: %s", value)
+		}
+	}
+	start := time.Now()
+	if failed, err := call(`{"tool":"go","version":"1.0.0-slow","timeout_seconds":1}`); err != nil || !failed || time.Since(start) > 8*time.Second {
+		t.Fatalf("install timeout did not terminate child: %v %v", failed, err)
+	}
+	for _, tool := range mcpTools(false) {
+		if tool.Name == "vsm_install" {
+			properties := tool.InputSchema["properties"].(map[string]any)
+			field := properties["timeout_seconds"].(map[string]any)
+			if field["default"] != 600 || field["maximum"] != 600 {
+				t.Fatalf("wrong install timeout schema: %v", field)
+			}
+		}
+	}
+}
 
 func TestMCPClientConfigurationOutput(t *testing.T) {
 	bin := buildVsm(t)

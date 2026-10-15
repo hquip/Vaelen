@@ -63,6 +63,46 @@ func TestProjectEnvironmentSwitchAndInit(t *testing.T) {
 	}
 }
 
+func TestDockerGUIUsesOnlyImageTools(t *testing.T) {
+	a := newTestApp(t)
+	dir := t.TempDir()
+	if err := a.SetProjectDir(dir); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.InitProjectEnvironment("docker", "golang:1.25.11"); err != nil {
+		t.Fatal(err)
+	}
+	for _, install := range []func() error{
+		func() error { return a.Install("go", "latest", "") },
+		func() error { return a.InstallVerified("go", "latest", t.TempDir(), true) },
+		func() error { return a.AdoptTool("go", "1.25.11", "/outside/go") },
+	} {
+		if err := install(); !errors.Is(err, core.ErrDockerHostInstall) {
+			t.Fatalf("GUI allowed host tool management: %v", err)
+		}
+	}
+	if _, err := os.Stat(a.c().paths.Root); !os.IsNotExist(err) {
+		t.Fatalf("GUI created host environment data before refusing installation: %v", err)
+	}
+	// Older builds may have installed host files in this project. Do not show
+	// these as the container's installed or active toolchain.
+	if err := os.MkdirAll(a.c().paths.InstallDir("go", "1.25.11"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.SetLocal("go", "1.25.11"); err != nil {
+		t.Fatal(err)
+	}
+	status, err := a.Status()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tool := range status {
+		if tool.Tool == "go" && (tool.Spec != "1.25.11" || tool.Current != "" || len(tool.Installed) != 0) {
+			t.Fatalf("GUI confused host files with image tools: %+v", tool)
+		}
+	}
+}
+
 func TestMCPConfigRejectsIncompatibleCLI(t *testing.T) {
 	for _, mode := range []string{"valid", "legacy", "invalid-json", "missing-server"} {
 		t.Run(mode, func(t *testing.T) {

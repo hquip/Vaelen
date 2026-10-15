@@ -1,11 +1,32 @@
 package core
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestDockerRejectsHostInstallationBeforeWrites(t *testing.T) {
+	p, err := InitProject(t.TempDir(), "docker", "golang:1.25.11")
+	if err != nil {
+		t.Fatal(err)
+	}
+	paths := p.Paths(Paths{})
+	in := Installer{Paths: paths}
+	for _, target := range []string{"", t.TempDir()} {
+		if err := in.Install(integrityPlugin{}, "1.0", target, nil); !errors.Is(err, ErrDockerHostInstall) {
+			t.Fatalf("Docker allowed host installation: %v", err)
+		}
+	}
+	if err := in.Adopt(integrityPlugin{}, "1.0", "/outside/go"); !errors.Is(err, ErrDockerHostInstall) {
+		t.Fatalf("Docker allowed adopting host binaries: %v", err)
+	}
+	if _, err := os.Stat(paths.Root); !os.IsNotExist(err) {
+		t.Fatalf("rejected host operations wrote an environment directory: %v", err)
+	}
+}
 
 func TestProjectsHaveIndependentInstallsAndRequirements(t *testing.T) {
 	global := Paths{Root: t.TempDir()}

@@ -221,6 +221,14 @@ func (a *App) Status() ([]ToolStatus, error) {
 	names := plugin.Names()
 	out := make([]ToolStatus, 0, len(names))
 	for _, name := range names {
+		if c.paths.ProjectMode == "docker" {
+			spec, source, err := core.ProjectRequirement(name, dir)
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, ToolStatus{Tool: name, Source: source, Spec: spec, Installed: []string{}})
+			continue
+		}
 		installed, err := c.reg.Installed(name)
 		if err != nil {
 			return nil, fmt.Errorf("读取 %s 的已安装版本失败: %w", name, err)
@@ -272,6 +280,9 @@ func (a *App) install(tool, version, dir string, requireChecksum bool) error {
 	}
 	defer done()
 	c := a.c()
+	if c.paths.ProjectMode == "docker" {
+		return core.ErrDockerHostInstall
+	}
 	p, ok := plugin.Get(tool)
 	if !ok {
 		return fmt.Errorf("不支持的工具: %s", tool)
