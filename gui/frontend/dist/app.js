@@ -380,14 +380,14 @@ function renderDetail(tool) {
 
   const isActive = !!s.current;
   const installedCount = (s.installed && s.installed.length) || 0;
-  const headBadge = isActive
+  const headBadge = projectMode === "docker" ? `<span class="head-badge on">Docker 容器</span>` : isActive
     ? `<span class="head-badge on">● ${escapeHtml(s.current)} 生效中</span>`
     : `<span class="head-badge off">未启用</span>`;
   const cards = `
     <div class="stat-cards">
       <div class="stat-card">
         <div class="sc-label">当前版本</div>
-        <div class="sc-value ${isActive ? "green" : "muted"}">${isActive ? escapeHtml(s.current) : "未设置"}</div>
+        <div class="sc-value ${isActive ? "green" : "muted"}">${projectMode === "docker" ? "运行时校验镜像版本" : isActive ? escapeHtml(s.current) : "未设置"}</div>
       </div>
       <div class="stat-card">
         <div class="sc-label">来源</div>
@@ -398,8 +398,8 @@ function renderDetail(tool) {
         <div class="sc-value ${s.spec ? "" : "muted"}">${s.spec ? escapeHtml(s.spec) : "未指定"}</div>
       </div>
       <div class="stat-card">
-        <div class="sc-label">已安装</div>
-        <div class="sc-value">${installedCount} 个</div>
+        <div class="sc-label">${projectMode === "docker" ? "运行位置" : "已安装"}</div>
+        <div class="sc-value">${projectMode === "docker" ? "Docker 容器" : installedCount + " 个"}</div>
       </div>
       <div class="stat-card clickable" id="projDirCard" title="点击选择项目目录（「设为本目录」写入其中的 .tool-versions）">
         <div class="sc-label">项目目录 (local) ✎</div>
@@ -440,6 +440,16 @@ function renderDetail(tool) {
     ${cards}
     ${hint}
 
+    ${projectMode === "docker" ? `
+    <div class="section">
+      <p class="section-title">镜像中的工具链</p>
+      <p class="act-hint">请在「隔离环境 / MCP」查看项目镜像。需要其它工具版本时，准备包含该版本的镜像；运行命令前会检查镜像是否满足项目要求。</p>
+      <label class="project-field-label" for="dockerVersionInput">本项目的 ${escapeHtml(displayName(tool))} 版本要求</label>
+      <div class="install-row">
+        <input id="dockerVersionInput" value="${escapeHtml(s.spec || "")}" placeholder="输入版本或前缀" autocomplete="off" />
+        <button id="dockerVersionSave" class="primary-btn">保存项目版本要求</button>
+      </div>
+    </div>` : `
     <div class="section">
       <p class="section-title">已安装版本</p>
       ${versHtml}
@@ -466,7 +476,7 @@ function renderDetail(tool) {
       </label>
       <div id="installProgress" class="progress hidden"><div class="progress-bar" id="installBar"></div><span class="progress-text" id="installPct"></span></div>
       <pre id="installLog" class="log"></pre>
-    </div>`;
+    </div>`}`;
 
   detail.querySelectorAll("button[data-act]").forEach((btn) => {
     btn.addEventListener("click", () => onVerAction(tool, btn.dataset.act, btn.dataset.ver));
@@ -477,8 +487,17 @@ function renderDetail(tool) {
   if (pdc) pdc.addEventListener("click", () => pickProjectDir(tool));
   const verInput = document.getElementById("versionInput");
   const dlist = document.getElementById("remoteList");
-  verInput.addEventListener("focus", () => loadRemote(tool, verInput, dlist), { once: true });
-  document.getElementById("installBtn").addEventListener("click", () => doInstall(tool));
+  if (verInput) verInput.addEventListener("focus", () => loadRemote(tool, verInput, dlist), { once: true });
+  const installButton = document.getElementById("installBtn");
+  if (installButton) installButton.addEventListener("click", () => doInstall(tool));
+  const dockerVersionSave = document.getElementById("dockerVersionSave");
+  if (dockerVersionSave) dockerVersionSave.addEventListener("click", async () => {
+    const version = document.getElementById("dockerVersionInput").value.trim();
+    if (!version) { toast("请输入项目版本要求", true); return; }
+    dockerVersionSave.disabled = true;
+    try { await onVerAction(tool, "local", version); }
+    finally { dockerVersionSave.disabled = false; }
+  });
   const pickBtn = document.getElementById("pickDirBtn");
   if (pickBtn) {
     pickBtn.addEventListener("click", async () => {
@@ -494,7 +513,7 @@ function renderDetail(tool) {
   const dirLbl = document.getElementById("installDirLabel");
   if (dirLbl) dirLbl.addEventListener("click", () => { installDir = ""; updateInstallDirLabel(); });
   updateInstallDirLabel();
-  loadSysVers(tool);
+  if (projectMode !== "docker") loadSysVers(tool);
 }
 
 function updateInstallDirLabel() {

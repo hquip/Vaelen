@@ -98,11 +98,7 @@ func (a Activator) planEnvironment(startDir string, preferProject bool) (Environ
 		if project != nil && project.Mode == "local" && tool == "python" {
 			venv := project.PythonVenv(r.Version)
 			if fileExists(filepath.Join(venv, "pyvenv.cfg")) {
-				bin := "bin"
-				if os.PathSeparator == '\\' {
-					bin = "Scripts"
-				}
-				plan.Paths = append([]string{filepath.Join(venv, bin)}, plan.Paths...)
+				plan.Paths = append([]string{project.pythonVenvBin(r.Version)}, plan.Paths...)
 				plan.Variables["VIRTUAL_ENV"] = venv
 			}
 		}

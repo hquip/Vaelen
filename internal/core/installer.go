@@ -3,6 +3,7 @@ package core
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -19,10 +20,15 @@ type Installer struct {
 // ProgressFunc 用于回报安装过程中的进度信息。
 type ProgressFunc func(msg string)
 
+var ErrDockerHostInstall = errors.New("Docker 项目的工具由镜像提供；请配置匹配镜像后用 vsm run 执行")
+
 // Install 下载并安装 p 的 version。customDir 为空时装到默认 installs 目录；
 // 非空时装到 customDir/<tool>/<version> 并在 installs 下建 junction 链接过去
 // （这样既能自选磁盘位置，vsm 又能照常识别/切换/卸载）。
 func (in Installer) Install(p plugin.Plugin, version, customDir string, progress ProgressFunc) error {
+	if in.Paths.ProjectMode == "docker" {
+		return ErrDockerHostInstall
+	}
 	if in.Paths.ProjectMode == "local" && customDir != "" && !pathWithin(in.Paths.ProjectRoot, customDir) {
 		return fmt.Errorf("项目隔离模式不允许安装到项目目录外")
 	}

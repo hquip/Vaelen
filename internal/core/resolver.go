@@ -129,15 +129,11 @@ func BestMatch(spec string, candidatesAll []string) string {
 			return v
 		}
 	}
-	candidates := candidatesAll
-	if spec != "latest" && spec != "" {
-		var filtered []string
-		for _, v := range candidatesAll {
-			if versionMatches(spec, v) {
-				filtered = append(filtered, v)
-			}
+	var candidates []string
+	for _, v := range candidatesAll {
+		if versionMatches(spec, v) {
+			candidates = append(candidates, v)
 		}
-		candidates = filtered
 	}
 	if len(candidates) == 0 {
 		return ""
@@ -153,6 +149,8 @@ func BestMatch(spec string, candidatesAll []string) string {
 
 // versionHasPrefix 判断 version 是否以 prefix 为版本前缀（按点分段对齐）。
 func versionHasPrefix(version, prefix string) bool {
+	version, _, _ = strings.Cut(strings.TrimPrefix(version, "v"), "+")
+	prefix, _, _ = strings.Cut(strings.TrimPrefix(prefix, "v"), "+")
 	vp := strings.Split(version, ".")
 	pp := strings.Split(prefix, ".")
 	if len(pp) > len(vp) {
@@ -164,32 +162,6 @@ func versionHasPrefix(version, prefix string) bool {
 		}
 	}
 	return true
-}
-
-// CompareVersions 按点分段数值比较两个版本：a>b 返回 1，a<b 返回 -1，相等返回 0。
-func CompareVersions(a, b string) int {
-	as := strings.Split(a, ".")
-	bs := strings.Split(b, ".")
-	n := len(as)
-	if len(bs) > n {
-		n = len(bs)
-	}
-	for i := 0; i < n; i++ {
-		var ai, bi int
-		if i < len(as) {
-			ai = atoiSafe(as[i])
-		}
-		if i < len(bs) {
-			bi = atoiSafe(bs[i])
-		}
-		if ai != bi {
-			if ai > bi {
-				return 1
-			}
-			return -1
-		}
-	}
-	return 0
 }
 
 // atoiSafe 取字符串前导数字，遇到非数字即停（容忍 "0-rc1" 之类后缀）。

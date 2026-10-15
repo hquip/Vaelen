@@ -71,11 +71,7 @@ func (a Activator) RunProject(dir, command string, args []string) error {
 				p, _ := plugin.Get(r.Tool)
 				dirs := p.BinPaths(a.Paths.InstallDir(r.Tool, r.Version))
 				if project != nil && project.Mode == "local" && r.Tool == "python" {
-					bin := "bin"
-					if os.PathSeparator == '\\' {
-						bin = "Scripts"
-					}
-					dirs = append([]string{project.PythonVenv(r.Version) + string(os.PathSeparator) + bin}, dirs...)
+					dirs = []string{project.pythonVenvBin(r.Version)}
 				}
 				program = findExecutable(dirs, command)
 				if program == "" {

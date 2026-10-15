@@ -19,6 +19,8 @@ vsm run --install-missing -- go test ./...
 
 初始化后，普通 `install`、`list`、`use`、`run` 和 `context` 自动识别项目环境。项目内不读取父项目的版本声明，`local` 模式也不继承全局默认语言版本。
 
+普通数字前缀、`latest` 和未声明预发布版本的范围默认选择正式版。需要 rc / beta 时应明确声明对应版本；版本比较忽略 SemVer 构建元数据，并将预发布版本排在对应正式版之前。
+
 ```text
 my-app/
   .tool-versions
@@ -49,6 +51,8 @@ vsm run -- python app.py
 
 解释器需要包含标准 `venv` / `ensurepip`。缺少这些组件时明确报错；不回退到系统 Python 安装依赖。`PIP_REQUIRE_VIRTUALENV=true` 防止误装到非 venv 解释器。
 
+已有 venv 如果缺少 Python 入口，VSM 会停止运行并显示环境路径；不会改用基础解释器。使用项目安装的同版本 Python，针对显示的 venv 路径重新运行 `-m venv <环境路径>` 可修复入口。VSM 不会自动删除已有依赖环境。
+
 本地项目不纳管指向系统的共享运行时、不允许 `--path` 指向项目外，也不会将项目 shims 持久写入系统 PATH。若已经配置全局 shell hook，它会按当前目录计算项目版本；准备 Python venv 的推荐入口是 `vsm run`。
 
 ## 只隔离版本
@@ -70,6 +74,8 @@ vsm run -- go test ./...
 ```
 
 需要安装并启动 Docker Desktop / Docker Engine。镜像必须已经包含项目要求的语言工具；多语言项目使用相应的自定义镜像。VSM 验证镜像中的版本，再在同一个内容寻址镜像内执行，不会向宿主机安装工具。
+
+Docker 项目的 GUI 使用镜像工具视图，可直接保存语言版本要求；不提供宿主机安装/纳管入口。GUI、CLI 和底层安装器统一拒绝在 Docker 模式安装或纳管宿主机工具。GUI 不会把项目中遗留的宿主机安装目录显示成镜像内的版本。
 
 容器只挂载当前项目到 `/workspace`，可写项目缓存位于 `.vsm/docker-cache/`；根文件系统只读、丢弃 capabilities、禁止提权并限制进程数，不挂载 Docker socket。网络按 Docker 默认设置提供，项目目录仍可写；这不是对所有恶意代码的完整安全保证。
 
