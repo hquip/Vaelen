@@ -37,12 +37,55 @@ jobs:
       - name: Vet
         run: go vet ./internal/... .
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
       - name: Test
+        env:
+          VSM_TEST_PYTHON: python
         run: go test ./internal/... .
 
       - name: Test (race)
         if: matrix.os == 'ubuntu-latest'
         run: go test -race ./internal/... .
+
+  project-docker:
+    name: isolated project (real Docker)
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Run independent projects in real containers
+        shell: bash
+        run: |
+          set -euo pipefail
+          go build -o dist/vsm .
+          vsm="$PWD/dist/vsm"
+          work="$(mktemp -d)"
+          mkdir -p "$work/a" "$work/b"
+          docker pull busybox:1.37.0
+          for project in a b; do
+            (
+              cd "$work/$project"
+              "$vsm" project init --mode docker --image busybox:1.37.0
+              "$vsm" run -- sh -c 'printf isolated > proof.txt; test ! -e /workspace/../b/proof.txt'
+            )
+            test "$(cat "$work/$project/proof.txt")" = isolated
+          done
+          (
+            cd "$work/a"
+            printf 'go 1.25.11\n' > .tool-versions
+            if "$vsm" run -- sh -c 'touch should-not-run'; then
+              echo 'An image without the required language was accepted' >&2
+              exit 1
+            fi
+            test ! -e should-not-run
+          )
 
   build-cli:
     name: build CLI (zero-CGO cross-compile)

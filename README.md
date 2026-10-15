@@ -138,6 +138,9 @@ bash scripts/package-macos.sh 1.0.1 dist
 | `vsm current` | 显示各工具当前生效版本及来源 |
 | `vsm context [--json] [--check]` | Agent/AI 只读版本上下文：项目要求、解析/已激活版本、冲突和建议命令 |
 | `vsm run [--install-missing] -- <command> [args...]` | 自动采用项目版本执行命令；可补装缺失工具，补装必须校验 SHA256 |
+| `vsm project init [--mode local\|versions\|docker] [--image 镜像]` | 一个项目一个环境，默认本地隔离 |
+| `vsm project status [--json]` | 查看项目环境和隔离模式 |
+| `vsm mcp [serve\|config] --project <目录> [--read-only]` | MCP 服务或 AI 客户端配置，固定绑定项目 |
 | `vsm which <tool>` | 打印当前版本主命令的完整路径 |
 | `vsm exec <tool> [args...]` | 在当前解析版本环境下执行工具主命令 |
 | `vsm exec <tool> -- <cmd> [args...]` | 在该工具环境下执行任意命令（如 `npm`） |
@@ -205,6 +208,13 @@ Add-Content $PROFILE 'vsm activate powershell | Out-String | Invoke-Expression'
 激活后，在配置了 `.tool-versions` 的目录里直接运行 `go` / `node`，会自动解析到对应版本。
 
 ## Agent / AI 与切换提示
+
+新增 MCP 与三种项目环境：见 [MCP 接入](docs/mcp.md) 和 [项目隔离](docs/project-environments.md)。GUI 的「隔离环境 / MCP」可初始化环境并生成配置。
+
+```bash
+vsm project init                     # 独立工具、缓存、Python venv
+vsm mcp config --project /path/to/app # 生成 MCP 客户端配置
+```
 
 执行 `vsm context --json` 获取项目要求、版本来源、解析版本、shell 已激活版本以及建议命令；该命令不安装工具、不修改项目和终端环境。
 AI 可直接执行 `vsm run -- go test ./...`、`vsm run -- node app.js`，自动选择项目声明的工具版本；`vsm run --install-missing -- go test ./...` 还会补装缺失工具。

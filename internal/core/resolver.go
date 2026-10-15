@@ -32,7 +32,7 @@ type Resolution struct {
 // Resolve 解析单个工具当前应使用的版本。startDir 通常是当前工作目录。
 func (r Resolver) Resolve(tool, startDir string) Resolution {
 	envKey := "VSM_" + strings.ToUpper(tool) + "_VERSION"
-	if v := os.Getenv(envKey); v != "" {
+	if v := os.Getenv(envKey); v != "" && r.Paths.ProjectMode != "local" {
 		return r.match(tool, v, "环境变量 "+envKey)
 	}
 	spec, src, err := findToolVersionChecked(tool, startDir)
@@ -41,6 +41,9 @@ func (r Resolver) Resolve(tool, startDir string) Resolution {
 	}
 	if src != "" {
 		return r.match(tool, spec, src)
+	}
+	if r.Paths.ProjectMode == "local" || r.Paths.ProjectMode == "docker" {
+		return Resolution{Tool: tool}
 	}
 	if tv, err := config.Load(r.Paths.GlobalToolVersions()); err == nil {
 		if spec, ok := tv.Get(tool); ok {
@@ -71,6 +74,10 @@ func findToolVersion(tool, startDir string) (spec, source string, ok bool) {
 }
 
 func findToolVersionChecked(tool, startDir string) (spec, source string, err error) {
+	project, err := FindProject(startDir)
+	if err != nil {
+		return "", "", err
+	}
 	dir, err := filepath.Abs(startDir)
 	if err != nil {
 		return "", "", err
@@ -97,6 +104,12 @@ func findToolVersionChecked(tool, startDir string) (spec, source string, err err
 			return spec, src, nil
 		}
 		parent := filepath.Dir(dir)
+		if project != nil && sameDir(project.Root, dir) {
+			return "", "", nil
+		}
+		if boundary := os.Getenv("VSM_PROJECT_BOUNDARY"); boundary != "" && sameDir(boundary, dir) {
+			return "", "", nil
+		}
 		if parent == dir {
 			return "", "", nil
 		}
@@ -120,7 +133,7 @@ func BestMatch(spec string, candidatesAll []string) string {
 	if spec != "latest" && spec != "" {
 		var filtered []string
 		for _, v := range candidatesAll {
-			if versionHasPrefix(v, spec) {
+			if versionMatches(spec, v) {
 				filtered = append(filtered, v)
 			}
 		}

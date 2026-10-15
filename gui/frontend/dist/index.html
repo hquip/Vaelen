@@ -39,6 +39,12 @@
 
   <div class="layout">
     <aside class="sidebar">
+      <div class="sidebar-foot">
+        <div class="foot-text">
+          <span class="foot-label">项目环境与 AI</span>
+          <button id="projectEnvBtn" class="mini">隔离环境 / MCP</button>
+        </div>
+      </div>
       <div class="filter-wrap">
         <span class="filter-icon">🔍</span>
         <input id="filter" class="filter" placeholder="过滤语言…" autocomplete="off" />
@@ -85,6 +91,25 @@
     </div>
   </div>
 
+  <div id="projectEnvModal" class="modal hidden">
+    <div class="modal-card">
+      <h3 class="modal-title">项目隔离环境</h3>
+      <p id="projectEnvStatus" class="modal-sub">选择一个项目目录后配置环境。</p>
+      <select id="projectEnvMode" class="modal-input">
+        <option value="local">本地隔离：独立工具、缓存与 Python venv（推荐）</option>
+        <option value="versions">版本隔离：共用工具，项目独立选版本</option>
+        <option value="docker">Docker：在指定镜像内运行</option>
+      </select>
+      <input id="projectEnvImage" class="modal-input hidden" placeholder="镜像需包含项目工具，例如 golang:1.25.11" />
+      <textarea id="projectMCPConfig" class="modal-input hidden" rows="7" readonly aria-label="MCP 配置"></textarea>
+      <div class="modal-actions">
+        <button id="projectMCPCopy" class="ghost-btn">生成 MCP 配置</button>
+        <span class="modal-spacer"></span>
+        <button id="projectEnvClose" class="ghost-btn">关闭</button>
+        <button id="projectEnvInit" class="primary-btn">初始化</button>
+      </div>
+    </div>
+  </div>
   <script src="app.js"></script>
 </body>
 </html>

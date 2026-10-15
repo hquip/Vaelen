@@ -279,7 +279,7 @@ func mustEnvScript(t *testing.T, sh string, dirs []string) string {
 // TestHookScriptRunsWithAbsoluteVsmPath 激活脚本在 vsm 不在 PATH、且路径含空格时
 // 仍能调用到 vsm（macOS 上从 GUI 写入 ~/.zshrc 的典型情形）。
 func TestHookScriptRunsWithAbsoluteVsmPath(t *testing.T) {
-	bash, err := exec.LookPath("bash")
+	bash, err := findTestShell("bash")
 	if err != nil {
 		t.Skip("未安装 bash")
 	}

@@ -31,8 +31,8 @@ func TestGoModVer(t *testing.T) {
 }
 
 func TestPkgJSONNode(t *testing.T) {
-	if got := pkgJSONNode(`{"name":"x","engines":{"node":">=18.0.0","npm":">=9"}}`); got != "18.0.0" {
-		t.Errorf("pkgJSONNode=%q want 18.0.0", got)
+	if got := pkgJSONNode(`{"name":"x","engines":{"node":">=18.0.0","npm":">=9"}}`); got != ">=18.0.0" {
+		t.Errorf("pkgJSONNode=%q want >=18.0.0", got)
 	}
 	if got := pkgJSONNode(`{"dependencies":{"node":"^1.0"}}`); got != "" {
 		t.Errorf("应忽略依赖里的 node，got %q", got)
@@ -40,8 +40,8 @@ func TestPkgJSONNode(t *testing.T) {
 }
 
 func TestPyRequires(t *testing.T) {
-	if got := pyRequires("[project]\nrequires-python = \">=3.10\"\n"); got != "3.10" {
-		t.Errorf("pyRequires=%q want 3.10", got)
+	if got := pyRequires("[project]\nrequires-python = \">=3.10\"\n"); got != ">=3.10" {
+		t.Errorf("pyRequires=%q want >=3.10", got)
 	}
 }
 

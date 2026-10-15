@@ -26,6 +26,13 @@ func (a *app) cmdRun(args []string) error {
 	if commandStart < 0 || commandStart >= len(args) {
 		return fmt.Errorf("用法: vsm run [--install-missing] -- <command> [args...]")
 	}
+	project, err := core.FindProject(a.cwd)
+	if err != nil {
+		return err
+	}
+	if project != nil && project.Mode == "docker" {
+		return a.act.RunProject(a.cwd, args[commandStart], args[commandStart+1:])
+	}
 	if installMissing {
 		for _, tool := range plugin.Names() {
 			spec, src, err := core.ProjectRequirement(tool, a.cwd)

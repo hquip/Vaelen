@@ -51,6 +51,9 @@ func (a Activator) Which(tool, startDir string) (string, error) {
 // Run 在 tool 当前解析版本的环境下执行 cmdName + cmdArgs。
 // cmdName 通常是工具主命令（如 go），也可以是该工具环境附带的其它命令（如 npm）。
 func (a Activator) Run(tool, startDir, cmdName string, cmdArgs []string) error {
+	if a.Paths.ProjectMode == "local" || a.Paths.ProjectMode == "docker" {
+		return a.RunProject(startDir, cmdName, cmdArgs)
+	}
 	p, ok := plugin.Get(tool)
 	if !ok {
 		return fmt.Errorf("不支持的工具: %s", tool)
@@ -119,6 +122,20 @@ func (a Activator) GenerateShims() error {
 		if _, ok := plugin.Get(tool); !ok {
 			continue
 		}
+		versions, err := a.Registry.Installed(tool)
+		if err != nil {
+			return err
+		}
+		if len(versions) == 0 {
+			name := tool
+			if runtime.GOOS == "windows" {
+				name += ".cmd"
+			}
+			if err := os.Remove(filepath.Join(a.Paths.Shims(), name)); err != nil && !os.IsNotExist(err) {
+				return err
+			}
+			continue
+		}
 		if err := a.writeShim(tool); err != nil {
 			return err
 		}
@@ -169,6 +186,14 @@ func fileExists(path string) bool {
 
 // buildEnv 复制当前环境，把 pathDirs 前置到 PATH，并叠加 extra 环境变量。
 func buildEnv(pathDirs []string, extra map[string]string) []string {
+	if _, hasGo := extra["GOROOT"]; hasGo {
+		cloned := map[string]string{}
+		for k, v := range extra {
+			cloned[k] = v
+		}
+		cloned["GOTOOLCHAIN"] = "local"
+		extra = cloned
+	}
 	sep := string(os.PathListSeparator)
 	prefix := strings.Join(pathDirs, sep)
 	env := make([]string, 0, len(os.Environ())+len(extra))
@@ -178,6 +203,16 @@ func buildEnv(pathDirs []string, extra map[string]string) []string {
 			env = append(env, k+"="+prefix+sep+v)
 			pathSet = true
 		} else {
+			overridden := false
+			for key := range extra {
+				if original, _, ok := cutEnv(e); ok && (original == key || runtime.GOOS == "windows" && strings.EqualFold(original, key)) {
+					overridden = true
+					break
+				}
+			}
+			if overridden {
+				continue
+			}
 			env = append(env, e)
 		}
 	}

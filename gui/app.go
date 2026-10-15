@@ -26,25 +26,34 @@ import (
 // 安装根目录切换时整体替换（见 reload），读取方通过原子指针拿到一致的快照，
 // 避免「一个 goroutine 正在读 paths、另一个正在改写」的数据竞争。
 type components struct {
-	initErr error
-	paths   core.Paths
-	reg     core.Registry
-	res     core.Resolver
-	inst    core.Installer
-	act     core.Activator
+	projectDir string
+	initErr    error
+	paths      core.Paths
+	reg        core.Registry
+	res        core.Resolver
+	inst       core.Installer
+	act        core.Activator
 }
 
 func newComponents() *components {
+	return newComponentsForDir("")
+}
+
+func newComponentsForDir(dir string) *components {
 	paths, initErr := core.DefaultPaths()
+	if initErr == nil && dir != "" {
+		paths, initErr = core.PathsForDirectory(paths, dir)
+	}
 	reg := core.Registry{Paths: paths}
 	res := core.Resolver{Paths: paths, Registry: reg}
 	return &components{
-		initErr: initErr,
-		paths:   paths,
-		reg:     reg,
-		res:     res,
-		inst:    core.Installer{Paths: paths},
-		act:     core.Activator{Paths: paths, Resolver: res, Registry: reg, VsmExe: locateVsmCLI()},
+		projectDir: dir,
+		initErr:    initErr,
+		paths:      paths,
+		reg:        reg,
+		res:        res,
+		inst:       core.Installer{Paths: paths},
+		act:        core.Activator{Paths: paths, Resolver: res, Registry: reg, VsmExe: locateVsmCLI()},
 	}
 }
 
@@ -71,7 +80,7 @@ var errNoProjectDir = errors.New("请先选择项目目录：版本会写入该�
 // NewApp 构造后端服务，组装核心组件。
 func NewApp() *App {
 	a := &App{projectDir: initialProjectDir()}
-	a.st.Store(newComponents())
+	a.st.Store(newComponentsForDir(a.projectDir))
 	return a
 }
 
@@ -201,7 +210,10 @@ func (a *App) Status() ([]ToolStatus, error) {
 	if c.initErr != nil {
 		return nil, c.initErr
 	}
-	dir := a.resolveDir()
+	dir := c.projectDir
+	if dir == "" {
+		dir = a.resolveDir()
+	}
 	names := plugin.Names()
 	out := make([]ToolStatus, 0, len(names))
 	for _, name := range names {
@@ -300,6 +312,9 @@ func (a *App) GetInstallRoot() string { return a.c().paths.Installs() }
 
 // SetInstallRoot 设置全局安装根目录（dir 为空恢复默认），并热重载使之立即生效。
 func (a *App) SetInstallRoot(dir string) error {
+	if a.c().paths.ProjectMode == "local" || a.c().paths.ProjectMode == "docker" {
+		return fmt.Errorf("项目隔离环境使用固定目录，不修改全局安装根目录")
+	}
 	done, err := a.begin()
 	if err != nil {
 		return err
@@ -330,12 +345,15 @@ func (a *App) SetInstallRoot(dir string) error {
 			return err
 		}
 	}
-	a.st.Store(newComponents())
+	a.st.Store(newComponentsForDir(a.ProjectDir()))
 	return nil
 }
 
 // SetGlobal 设全局默认版本（写 ~/.vsm/.tool-versions）。
 func (a *App) SetGlobal(tool, version string) error {
+	if a.c().paths.ProjectMode == "local" {
+		return fmt.Errorf("本地隔离环境请使用「设为本目录」")
+	}
 	if _, ok := plugin.Get(tool); !ok {
 		return fmt.Errorf("不支持的工具: %s", tool)
 	}
@@ -409,6 +427,10 @@ func (a *App) ProjectDir() string {
 // SetProjectDir 设置项目目录（之后的「设为本目录」写入该目录的 .tool-versions，
 // 版本解析也以它为起点）。空串表示清除。
 func (a *App) SetProjectDir(dir string) error {
+	if !a.mu.TryLock() {
+		return errBusy
+	}
+	defer a.mu.Unlock()
 	dir = strings.TrimSpace(dir)
 	if dir != "" {
 		abs, err := filepath.Abs(dir)
@@ -427,7 +449,46 @@ func (a *App) SetProjectDir(dir string) error {
 	a.dirMu.Lock()
 	a.projectDir = dir
 	a.dirMu.Unlock()
+	a.st.Store(newComponentsForDir(dir))
 	return nil
+}
+
+func (a *App) ProjectEnvironment() (*core.Project, error) {
+	dir := a.ProjectDir()
+	if dir == "" {
+		return nil, nil
+	}
+	return core.FindProject(dir)
+}
+
+func (a *App) InitProjectEnvironment(mode, image string) (*core.Project, error) {
+	done, err := a.begin()
+	if err != nil {
+		return nil, err
+	}
+	defer done()
+	dir := a.ProjectDir()
+	if dir == "" {
+		return nil, errNoProjectDir
+	}
+	p, err := core.InitProject(dir, mode, image)
+	if err != nil {
+		return nil, err
+	}
+	a.st.Store(newComponentsForDir(dir))
+	return &p, nil
+}
+
+func (a *App) MCPConfig() (map[string]any, error) {
+	dir := a.ProjectDir()
+	if dir == "" {
+		return nil, errNoProjectDir
+	}
+	exe := locateVsmCLI()
+	if exe == "" {
+		return nil, fmt.Errorf("请先将 vsm CLI 放在 GUI 同目录")
+	}
+	return map[string]any{"mcpServers": map[string]any{"vsm": map[string]any{"command": exe, "args": []string{"mcp", "serve", "--project", dir}}}}, nil
 }
 
 // PickProjectDir 弹出目录选择框让用户选择项目目录；取消时保持原值并返回空串。
@@ -515,6 +576,9 @@ type PathInitResult struct {
 //   - Windows：把 shims 写入用户级 PATH 并广播；
 //   - macOS / Linux：把激活语句写进 ~/.zshrc 等 shell 配置文件（此前这里直接报错）。
 func (a *App) PathInit() (PathInitResult, error) {
+	if a.c().paths.ProjectMode == "local" || a.c().paths.ProjectMode == "docker" {
+		return PathInitResult{}, fmt.Errorf("隔离项目使用 vsm run，不把项目目录写入系统 PATH")
+	}
 	done, err := a.begin()
 	if err != nil {
 		return PathInitResult{}, err
