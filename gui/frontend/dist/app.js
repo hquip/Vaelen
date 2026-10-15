@@ -23,6 +23,28 @@ let projectMode = "";
 let projectEnvironment = null;
 let projectEnvBusy = false;
 let projectEnvFailed = false;
+let updateBusy=false;
+let updateApplied=false;
+async function checkVSMUpdate(){
+  if(updateBusy||updateApplied)return;
+  updateBusy=true;
+  const status=document.getElementById("updateStatus"),error=document.getElementById("updateError");
+  error.classList.add("hidden");document.getElementById("updateApply").disabled=true;document.getElementById("updateCheck").disabled=true;
+  status.textContent="正在检查官方 GitHub Release…";
+  try{const info=await call("CheckUpdate");status.textContent="当前 "+info.current+" · 最新 "+info.latest+(info.available?" · 可以更新":" · 已是最新版本");document.getElementById("updateNotes").textContent=info.notes||"暂无发布说明";document.getElementById("updateApply").disabled=!info.available;}
+  catch(e){error.textContent=errMsg(e);error.classList.remove("hidden");status.textContent="检查失败，可配置代理后重试";}
+  finally{updateBusy=false;document.getElementById("updateCheck").disabled=false;}
+}
+document.getElementById("updateBtn").addEventListener("click",()=>{document.getElementById("updateModal").classList.remove("hidden");checkVSMUpdate();});
+document.getElementById("updateCheck").addEventListener("click",checkVSMUpdate);
+document.getElementById("updateClose").addEventListener("click",()=>document.getElementById("updateModal").classList.add("hidden"));
+document.getElementById("updateApply").addEventListener("click",async()=>{
+  if(updateBusy)return;updateBusy=true;document.getElementById("updateApply").disabled=true;document.getElementById("updateCheck").disabled=true;
+  const status=document.getElementById("updateStatus"),error=document.getElementById("updateError");error.classList.add("hidden");status.textContent="正在下载、校验并替换程序，请稍候…";
+  try{const result=await call("ApplyUpdate");updateApplied=true;status.textContent="已更新到 "+result.version+"，请关闭并重新启动 VSM。";if(result.backups&&result.backups.length)document.getElementById("updateNotes").textContent+="\n\n旧程序备份（重启后可删除）：\n"+result.backups.join("\n");}
+  catch(e){error.textContent=errMsg(e);error.classList.remove("hidden");status.textContent="更新失败，请检查原因后重试";document.getElementById("updateApply").disabled=false;}
+  finally{updateBusy=false;document.getElementById("updateCheck").disabled=updateApplied;}
+});
 let mcpClients = [];
 
 function projectEnvError(message) {
@@ -802,7 +824,7 @@ document.getElementById("detectBtn").addEventListener("click", showDetectOvervie
 document.getElementById("mirrorSel").addEventListener("change", async (e) => {
   try {
     await call("SetMirror", e.target.value);
-    toast("下载镜像已设为 " + (e.target.value === "cn" ? "国内加速" : "关闭"));
+    toast("下载镜像已设为 " + (e.target.value === "cn" ? "国内加速" : e.target.value === "custom" ? "自定义（使用 vsm mirror set 配置来源）" : "关闭"));
   } catch (err) {
     toast(err.message, true);
   }
@@ -908,7 +930,7 @@ async function loadMirror() {
   try {
     const m = await call("GetMirror");
     const sel = document.getElementById("mirrorSel");
-    if (sel) sel.value = m === "cn" ? "cn" : "off";
+    if (sel) sel.value = m === "cn" || m === "custom" ? m : "off";
   } catch (e) {
     // 后端未就绪时忽略
   }

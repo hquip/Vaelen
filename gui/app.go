@@ -24,6 +24,7 @@ import (
 	"vsm/internal/mcpserver"
 	"vsm/internal/netcfg"
 	"vsm/internal/plugin"
+	"vsm/internal/updater"
 )
 
 // components 是一组按当前配置组装好的核心组件。
@@ -181,6 +182,31 @@ func locateVsmCLI() string {
 func (a *App) Platform() string { return runtime.GOOS }
 
 func (a *App) Version() string { return buildinfo.DisplayVersion() }
+
+func (a *App) CheckUpdate() (updater.Info, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+	return updater.New().Check(ctx, buildinfo.DisplayVersion(), "")
+}
+
+func (a *App) ApplyUpdate() (updater.Result, error) {
+	if !a.mu.TryLock() {
+		return updater.Result{}, errBusy
+	}
+	defer a.mu.Unlock()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+	client := updater.New()
+	info, err := client.Check(ctx, buildinfo.DisplayVersion(), "")
+	if err != nil {
+		return updater.Result{}, err
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		return updater.Result{}, err
+	}
+	return client.Apply(ctx, info, exe, true)
+}
 
 func (a *App) startup(ctx context.Context) { a.ctx = ctx }
 
@@ -596,14 +622,17 @@ func (a *App) GetMirror() string {
 // SetMirror 写入下载镜像设置（cn 国内加速 / off 关闭）。
 func (a *App) SetMirror(mode string) error {
 	mode = strings.ToLower(strings.TrimSpace(mode))
-	if mode != "cn" && mode != "off" {
-		return fmt.Errorf("不支持的镜像: %s（可选 cn / off）", mode)
+	if mode != "cn" && mode != "off" && mode != "custom" {
+		return fmt.Errorf("不支持的镜像: %s（可选 cn / off / custom）", mode)
 	}
-	c := a.c()
-	if err := c.paths.EnsureDirs(); err != nil {
+	global, err := core.DefaultPaths()
+	if err != nil {
 		return err
 	}
-	return config.WriteFileAtomic(filepath.Join(c.paths.Root, "mirror"), []byte(mode+"\n"), 0o644)
+	if err := os.MkdirAll(global.Root, 0755); err != nil {
+		return err
+	}
+	return config.WriteFileAtomic(filepath.Join(global.Root, "mirror"), []byte(mode+"\n"), 0o644)
 }
 
 // GetProxy 返回当前网络代理设置的原始值："" 表示跟随系统环境变量，"off" 表示强制直连，
@@ -619,11 +648,14 @@ func (a *App) SetProxy(input string) error {
 	if err != nil {
 		return err
 	}
-	c := a.c()
-	if err := c.paths.EnsureDirs(); err != nil {
+	global, err := core.DefaultPaths()
+	if err != nil {
 		return err
 	}
-	path := filepath.Join(c.paths.Root, "proxy")
+	if err := os.MkdirAll(global.Root, 0755); err != nil {
+		return err
+	}
+	path := filepath.Join(global.Root, "proxy")
 	if stored == "" {
 		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
 			return err

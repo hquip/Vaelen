@@ -9,7 +9,7 @@
       "0409": {
         "identity": {
           "name": "vsm-gui",
-          "version": "1.0.4.0"
+          "version": "1.0.5.0"
         },
         "description": "VSM 多语言版本管理器",
         "minimum-os": "win7",

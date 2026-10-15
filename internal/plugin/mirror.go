@@ -1,10 +1,66 @@
 package plugin
 
 import (
+	"encoding/json"
+	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
+	"vsm/internal/netcfg"
 )
+
+var mirrorSources = map[string]string{"go": "https://go.dev/dl/", "node": "https://nodejs.org/dist/", "npm": "https://registry.npmjs.org/", "github": "https://github.com/", "github-api": "https://api.github.com/"}
+
+func mirrorConfigPath() string {
+	root := os.Getenv("VSM_HOME")
+	if root == "" {
+		home, _ := os.UserHomeDir()
+		root = filepath.Join(home, ".vsm")
+	}
+	return filepath.Join(root, "mirror-sources.json")
+}
+func CustomMirrors() (map[string]string, error) {
+	values := map[string]string{}
+	data, err := os.ReadFile(mirrorConfigPath())
+	if os.IsNotExist(err) {
+		return values, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal(data, &values); err != nil {
+		return nil, fmt.Errorf("自定义镜像配置无效: %w", err)
+	}
+	return values, nil
+}
+func ValidateMirror(source, raw string) error {
+	if _, ok := mirrorSources[source]; !ok {
+		return fmt.Errorf("未知镜像源 %q（支持 go/node/npm/github/github-api）", source)
+	}
+	if err := netcfg.ValidateURL(raw); err != nil {
+		return err
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.RawQuery != "" || u.Fragment != "" {
+		return fmt.Errorf("镜像基地址不能包含 query 或 fragment")
+	}
+	return nil
+}
+
+// NPMRegistry affects child-process environment only, never any .npmrc file.
+func NPMRegistry() string {
+	if mirrorMode() == "off" {
+		return ""
+	}
+	values, err := CustomMirrors()
+	if err == nil {
+		if raw := values["npm"]; raw != "" && ValidateMirror("npm", raw) == nil {
+			return raw
+		}
+	}
+	return ""
+}
 
 // 镜像规则：按上游 URL 前缀整体替换为国内镜像前缀。下载与元数据 JSON 都会经过重写。
 //
@@ -46,6 +102,20 @@ func mirrorMode() string {
 // MirrorURL 按当前镜像设置重写下载 / 元数据 URL；未启用或无匹配规则时原样返回。
 func MirrorURL(url string) string {
 	mode := mirrorMode()
+	// An explicit off (including VSM_MIRROR=off) overrides custom sources.
+	if mode != "off" {
+		if custom, err := CustomMirrors(); err == nil {
+			for source, base := range custom {
+				prefix, ok := mirrorSources[source]
+				if ok && ValidateMirror(source, base) == nil && strings.HasPrefix(url, prefix) {
+					if source == "github" {
+						return strings.TrimRight(base, "/") + "/" + url
+					}
+					return strings.TrimRight(base, "/") + "/" + strings.TrimPrefix(url, prefix)
+				}
+			}
+		}
+	}
 	if mode == "" || mode == "off" {
 		return url
 	}

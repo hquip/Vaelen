@@ -48,6 +48,9 @@ func (p Project) DockerArgs(dir, image, command string, args []string) ([]string
 	for _, entry := range []string{"GOTOOLCHAIN=local", "PYTHONNOUSERSITE=1", "HOME=/workspace/.vsm/docker-cache/home", "GOPATH=/workspace/.vsm/docker-cache/go", "GOCACHE=/workspace/.vsm/docker-cache/go-build", "GOMODCACHE=/workspace/.vsm/docker-cache/go-mod", "npm_config_cache=/workspace/.vsm/docker-cache/npm", "PIP_CACHE_DIR=/workspace/.vsm/docker-cache/pip"} {
 		flags = append(flags, "--env", entry)
 	}
+	if registry := plugin.NPMRegistry(); registry != "" {
+		flags = append(flags, "--env", "npm_config_registry="+registry)
+	}
 	flags = append(flags, image, command)
 	return append(flags, args...), nil
 }

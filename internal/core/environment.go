@@ -47,6 +47,9 @@ func (a Activator) planEnvironment(startDir string, preferProject bool) (Environ
 		}
 	}
 	seen := map[string]bool{}
+	if registry := plugin.NPMRegistry(); registry != "" {
+		plan.Variables["npm_config_registry"] = registry
+	}
 	for _, tool := range plugin.Names() {
 		p, _ := plugin.Get(tool)
 		r := a.Resolver.Resolve(tool, startDir)

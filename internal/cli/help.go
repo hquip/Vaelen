@@ -87,6 +87,12 @@ func printHelpSection(title string, lines []string) {
 }
 
 var commandHelpTopics = map[string]commandHelp{
+	"update": {
+		Summary: "从官方 GitHub 更新 VSM 自身", Usage: []string{"vsm update [--check] [--version <版本>] [--gui] [--json]"},
+		Options:  []string{"--check  仅检查可用版本，不修改程序", "--version <版本>  指定稳定版；不会降级", "--gui  同时更新相邻 GUI（macOS 应用内自动整体更新）", "--json  输出结构化结果"},
+		Notes:    []string{"校验官方 SHA256 后替换，失败恢复旧程序；不修改语言安装、项目配置或 AI 设置。", "Windows 使用中的旧文件可能保留备份，退出旧程序后可删除；目录需要可写。"},
+		Examples: []string{"vsm update --check", "vsm update", "vsm update --gui"},
+	},
 	"install": {
 		Summary: "下载并安装指定工具的版本", Aliases: []string{"i"},
 		Usage:    []string{"vsm install <tool> [version] [--path <目录>] [--require-checksum]"},
@@ -120,8 +126,8 @@ var commandHelpTopics = map[string]commandHelp{
 		Examples: []string{"vsm list-all node", "vsm list-all go --json"},
 	},
 	"current": {
-		Summary: "查看当前生效版本及来源", Usage: []string{"vsm current [--json]"},
-		Options: []string{"--json  输出结构化 JSON"}, Examples: []string{"vsm current", "vsm current --json"},
+		Summary: "查看当前生效版本及来源", Usage: []string{"vsm current [--all] [--json]"},
+		Options: []string{"--all  同时显示未启用的工具", "--json  输出结构化 JSON"}, Examples: []string{"vsm current", "vsm current --all", "vsm current --json"},
 	},
 	"context": {
 		Summary: "读取供 AI / Agent 使用的项目工具链上下文", Usage: []string{"vsm context [--json] [--check]"},
@@ -211,12 +217,13 @@ var commandHelpTopics = map[string]commandHelp{
 		Examples: []string{"vsm adopt go", "vsm adopt go 1.25.11 /opt/go/bin/go", "vsm adopt --all"},
 	},
 	"mirror": {
-		Summary: "查看或设置下载镜像", Usage: []string{"vsm mirror [cn|off]"},
-		Notes: []string{"省略参数查看设置；cn 启用国内镜像，off 关闭。"}, Examples: []string{"vsm mirror", "vsm mirror cn", "vsm mirror off"},
+		Summary: "查看或设置下载镜像", Usage: []string{"vsm mirror [cn|off|custom]", "vsm mirror set <go|node|npm|github|github-api> <URL>", "vsm mirror unset <源>", "vsm mirror list [--json]"},
+		Options: []string{"--json  输出镜像配置"},
+		Notes:   []string{"省略参数查看设置；cn 启用国内镜像，off 关闭所有重写；自定义源优先。", "github 基地址作为代理前缀，后面附加完整原始 URL；其余源替换对应上游基地址。", "发布方 SHA256 仍从原站获取。npm 源通过 vsm run 的子进程环境生效，不改 .npmrc。"}, Examples: []string{"vsm mirror list --json", "vsm mirror set github https://mirror.example/", "vsm mirror set node https://mirror.example/node/"},
 	},
 	"proxy": {
-		Summary: "查看或设置网络代理", Usage: []string{"vsm proxy [url|off|system]"},
-		Notes:    []string{"支持 http / https / socks5；off 强制直连，system 跟随系统环境。", "VSM_PROXY 环境变量优先于保存的设置。"},
+		Summary: "查看或设置网络代理", Usage: []string{"vsm proxy [url|off|system]", "vsm proxy --json"},
+		Notes:    []string{"支持 http / https / socks5 / socks5h；off 强制直连，system 跟随系统环境。", "VSM_PROXY 环境变量优先于保存的设置；不带参数查看当前配置。"},
 		Examples: []string{"vsm proxy", "vsm proxy http://127.0.0.1:7890", "vsm proxy system"},
 	},
 	"install-root": {
