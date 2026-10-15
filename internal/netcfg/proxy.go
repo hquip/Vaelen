@@ -82,6 +82,14 @@ func Normalize(s string) (string, error) {
 	if err != nil || u.Host == "" {
 		return "", fmt.Errorf("非法代理地址 %q（示例 http://127.0.0.1:7890 或 socks5://127.0.0.1:1080）", s)
 	}
+	switch u.Scheme {
+	case "http", "https", "socks5", "socks5h":
+	default:
+		return "", fmt.Errorf("不支持的代理协议 %q（支持 http/https/socks5/socks5h）", u.Scheme)
+	}
+	if u.Hostname() == "" || u.RawQuery != "" || u.Fragment != "" || (u.Path != "" && u.Path != "/") {
+		return "", fmt.Errorf("代理地址只能包含协议、主机、端口和可选认证信息")
+	}
 	return u.String(), nil
 }
 

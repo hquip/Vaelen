@@ -1,19 +1,28 @@
 package plugin
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
 	"regexp"
 	"runtime"
 	"sort"
 	"strings"
+	"sync"
+	"time"
+	"vsm/internal/netcfg"
 )
 
 func init() { register(&pythonPlugin{}) }
 
 // pythonPlugin 使用 astral-sh/python-build-standalone 的预编译包（install_only，免编译），
 // 从其最新 GitHub Release 中解析可用版本并定位对应平台的下载包。
-type pythonPlugin struct{}
+type pythonPlugin struct {
+	mu         sync.Mutex
+	cached     []ghRelease
+	cacheKey   string
+	cacheUntil time.Time
+}
 
 var pyAssetRe = regexp.MustCompile(`^cpython-(\d+\.\d+\.\d+)\+\d+-(.+)-install_only\.tar\.gz$`)
 
@@ -46,22 +55,28 @@ func (p *pythonPlugin) triple(t Target) (string, error) {
 	return "", fmt.Errorf("python 不支持的平台: %s/%s", t.OS, t.Arch)
 }
 
-// maxPythonPages 限制翻页上限。该仓库每个 release 含数百个 asset，单页响应可达数 MB，
-// per_page 取满 100 会过大、易触发 GitHub 504；故用 per_page=20 翻多页，在响应大小与
-// 历史 patch 覆盖之间取平衡（约 80 个 release，足以覆盖各系列的大量历史 patch）。
-const maxPythonPages = 4
+const maxPythonReleases = 80
 
 // releases 翻页拉取 python-build-standalone 的多个 release（长超时 + 每页带重试）。
 func (p *pythonPlugin) releases() ([]ghRelease, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	key := MirrorURL("https://api.github.com/") + netcfg.ProxySetting()
+	if p.cacheKey == key && time.Now().Before(p.cacheUntil) {
+		return p.cached, nil
+	}
 	var all []ghRelease
-	for page := 1; page <= maxPythonPages; page++ {
-		url := fmt.Sprintf("https://api.github.com/repos/astral-sh/python-build-standalone/releases?per_page=20&page=%d", page)
+	pageSize := 5
+	for page := 1; page <= maxPythonReleases/pageSize; page++ {
+		url := fmt.Sprintf("https://api.github.com/repos/astral-sh/python-build-standalone/releases?per_page=%d&page=%d", pageSize, page)
 		var pageRels []ghRelease
-		var err error
-		for i := 0; i < 3; i++ {
-			if err = fetchJSONSlow(url, &pageRels); err == nil {
-				break
-			}
+		err := fetchJSONSlow(url, &pageRels)
+		if errors.Is(err, errMetadataTooLarge) && pageSize > 1 {
+			// Start over with smaller pages, preserving release offsets.
+			pageSize /= 2
+			page = 0
+			all = nil
+			continue
 		}
 		if err != nil {
 			if page == 1 {
@@ -70,10 +85,13 @@ func (p *pythonPlugin) releases() ([]ghRelease, error) {
 			break // 后续页失败：用已取到的
 		}
 		all = append(all, pageRels...)
-		if len(pageRels) < 20 {
+		if len(pageRels) < pageSize {
 			break // 不足一页 = 最后一页
 		}
 	}
+	p.cached = all
+	p.cacheKey = key
+	p.cacheUntil = time.Now().Add(5 * time.Minute)
 	return all, nil
 }
 

@@ -120,7 +120,7 @@ sudo ln -sf /Applications/VSM.app/Contents/MacOS/vsm /usr/local/bin/vsm
 自行打包（需在 Mac 上，产出与 Release 相同的通用版 zip）：
 
 ```bash
-bash scripts/package-macos.sh 1.0.4 dist
+bash scripts/package-macos.sh 1.0.5 dist
 ```
 
 > 打 `v*` tag 即可由 GitHub Actions 在 Windows / macOS / Linux 三个 runner 上分别本地编译，
@@ -135,7 +135,7 @@ bash scripts/package-macos.sh 1.0.4 dist
 | `vsm use [-g] <tool> <version>` | 设为当前目录版本（写 `.tool-versions`）；`-g` 设为全局 |
 | `vsm list [tool]` | 列出已安装版本（`*` 为当前生效） |
 | `vsm list-all <tool>` | 列出可安装的远端版本 |
-| `vsm current` | 显示各工具当前生效版本及来源 |
+| `vsm current [--all]` | 显示已启用工具的版本及来源；`--all` 包含未启用项 |
 | `vsm context [--json] [--check]` | Agent/AI 只读版本上下文：项目要求、解析/已激活版本、冲突和建议命令 |
 | `vsm run [--install-missing] -- <command> [args...]` | 自动采用项目版本执行命令；可补装缺失工具，补装必须校验 SHA256 |
 | `vsm project init [--mode local\|versions\|docker] [--image 镜像]` | 一个项目一个环境，默认本地隔离 |
@@ -158,6 +158,38 @@ bash scripts/package-macos.sh 1.0.4 dist
 | `vsm size [tool] [--json]` | 统计各版本占用的磁盘空间 |
 | `vsm clean` | 清理下载缓存（安装完成后的压缩包） |
 | `vsm help [command [subcommand]]` | 查看总览或指定命令的详细用法、选项与示例；支持命令别名 |
+| `vsm update [--check] [--gui]` | 从官方 GitHub 校验并更新 VSM；`--check` 只检查，`--gui` 同步相邻 GUI |
+
+## 更新 VSM
+
+从 v1.0.5 起，CLI 与 GUI 可从官方 GitHub Release 更新 VSM 自身：
+
+```bash
+vsm update --check
+vsm update
+vsm update --gui
+```
+
+GUI 左下角提供「检查 VSM 更新」。Windows / Linux GUI 更新时同时更新同目录的 CLI；macOS 应用内会整体更新 `VSM.app`，验证签名与内置 CLI。更新完成后重新启动程序。所有资源必须通过官方 SHA256 校验，替换失败时尝试恢复旧文件，不改项目和语言安装。
+
+旧于 v1.0.5 的程序尚无更新命令，需要先从 [Releases](https://github.com/hquip/Vaelen/releases/latest) 手动升级一次。程序所在目录需可写；macOS 应用请先移出只读磁盘映像。仍在使用的旧程序可能保留备份路径，重启后可按提示删除。详细参数见 `vsm help update`。
+
+## 镜像、代理与终端显示
+
+```bash
+vsm mirror set github https://mirror.example/
+vsm mirror set github-api https://api-mirror.example/
+vsm mirror set node https://mirror.example/node/
+vsm mirror set npm https://registry.example/
+vsm mirror list --json
+vsm proxy socks5h://127.0.0.1:1080
+vsm proxy --json
+vsm current --all
+```
+
+以上镜像域名为格式示例，请替换为自己的可用服务。`github` 将完整原始 URL 附加到代理前缀；`github-api`、`go`、`node`、`npm` 替换对应基地址。`npm` 也通过 `vsm run` 的子进程环境设置 registry，不改 `.npmrc`。`vsm mirror off` 禁用所有镜像，`cn` 使用内置规则，`custom` 使用自定义规则；可用 `vsm mirror unset <源>` 删除单项。发布方摘要和 VSM 更新始终走官方来源，不接受镜像提供的 SHA256。
+
+代理支持 `http` / `https` / `socks5` / `socks5h`；不带参数查看当前配置。网络设置保存到全局 VSM 数据目录，隔离项目中的 CLI 和 GUI 同样生效。`VSM_PROXY` / `VSM_MIRROR` 环境变量优先。`current` 在可用终端中显示彩色工具/版本，重定向及 JSON 输出不插入颜色；`NO_COLOR` 或 `TERM=dumb` 禁用颜色。
 
 `list` / `list-all` / `current` / `detect` / `doctor` / `size` / `clean` / `context` 均支持 `--json`，便于编辑器插件与 CI 集成。
 `vsm exec` 会**原样透传子进程退出码**，可直接用于 `vsm exec go test ./... && deploy` 这类脚本。
@@ -315,5 +347,6 @@ GUI 安装区提供「要求发布方 SHA256 校验」选项。Go、Node 从官�
 - **已完成（v1.0.2）**：MCP stdio 服务与 7 个 AI 工具、每项目独立环境（`local` / `versions` / `docker`）、Python venv、GUI「隔离环境 / MCP」入口，并修复 Go 版本探测与项目版本约束。详见 [发布说明](docs/releases/v1.0.2.md)。
 - **已完成（v1.0.3）**：多 AI 客户端配置预设与只读模式、项目选择和使用引导、Docker 镜像工具视图，以及 Python venv、预发布版本选择和 MCP 安装超时修复。详见 [发布说明](docs/releases/v1.0.3.md)。
 - **已完成（v1.0.4）**：`help <command>` 详细帮助、嵌套子命令帮助、命令别名与 `-h` / `--help`，以及帮助主题的 shell 补全。详见 [发布说明](docs/releases/v1.0.4.md)。
+- **已完成（v1.0.5）**：GitHub 自更新、Python 元数据 EOF 修复、自定义来源镜像、代理/镜像 JSON 查看，以及精简和彩色 `current` 输出。详见 [发布说明](docs/releases/v1.0.5.md)。
 - **v1（待办）**：Lua 插件运行时（gopher-lua）外部扩展、`.zst` 解压。
 - **v2（待办）**：Bubble Tea TUI（`vsm ui`）、远程插件仓库。

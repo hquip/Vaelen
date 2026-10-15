@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -281,14 +282,22 @@ func (a *app) cmdListAll(args []string) error {
 }
 
 func (a *app) cmdCurrent(args []string) error {
-	if _, asJSON := jsonFlag(args); asJSON {
+	rest, asJSON := jsonFlag(args)
+	all := false
+	for _, arg := range rest {
+		if arg != "--all" {
+			return fmt.Errorf("用法: vsm current [--all] [--json]")
+		}
+		all = true
+	}
+	if asJSON {
 		var out []toolStatusJSON
 		status, err := a.collectStatus()
 		if err != nil {
 			return err
 		}
 		for _, st := range status {
-			if st.Spec != "" {
+			if all || st.Spec != "" {
 				out = append(out, st)
 			}
 		}
@@ -303,14 +312,16 @@ func (a *app) cmdCurrent(args []string) error {
 			return fmt.Errorf("%s: %s", tool, r.Error)
 		}
 		if r.Spec == "" {
-			fmt.Printf("%-6s  -\n", tool)
+			if all {
+				fmt.Printf("%-6s  -\n", tool)
+			}
 			continue
 		}
 		status := r.Version
 		if status == "" {
 			status = fmt.Sprintf("(要求 %s, 未安装)", r.Spec)
 		}
-		fmt.Printf("%-6s  %-22s  <- %s\n", tool, status, r.Source)
+		fmt.Printf("%-6s  %-22s  <- %s\n", colorize(os.Stdout, "36", tool), colorize(os.Stdout, "32", status), r.Source)
 	}
 	return nil
 }
@@ -575,26 +586,91 @@ func (a *app) adoptAll() error {
 }
 
 func (a *app) cmdMirror(args []string) error {
-	path := filepath.Join(a.paths.Root, "mirror")
-	if len(args) == 0 {
-		cur := "off"
-		if b, err := os.ReadFile(path); err == nil {
-			if v := strings.TrimSpace(string(b)); v != "" {
-				cur = v
+	rest, asJSON := jsonFlag(args)
+	if len(rest) == 0 || (len(rest) == 1 && rest[0] == "list") {
+		custom, err := plugin.CustomMirrors()
+		if err != nil {
+			return err
+		}
+		mode := plugin.MirrorMode()
+		if mode == "" {
+			mode = "default"
+		}
+		if asJSON {
+			return printJSON(map[string]any{"mode": mode, "sources": custom})
+		}
+		fmt.Println("当前镜像模式:", mode)
+		for _, source := range []string{"go", "node", "npm", "github", "github-api"} {
+			if raw := custom[source]; raw != "" {
+				fmt.Printf("  %s = %s\n", source, raw)
 			}
 		}
-		if v := strings.TrimSpace(os.Getenv("VSM_MIRROR")); v != "" {
-			cur = v + "（来自环境变量 VSM_MIRROR，优先生效）"
-		}
-		fmt.Println("当前下载镜像:", cur)
-		fmt.Println("可选: cn（国内加速：go/node/github）, off（关闭）")
+		fmt.Println("设置: vsm mirror cn|off；自定义: vsm mirror set <go|node|npm|github|github-api> <URL>")
 		return nil
 	}
-	mode := strings.ToLower(args[0])
-	if mode != "cn" && mode != "off" {
-		return fmt.Errorf("不支持的镜像: %s（可选 cn / off）", mode)
+	if rest[0] == "set" || rest[0] == "unset" {
+		want := 3
+		if rest[0] == "unset" {
+			want = 2
+		}
+		if len(rest) != want {
+			return fmt.Errorf("用法: vsm mirror set <源> <URL> | unset <源>")
+		}
+		custom, err := plugin.CustomMirrors()
+		if err != nil {
+			return err
+		}
+		if rest[0] == "set" {
+			if err := plugin.ValidateMirror(rest[1], rest[2]); err != nil {
+				return err
+			}
+			custom[rest[1]] = rest[2]
+		} else {
+			if err := plugin.ValidateMirror(rest[1], "https://example.com/"); err != nil {
+				return err
+			}
+			delete(custom, rest[1])
+		}
+		data, err := json.MarshalIndent(custom, "", "  ")
+		if err != nil {
+			return err
+		}
+		// Mirror/proxy transport settings are global, independent of project caches.
+		global, err := core.DefaultPaths()
+		if err != nil {
+			return err
+		}
+		if err := os.MkdirAll(global.Root, 0755); err != nil {
+			return err
+		}
+		if err := config.WriteFileAtomic(filepath.Join(global.Root, "mirror-sources.json"), append(data, '\n'), 0644); err != nil {
+			return err
+		}
+		if rest[0] == "set" && plugin.MirrorMode() != "cn" {
+			if err := config.WriteFileAtomic(filepath.Join(global.Root, "mirror"), []byte("custom\n"), 0644); err != nil {
+				return err
+			}
+		}
+		if asJSON {
+			return printJSON(custom)
+		}
+		fmt.Println("已更新镜像源:", rest[1])
+		return nil
 	}
-	if err := a.paths.EnsureDirs(); err != nil {
+	args = rest
+	if len(args) != 1 {
+		return fmt.Errorf("用法: vsm mirror [cn|off|custom] | set <源> <URL> | unset <源> | list [--json]")
+	}
+	global, err := core.DefaultPaths()
+	if err != nil {
+		return err
+	}
+	path := filepath.Join(global.Root, "mirror")
+	mode := strings.ToLower(args[0])
+	if mode != "cn" && mode != "off" && mode != "custom" {
+		return fmt.Errorf("不支持的镜像: %s（可选 cn / off / custom）", mode)
+	}
+	if err := os.MkdirAll(global.Root, 0755); err != nil {
 		return err
 	}
 	if err := config.WriteFileAtomic(path, []byte(mode+"\n"), 0o644); err != nil {
@@ -605,7 +681,20 @@ func (a *app) cmdMirror(args []string) error {
 }
 
 func (a *app) cmdProxy(args []string) error {
-	path := filepath.Join(a.paths.Root, "proxy")
+	rest, asJSON := jsonFlag(args)
+	args = rest
+	if asJSON {
+		if len(args) > 0 {
+			return fmt.Errorf("vsm proxy --json 仅用于查看配置")
+		}
+		value, source := netcfg.Describe()
+		return printJSON(map[string]any{"value": value, "source": source})
+	}
+	global, err := core.DefaultPaths()
+	if err != nil {
+		return err
+	}
+	path := filepath.Join(global.Root, "proxy")
 	if len(args) == 0 {
 		value, source := netcfg.Describe()
 		switch {
@@ -626,10 +715,13 @@ func (a *app) cmdProxy(args []string) error {
 		return nil
 	}
 	stored, err := netcfg.Normalize(args[0])
+	if len(args) > 1 {
+		return fmt.Errorf("用法: vsm proxy [url|off|system] | --json")
+	}
 	if err != nil {
 		return err
 	}
-	if err := a.paths.EnsureDirs(); err != nil {
+	if err := os.MkdirAll(global.Root, 0755); err != nil {
 		return err
 	}
 	switch stored {

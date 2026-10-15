@@ -80,6 +80,12 @@ func Run(args []string) int {
 	case "version", "-v", "--version":
 		fmt.Println("vsm " + buildinfo.DisplayVersion())
 		return 0
+	case "update":
+		if err := runUpdate(rest); err != nil {
+			fmt.Fprintln(os.Stderr, "错误:", err)
+			return 1
+		}
+		return 0
 	}
 
 	a, err := newApp()
@@ -203,6 +209,7 @@ const usageText = `vsm - 多语言版本管理器 (%s)
   size      [tool]             统计各版本占用的磁盘空间
   clean                        清理下载缓存
   version                      显示版本
+  update [--check] [--gui]      从官方 GitHub 检查/校验并更新 VSM 自身
   help [command [subcommand]]  查看总览或指定命令的用法、选项与示例
 
   list / list-all / current / detect / doctor / size / clean / context 支持 --json 结构化输出

@@ -29,6 +29,7 @@
       <select id="mirrorSel" class="mirror-sel" title="下载镜像">
         <option value="off">镜像: 关闭</option>
         <option value="cn">镜像: 国内</option>
+        <option value="custom">镜像: 自定义</option>
       </select>
       <button id="proxyBtn" class="ghost-btn" title="网络代理">🌐 代理</button>
       <button id="detectBtn" class="ghost-btn">🔎 系统检测</button>
@@ -64,6 +65,7 @@
           <span id="dataDir" class="foot-path">~/.vsm</span>
         </div>
       </div>
+      <div class="sidebar-foot"><button id="updateBtn" class="ghost-btn">检查 VSM 更新</button></div>
     </aside>
 
     <main id="detail" class="detail">
@@ -76,6 +78,17 @@
   </div>
 
   <div id="toast" class="toast hidden"></div>
+
+  <div id="updateModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="updateTitle">
+    <div class="modal-card project-env-card">
+      <h3 id="updateTitle" class="modal-title">从 GitHub 更新 VSM</h3>
+      <p id="updateStatus" class="modal-sub" role="status">正在检查官方发布…</p>
+      <div class="project-env-body"><pre id="updateNotes" class="project-commands"></pre></div>
+      <p id="updateError" class="project-error hidden" role="alert"></p>
+      <p class="project-hint">更新 GUI 与配套 CLI，验证 SHA256。项目环境和已安装语言保持原样，更新后请重新启动 VSM。</p>
+      <div class="modal-actions"><button id="updateCheck" class="ghost-btn">重新检查</button><span class="modal-spacer"></span><button id="updateClose" class="ghost-btn">关闭</button><button id="updateApply" class="primary-btn" disabled>下载并更新</button></div>
+    </div>
+  </div>
 
   <div id="proxyModal" class="modal hidden">
     <div class="modal-card">

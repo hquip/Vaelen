@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -15,20 +16,7 @@ var httpClient = netcfg.Client(30 * time.Second)
 
 // fetchJSON 发起 GET 请求并把响应体解析为 JSON。
 func fetchJSON(url string, out any) error {
-	req, err := http.NewRequest(http.MethodGet, MirrorURL(url), nil)
-	if err != nil {
-		return err
-	}
-	req.Header.Set("User-Agent", "vsm")
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("请求 %s 失败: HTTP %d", url, resp.StatusCode)
-	}
-	return json.NewDecoder(io.LimitReader(resp.Body, 16<<20)).Decode(out)
+	return fetchJSONWithClient(httpClient, MirrorURL(url), out)
 }
 
 // slowHTTPClient 用更长超时，应对体积很大的 API 响应（如 python-build-standalone 的 releases，
@@ -37,20 +25,54 @@ var slowHTTPClient = netcfg.Client(2 * time.Minute)
 
 // fetchJSONSlow 与 fetchJSON 相同，但使用更长超时的 client。
 func fetchJSONSlow(url string, out any) error {
-	req, err := http.NewRequest(http.MethodGet, MirrorURL(url), nil)
+	return fetchJSONWithClient(slowHTTPClient, MirrorURL(url), out)
+}
+
+const maxMetadataBytes = 16 << 20
+
+var errMetadataTooLarge = errors.New("元数据超过 16 MiB 上限，请减小分页大小")
+
+func fetchJSONWithClient(client *http.Client, raw string, out any) error {
+	var last error
+	for attempt := 0; attempt < 3; attempt++ {
+		last = fetchJSONOnce(client, raw, out)
+		if last == nil || errors.Is(last, errMetadataTooLarge) {
+			return last
+		}
+		// Retry broken bodies and transient connections; never parse a truncated
+		// response as a valid partial version list.
+		if attempt < 2 {
+			time.Sleep(time.Duration(attempt+1) * 200 * time.Millisecond)
+		}
+	}
+	return fmt.Errorf("获取元数据 %s 失败（已尝试 3 次；请检查 vsm proxy / mirror）: %w", raw, last)
+}
+
+func fetchJSONOnce(client *http.Client, raw string, out any) error {
+	req, err := http.NewRequest(http.MethodGet, raw, nil)
 	if err != nil {
 		return err
 	}
 	req.Header.Set("User-Agent", "vsm")
-	resp, err := slowHTTPClient.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("请求 %s 失败: HTTP %d", url, resp.StatusCode)
+		return fmt.Errorf("请求 %s 失败: HTTP %d", raw, resp.StatusCode)
 	}
-	return json.NewDecoder(io.LimitReader(resp.Body, 16<<20)).Decode(out)
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxMetadataBytes+1))
+	if err != nil {
+		return fmt.Errorf("读取响应失败: %w", err)
+	}
+	if len(data) > maxMetadataBytes {
+		return fmt.Errorf("%s: %w", raw, errMetadataTooLarge)
+	}
+	if err := json.Unmarshal(data, out); err != nil {
+		return fmt.Errorf("元数据 JSON 不完整或无效: %w", err)
+	}
+	return nil
 }
 
 // extFor 返回某平台下官方发行包常用的压缩扩展名。

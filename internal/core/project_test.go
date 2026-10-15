@@ -28,6 +28,35 @@ func TestDockerRejectsHostInstallationBeforeWrites(t *testing.T) {
 	}
 }
 
+func TestNPMMirrorStaysInProjectChildEnvironment(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("VSM_HOME", home)
+	t.Setenv("VSM_MIRROR", "custom")
+	if err := os.WriteFile(filepath.Join(home, "mirror-sources.json"), []byte(`{"npm":"https://registry.example/"}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	p, err := InitProject(t.TempDir(), "local", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	paths := p.Paths(Paths{})
+	reg := Registry{Paths: paths}
+	a := Activator{Paths: paths, Registry: reg, Resolver: Resolver{Paths: paths, Registry: reg}}
+	plan, err := a.PlanProjectEnvironment(p.Root)
+	if err != nil || plan.Variables["npm_config_registry"] != "https://registry.example/" {
+		t.Fatalf("npm registry missing: %v %v", plan, err)
+	}
+	if _, err := os.Stat(filepath.Join(p.Root, ".npmrc")); !os.IsNotExist(err) {
+		t.Fatal("project .npmrc changed")
+	}
+	p.Mode = "docker"
+	p.Image = "node:22"
+	args, err := p.DockerArgs(p.Root, "sha256:test", "node", nil)
+	if err != nil || !strings.Contains(strings.Join(args, " "), "npm_config_registry=https://registry.example/") {
+		t.Fatalf("Docker npm registry missing: %v %v", args, err)
+	}
+}
+
 func TestProjectsHaveIndependentInstallsAndRequirements(t *testing.T) {
 	global := Paths{Root: t.TempDir()}
 	parent := t.TempDir()
