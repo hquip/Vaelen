@@ -111,12 +111,44 @@ jobs:
         if: matrix.label == 'macos'
         run: bash scripts/package-macos.sh "0.0.0-ci.${{ github.run_number }}" dist
 
+      # 启动冒烟测试：从 zip 解出（验证的就是用户下载到的那份），真实启动 app，
+      # 10 秒后仍在运行才算通过（能抓到缺框架、Info.plist 错误、启动即崩等问题）。
+      # 截图供人工检查 macOS 界面；runner 若缺屏幕录制权限，截图失败不影响结果。
+      - name: Smoke-launch macOS app
+        if: matrix.label == 'macos'
+        run: |
+          set -euo pipefail
+          D="$(mktemp -d)"
+          ditto -x -k dist/vsm-gui-macos-universal.zip "$D"
+          APP="$D/VSM.app"
+          codesign --verify --deep --strict "$APP"
+          open -n "$APP" --stdout "$D/gui.log" --stderr "$D/gui.log"
+          sleep 10
+          if ! pgrep -x vsm-gui >/dev/null; then
+            echo "::error title=macOS 启动失败::VSM.app 启动后 10 秒内退出"
+            cat "$D/gui.log" || true
+            exit 1
+          fi
+          echo "VSM.app 运行中（pid $(pgrep -x vsm-gui)）"
+          screencapture -x dist/macos-screenshot.png || echo "截图失败（runner 可能缺少屏幕录制权限）"
+          osascript -e 'quit app "VSM"' || pkill -x vsm-gui || true
+          tail -20 "$D/gui.log" || true
+
       - name: Upload macOS app
         if: matrix.label == 'macos'
         uses: actions/upload-artifact@v4
         with:
           name: vsm-gui-macos-universal
           path: dist/vsm-gui-macos-universal.zip
+          retention-days: 14
+
+      - name: Upload macOS screenshot
+        if: always() && matrix.label == 'macos'
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-screenshot
+          path: dist/macos-screenshot.png
+          if-no-files-found: warn
           retention-days: 14
 
       - name: Build GUI (linux)
