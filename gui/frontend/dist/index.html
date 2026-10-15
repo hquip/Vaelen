@@ -42,7 +42,7 @@
       <div class="sidebar-foot">
         <div class="foot-text">
           <span class="foot-label">项目环境与 AI</span>
-          <button id="projectEnvBtn" class="mini">隔离环境 / MCP</button>
+          <button id="projectEnvBtn" class="mini" title="选择项目、初始化独立环境，并连接 AI 客户端">隔离环境 / MCP</button>
         </div>
       </div>
       <div class="filter-wrap">
@@ -91,22 +91,54 @@
     </div>
   </div>
 
-  <div id="projectEnvModal" class="modal hidden">
-    <div class="modal-card">
-      <h3 class="modal-title">项目隔离环境</h3>
-      <p id="projectEnvStatus" class="modal-sub">选择一个项目目录后配置环境。</p>
-      <select id="projectEnvMode" class="modal-input">
-        <option value="local">本地隔离：独立工具、缓存与 Python venv（推荐）</option>
-        <option value="versions">版本隔离：共用工具，项目独立选版本</option>
-        <option value="docker">Docker：在指定镜像内运行</option>
-      </select>
-      <input id="projectEnvImage" class="modal-input hidden" placeholder="镜像需包含项目工具，例如 golang:1.25.11" />
-      <textarea id="projectMCPConfig" class="modal-input hidden" rows="7" readonly aria-label="MCP 配置"></textarea>
+  <div id="projectEnvModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="projectEnvTitle">
+    <div class="modal-card project-env-card">
+      <h3 id="projectEnvTitle" class="modal-title">项目环境与 AI</h3>
+      <p class="modal-sub">先选择代码所在的文件夹，再为这个项目配置工具和 AI。</p>
+      <div class="project-env-body">
+      <section class="project-section">
+        <h4>1. 选择项目</h4>
+        <div class="project-dir-row">
+          <span id="projectEnvDir" class="project-dir">尚未选择项目目录</span>
+          <button id="projectEnvPick" class="ghost-btn">选择项目目录</button>
+        </div>
+        <p id="projectEnvStatus" class="project-hint" role="status">正在读取项目状态…</p>
+      </section>
+      <section class="project-section">
+        <h4><label for="projectEnvMode">2. 配置环境</label></h4>
+        <select id="projectEnvMode" class="modal-input">
+          <option value="local">本地隔离（推荐）</option>
+          <option value="versions">共享工具，按项目选择版本</option>
+          <option value="docker">Docker 容器</option>
+        </select>
+        <p id="projectEnvModeHint" class="project-hint"></p>
+        <div id="projectEnvImageRow" class="hidden">
+          <label class="project-field-label" for="projectEnvImage">包含项目工具链的 Docker 镜像</label>
+          <input id="projectEnvImage" class="modal-input" placeholder="例如 golang:1.25.11" />
+        </div>
+        <div class="project-action-row">
+          <button id="projectEnvInit" class="primary-btn">为此项目初始化环境</button>
+          <button id="projectEnvTools" class="ghost-btn hidden">去选择语言和版本</button>
+        </div>
+        <div id="projectEnvNext" class="hidden">
+          <p class="project-hint">下一步：在左侧选择语言，安装所需版本并点击「设为本目录」。然后在此项目的终端中运行命令，例如：</p>
+          <pre id="projectEnvCommands" class="project-commands"></pre>
+        </div>
+      </section>
+      <section class="project-section">
+        <h4>3. 连接 AI（可选）</h4>
+        <p class="project-hint">生成配置，将其中的 <code>vsm</code> 项加入 AI 客户端的 MCP 设置，再重新连接。之后可让 AI「读取项目要求，使用对应版本运行测试」。</p>
+        <div class="project-action-row">
+          <button id="projectMCPGenerate" class="ghost-btn">生成 MCP 配置</button>
+          <button id="projectMCPCopy" class="ghost-btn hidden">复制配置</button>
+        </div>
+        <textarea id="projectMCPConfig" class="modal-input hidden" rows="7" readonly aria-label="MCP 配置"></textarea>
+      </section>
+      <p id="projectEnvError" class="project-error hidden" role="alert"></p>
+      </div>
       <div class="modal-actions">
-        <button id="projectMCPCopy" class="ghost-btn">生成 MCP 配置</button>
         <span class="modal-spacer"></span>
         <button id="projectEnvClose" class="ghost-btn">关闭</button>
-        <button id="projectEnvInit" class="primary-btn">初始化</button>
       </div>
     </div>
   </div>

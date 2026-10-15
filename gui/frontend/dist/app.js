@@ -20,46 +20,134 @@ let sysCache = {};
 let curDir = "";
 let installDir = "";
 let projectMode = "";
+let projectEnvironment = null;
+let projectEnvBusy = false;
+let projectEnvFailed = false;
+
+function projectEnvError(message) {
+  const box = document.getElementById("projectEnvError");
+  box.textContent = message || "";
+  box.classList.toggle("hidden", !message);
+  if (message) box.scrollIntoView({ block: "nearest" });
+}
+
+function clearMCPConfig() {
+  document.getElementById("projectMCPConfig").value = "";
+  document.getElementById("projectMCPConfig").classList.add("hidden");
+  document.getElementById("projectMCPCopy").classList.add("hidden");
+}
+
+function renderProjectEnvControls() {
+  const locked = projectEnvBusy || !curDir || projectEnvFailed;
+  document.getElementById("projectEnvPick").disabled = projectEnvBusy;
+  document.getElementById("projectEnvMode").disabled = locked || !!projectEnvironment;
+  document.getElementById("projectEnvImage").disabled = locked || !!projectEnvironment;
+  const init = document.getElementById("projectEnvInit");
+  init.disabled = locked || !!projectEnvironment;
+  init.textContent = projectEnvironment ? "环境已初始化" : "为此项目初始化环境";
+  document.getElementById("projectMCPGenerate").disabled = locked;
+  document.getElementById("projectEnvTools").disabled = projectEnvBusy;
+}
+
+function renderProjectEnvMode() {
+  const mode = document.getElementById("projectEnvMode").value;
+  const hints = {
+    local: "本项目独立保存工具、缓存和 Python venv，不修改系统环境。运行项目命令时使用 vsm run；这不是操作系统沙箱。",
+    versions: "与其它项目共用已安装的工具，每个项目分别选择版本。适合节省磁盘空间，不隔离依赖缓存。",
+    docker: "在 Docker 容器中运行，需要已启动的 Docker 和包含所需语言的镜像。项目目录可写，其余根文件系统只读。"
+  };
+  document.getElementById("projectEnvModeHint").textContent = hints[mode];
+  document.getElementById("projectEnvImageRow").classList.toggle("hidden", mode !== "docker");
+  document.getElementById("projectEnvCommands").textContent = "vsm use go 1.25.11\nvsm run " +
+    (mode === "local" ? "--install-missing " : "") + "-- go version";
+}
+
+async function projectEnvTask(action) {
+  if (projectEnvBusy) return;
+  projectEnvBusy = true;
+  projectEnvError("");
+  renderProjectEnvControls();
+  try { await action(); }
+  catch (e) { projectEnvError(errMsg(e)); }
+  finally { projectEnvBusy = false; renderProjectEnvControls(); }
+}
+
+async function refreshProjectEnvironment() {
+  projectEnvFailed = false;
+  projectEnvironment = null;
+  projectEnvError("");
+  clearMCPConfig();
+  renderProjectEnvControls();
+  document.getElementById("projectEnvStatus").textContent = "正在读取项目状态…";
+  try {
+    curDir = (await call("CurrentDir")) || "";
+    document.getElementById("projectEnvDir").textContent = curDir || "尚未选择项目目录";
+    document.getElementById("projectEnvPick").textContent = curDir ? "更换项目目录" : "选择项目目录";
+    projectEnvironment = curDir ? await call("ProjectEnvironment") : null;
+    projectMode = projectEnvironment ? projectEnvironment.mode : "";
+    document.getElementById("projectEnvMode").value = projectMode || "local";
+    document.getElementById("projectEnvImage").value = projectEnvironment ? projectEnvironment.image || "" : "";
+    document.getElementById("projectEnvStatus").textContent = !curDir
+      ? "请选择代码所在的文件夹。选择目录不会创建文件。"
+      : projectEnvironment
+        ? "已初始化 · " + projectMode + " · 环境所属项目：" + projectEnvironment.root + "。已有环境保持当前模式。"
+        : "尚未初始化。点击下方按钮，将在此项目内创建 .vsm/project.json。";
+  } catch (e) {
+    projectEnvFailed = true;
+    projectMode = "";
+    document.getElementById("projectEnvStatus").textContent = "无法读取环境，请检查配置或选择其它项目目录。";
+    projectEnvError(errMsg(e));
+  } finally {
+    document.getElementById("projectEnvNext").classList.toggle("hidden", !projectEnvironment);
+    document.getElementById("projectEnvTools").classList.toggle("hidden", !projectEnvironment);
+    renderProjectEnvMode();
+    renderProjectEnvControls();
+    document.querySelector("#projectEnvModal .project-env-body").scrollTop = 0;
+  }
+}
 
 document.getElementById("projectEnvBtn").addEventListener("click", async () => {
-  try {
-    if (!curDir) { await call("PickProjectDir"); await loadCurrentDir(); }
-    if (!curDir) return;
-    const env = await call("ProjectEnvironment");
-    const mode = document.getElementById("projectEnvMode");
-    mode.value = env ? env.mode : "local";
-    mode.disabled = !!env;
-    document.getElementById("projectEnvImage").value = env ? env.image || "" : "";
-    document.getElementById("projectEnvImage").disabled = !!env;
-    document.getElementById("projectEnvInit").disabled = !!env;
-    document.getElementById("projectEnvStatus").textContent = curDir + (env ? " · 已启用 " + env.mode : " · 尚未初始化");
-    document.getElementById("projectEnvImage").classList.toggle("hidden", mode.value !== "docker");
-    document.getElementById("projectMCPConfig").classList.add("hidden");
-    document.getElementById("projectEnvModal").classList.remove("hidden");
-  } catch (e) { toast(errMsg(e), true); }
+  document.getElementById("projectEnvModal").classList.remove("hidden");
+  await projectEnvTask(refreshProjectEnvironment);
 });
-document.getElementById("projectEnvMode").addEventListener("change", e => {
-  document.getElementById("projectEnvImage").classList.toggle("hidden", e.target.value !== "docker");
+document.getElementById("projectEnvPick").addEventListener("click", async () => {
+  await projectEnvTask(async () => {
+    const dir = await call("PickProjectDir");
+    if (!dir) return;
+    await refreshProjectEnvironment();
+    await load(); await loadDataDir(); await loadInstallRoot();
+  });
 });
+document.getElementById("projectEnvMode").addEventListener("change", renderProjectEnvMode);
 document.getElementById("projectEnvClose").addEventListener("click", () => document.getElementById("projectEnvModal").classList.add("hidden"));
+document.getElementById("projectEnvTools").addEventListener("click", () => {
+  document.getElementById("projectEnvModal").classList.add("hidden");
+  document.getElementById("filter").focus();
+});
 document.getElementById("projectEnvInit").addEventListener("click", async () => {
-  const button = document.getElementById("projectEnvInit"); button.disabled = true;
-  try {
+  await projectEnvTask(async () => {
     const mode = document.getElementById("projectEnvMode").value;
     const image = mode === "docker" ? document.getElementById("projectEnvImage").value.trim() : "";
+    if (mode === "docker" && !image) throw new Error("请填写包含项目工具链的 Docker 镜像，例如 golang:1.25.11");
     await call("InitProjectEnvironment", mode, image);
-    document.getElementById("projectEnvModal").classList.add("hidden");
-    await loadCurrentDir(); await load(); await loadDataDir(); await loadInstallRoot();
+    await refreshProjectEnvironment();
+    await load(); await loadDataDir(); await loadInstallRoot();
     toast("项目环境已初始化：" + mode);
-  } catch (e) { button.disabled = false; toast(errMsg(e), true); }
+  });
 });
-document.getElementById("projectMCPCopy").addEventListener("click", async () => {
-  try {
+document.getElementById("projectMCPGenerate").addEventListener("click", async () => {
+  clearMCPConfig();
+  await projectEnvTask(async () => {
     const config = JSON.stringify(await call("MCPConfig"), null, 2);
     const box = document.getElementById("projectMCPConfig"); box.value = config; box.classList.remove("hidden");
-    try { await navigator.clipboard.writeText(config); toast("MCP 配置已复制"); }
-    catch (_) { box.focus(); box.select(); toast("配置已生成，可复制到 AI 客户端"); }
-  } catch (e) { toast(errMsg(e), true); }
+    document.getElementById("projectMCPCopy").classList.remove("hidden");
+    box.scrollIntoView({ block: "nearest" });
+  });
+});
+document.getElementById("projectMCPCopy").addEventListener("click", async () => {
+  const box = document.getElementById("projectMCPConfig");
+  try { await navigator.clipboard.writeText(box.value); toast("MCP 配置已复制，请加入 AI 客户端的 MCP 设置"); }
+  catch (_) { box.focus(); box.select(); toast("请复制选中的配置，加入 AI 客户端的 MCP 设置"); }
 });
 
 // ====== 语言图标 & 规范显示名 ======
@@ -742,12 +830,14 @@ async function loadDataDir() {
 }
 
 async function loadCurrentDir() {
+  projectMode = "";
   try {
     curDir = (await call("CurrentDir")) || "";
     const env = curDir ? await call("ProjectEnvironment") : null;
     projectMode = env ? env.mode : "";
   } catch (e) {
-    curDir = "";
+    // Preserve a selected directory even if its environment config is broken,
+    // so the project dialog can display the error and let the user choose again.
   }
   if (selected) renderDetail(selected);
 }
