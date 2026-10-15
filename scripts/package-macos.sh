@@ -93,9 +93,28 @@ cat >"$APP/Contents/Info.plist" <<PLIST
 PLIST
 plutil -lint "$APP/Contents/Info.plist"
 
+echo "==> 校验最低系统版本"
+# Info.plist 里写的 LSMinimumSystemVersion 必须与二进制实际要求一致，
+# 否则 macOS 12/13 上会出现「声称支持却打不开」。
+for bin in vsm-gui vsm; do
+  for arch in arm64 x86_64; do
+    minos="$(otool -arch "$arch" -l "$APP/Contents/MacOS/$bin" |
+      awk '/LC_BUILD_VERSION/{f=1} f && $1=="minos"{print $2; exit}')"
+    echo "    $bin ($arch): minos ${minos:-?}"
+    awk -v a="${minos:-99}" -v b="$MACOSX_DEPLOYMENT_TARGET" 'BEGIN {
+      split(a, x, "."); split(b, y, ".")
+      exit !(x[1] < y[1] || (x[1] == y[1] && x[2] <= y[2]))
+    }' || { echo "$bin ($arch) 要求 macOS ${minos:-?}，高于声明的 $MACOSX_DEPLOYMENT_TARGET" >&2; exit 1; }
+  done
+done
+
 echo "==> ad-hoc 签名"
-# Apple Silicon 拒绝运行完全未签名的可执行文件；ad-hoc 签名即可满足（--deep 覆盖内置 CLI）
-codesign --force --deep --sign - "$APP"
+# Apple Silicon 拒绝运行完全未签名的可执行文件；ad-hoc 签名即可满足。
+# 由内而外签名：先签内置 CLI，再签整个 .app（主程序随 bundle 一起签）。
+# 不依赖 --deep：Contents/MacOS 里未签名的辅助程序会让 bundle 签名报
+# "code object is not signed at all - In subcomponent"。
+codesign --force --sign - "$APP/Contents/MacOS/vsm"
+codesign --force --sign - "$APP"
 codesign --verify --deep --strict --verbose=2 "$APP"
 
 echo "==> 冒烟测试"
