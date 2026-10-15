@@ -41,10 +41,16 @@ func (a Activator) RunProject(dir, command string, args []string) error {
 			identity = strings.TrimSuffix(identity, filepath.Ext(identity))
 		}
 	}
+	matchesCommand := func(name string) bool {
+		if runtime.GOOS == "windows" {
+			return identity == strings.ToLower(name)
+		}
+		return command == name
+	}
 	if project != nil && project.Mode == "local" {
 		for tool, names := range plugin.DetectCommands() {
 			for _, name := range names {
-				if identity == strings.ToLower(name) || runtime.GOOS != "windows" && command == name {
+				if matchesCommand(name) {
 					configured := false
 					for _, r := range plan.Versions {
 						if r.Tool == tool {
@@ -61,7 +67,7 @@ func (a Activator) RunProject(dir, command string, args []string) error {
 	}
 	for _, r := range plan.Versions {
 		for _, name := range plugin.DetectCommands()[r.Tool] {
-			if identity == strings.ToLower(name) || runtime.GOOS != "windows" && command == name {
+			if matchesCommand(name) {
 				p, _ := plugin.Get(r.Tool)
 				dirs := p.BinPaths(a.Paths.InstallDir(r.Tool, r.Version))
 				if project != nil && project.Mode == "local" && r.Tool == "python" {

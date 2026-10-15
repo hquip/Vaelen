@@ -213,6 +213,9 @@ func mcpCall(ctx context.Context, executable, root, name string, raw json.RawMes
 	// Subprocesses get a fixed boundary. Tool arguments cannot change cwd or enable
 	// global installation, uninstall, shell activation or system PATH writes.
 	cmd.Env = setEnv(os.Environ(), "VSM_PROJECT_BOUNDARY", root)
+	if project != nil {
+		cmd.Env = setEnv(cmd.Env, "VSM_MCP_EXPECT_MODE", project.Mode)
+	}
 	requestID := rand.Text()
 	cmd.Env = setEnv(cmd.Env, "VSM_MCP_REQUEST_ID", requestID)
 	mcpserver.ConfigureProcess(cmd)

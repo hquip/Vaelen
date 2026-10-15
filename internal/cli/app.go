@@ -40,6 +40,9 @@ func newApp() (*app, error) {
 	if err != nil {
 		return nil, err
 	}
+	if expected := os.Getenv("VSM_MCP_EXPECT_MODE"); expected != "" && paths.ProjectMode != expected {
+		return nil, fmt.Errorf("project isolation mode changed during MCP operation; retry after checking project status")
+	}
 	reg = core.Registry{Paths: paths}
 	res = core.Resolver{Paths: paths, Registry: reg}
 	// 可执行文件路径用于生成 shim；拿不到时退回 PATH 查找（见 shimTarget）。
