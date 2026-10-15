@@ -168,7 +168,10 @@ func (a *app) cmdUse(args []string) error {
 		target = filepath.Join(a.cwd, ".tool-versions")
 	}
 
-	tv := config.LoadOrNew(target)
+	tv, err := config.LoadOrNew(target)
+	if err != nil {
+		return err
+	}
 	if warns := tv.Warnings(); len(warns) > 0 {
 		fmt.Fprintf(os.Stderr, "提示: %s 中有 %d 行缺少版本号，已跳过: %s\n",
 			target, len(warns), strings.Join(warns, ", "))

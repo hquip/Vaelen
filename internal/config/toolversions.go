@@ -60,12 +60,13 @@ func Load(path string) (*ToolVersions, error) {
 	return tv, sc.Err()
 }
 
-// LoadOrNew 读取文件，不存在或读取失败时返回空对象（不报错，便于追加写入）。
-func LoadOrNew(path string) *ToolVersions {
-	if tv, err := Load(path); err == nil {
-		return tv
+// LoadOrNew 只在文件不存在时创建空对象；其它读入错误必须交给调用方，避免覆盖原文件。
+func LoadOrNew(path string) (*ToolVersions, error) {
+	tv, err := Load(path)
+	if os.IsNotExist(err) {
+		return New(), nil
 	}
-	return New()
+	return tv, err
 }
 
 // Exists 判断文件是否已存在（用于区分「新建」与「改写」，保留原文件权限）。
@@ -92,6 +93,7 @@ func (tv *ToolVersions) addLine(line string) {
 	tool := fields[0]
 	if _, dup := tv.index[tool]; dup {
 		// 重复键：保留后写入的那条（与 asdf 行为一致），另一条仍留在文件里
+		tv.index[tool] = idx
 		tv.specs[tool] = fields[1]
 		return
 	}
@@ -124,40 +126,22 @@ func (tv *ToolVersions) Set(tool, version string) {
 	tv.specs[tool] = version
 }
 
-// Remove 删除某工具的声明行（返回是否真的删掉了）。
+// Remove 删除某工具的所有声明行，避免早期重复声明在重新加载后复活。
 func (tv *ToolVersions) Remove(tool string) bool {
-	i, ok := tv.index[tool]
-	if !ok {
+	if _, ok := tv.index[tool]; !ok {
 		return false
 	}
-	tv.lines = append(tv.lines[:i], tv.lines[i+1:]...)
-	delete(tv.specs, tool)
-	for k, t := range tv.order {
-		if t == tool {
-			tv.order = append(tv.order[:k], tv.order[k+1:]...)
-			break
+	updated := New()
+	updated.hadBOM = tv.hadBOM
+	for _, line := range tv.lines {
+		fields := strings.Fields(strings.TrimPrefix(strings.TrimSpace(line), bomRune))
+		if len(fields) >= 2 && fields[0] == tool {
+			continue
 		}
+		updated.addLine(line)
 	}
-	tv.reindex() // 删除后行号整体前移
+	*tv = *updated
 	return true
-}
-
-// reindex 重建工具名到行号的下标。
-func (tv *ToolVersions) reindex() {
-	tv.index = map[string]int{}
-	for i, line := range tv.lines {
-		trimmed := strings.TrimPrefix(strings.TrimSpace(line), bomRune)
-		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
-			continue
-		}
-		fields := strings.Fields(trimmed)
-		if len(fields) < 2 {
-			continue
-		}
-		if _, dup := tv.index[fields[0]]; !dup {
-			tv.index[fields[0]] = i
-		}
-	}
 }
 
 // Tools 返回声明过的工具名（按文件中的出现顺序）。
@@ -234,7 +218,10 @@ func WriteFileAtomic(path string, data []byte, perm os.FileMode) error {
 
 // SetIn 是便捷函数：在 path 中把 tool 设为 version（文件不存在则创建）。
 func SetIn(path, tool, version string) error {
-	tv := LoadOrNew(path)
+	tv, err := LoadOrNew(path)
+	if err != nil {
+		return err
+	}
 	tv.Set(tool, version)
 	return tv.Save(path)
 }

@@ -82,7 +82,10 @@ func TestAddNewToolAppendsWithoutClobbering(t *testing.T) {
 	if err := os.WriteFile(path, []byte("# 头注释\ngo 1.22.0\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	tv := LoadOrNew(path)
+	tv, err := LoadOrNew(path)
+	if err != nil {
+		t.Fatal(err)
+	}
 	tv.Set("python", "3.12.4")
 	if err := tv.Save(path); err != nil {
 		t.Fatal(err)
@@ -118,7 +121,10 @@ func TestRemoveTearsDownOnlyThatTool(t *testing.T) {
 	if err := os.WriteFile(path, []byte("# c\ngo 1.22.0\nnode 20.11.1\njava 17\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	tv := LoadOrNew(path)
+	tv, err := LoadOrNew(path)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if !tv.Remove("node") {
 		t.Fatal("应删除成功")
 	}
@@ -168,7 +174,10 @@ func TestSavePreservesFileMode(t *testing.T) {
 	if err := os.WriteFile(path, []byte("go 1.22.0\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	tv := LoadOrNew(path)
+	tv, err := LoadOrNew(path)
+	if err != nil {
+		t.Fatal(err)
+	}
 	tv.Set("go", "1.23.0")
 	if err := tv.Save(path); err != nil {
 		t.Fatal(err)
@@ -195,6 +204,57 @@ func TestOrderAndDupKeys(t *testing.T) {
 	}
 	if v, _ := tv.Get("go"); v != "1.22.0" {
 		t.Fatalf("重复键应取最后一条 1.22.0，实际 %q", v)
+	}
+}
+
+// 重复声明时，设置必须改到真正生效的那一行；取消设置不能让旧声明重新生效。
+func TestDuplicateToolCanBeUpdatedAndRemoved(t *testing.T) {
+	path := filepath.Join(t.TempDir(), ".tool-versions")
+	before := "# keep\ngo 1.21.0\nnode 20.11.1\ngo 1.22.0\n"
+	if err := os.WriteFile(path, []byte(before), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := UnsetIn(path, "node"); err != nil { // 同时覆盖删除其它行后的索引重建
+		t.Fatal(err)
+	}
+	if err := SetIn(path, "go", "1.23.0"); err != nil {
+		t.Fatal(err)
+	}
+	tv, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := tv.Get("go"); got != "1.23.0" {
+		t.Fatalf("设置后重读仍得到旧版本 %q", got)
+	}
+	if err := UnsetIn(path, "go"); err != nil {
+		t.Fatal(err)
+	}
+	tv, err = Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := tv.Get("go"); exists {
+		t.Fatal("取消设置后旧声明重新生效")
+	}
+	if tv.Text() != "# keep\n" {
+		t.Fatalf("应只保留注释，得到 %q", tv.Text())
+	}
+}
+
+func TestSetInPreservesFileOnReadFailure(t *testing.T) {
+	path := filepath.Join(t.TempDir(), ".tool-versions")
+	// 超过解析器行长限制，稳定复现读入失败，避免依赖各平台权限模型。
+	before := "#" + strings.Repeat("x", 1024*1024) + "\ngo 1.22.0\n"
+	if err := os.WriteFile(path, []byte(before), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := SetIn(path, "go", "1.23.0"); err == nil {
+		t.Fatal("原文件读入失败时不能当作新文件覆盖")
+	}
+	got, err := os.ReadFile(path)
+	if err != nil || string(got) != before {
+		t.Fatalf("读入失败后原文件被修改: %v", err)
 	}
 }
 
