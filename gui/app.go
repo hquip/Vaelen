@@ -299,7 +299,7 @@ func (a *App) SetInstallRoot(dir string) error {
 		if err := os.MkdirAll(abs, 0o755); err != nil {
 			return err
 		}
-		if err := os.WriteFile(path, []byte(abs+"\n"), 0o644); err != nil {
+		if err := config.WriteFileAtomic(path, []byte(abs+"\n"), 0o644); err != nil {
 			return err
 		}
 	}
@@ -448,7 +448,7 @@ func (a *App) SetMirror(mode string) error {
 	if err := c.paths.EnsureDirs(); err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(c.paths.Root, "mirror"), []byte(mode+"\n"), 0o644)
+	return config.WriteFileAtomic(filepath.Join(c.paths.Root, "mirror"), []byte(mode+"\n"), 0o644)
 }
 
 // GetProxy 返回当前网络代理设置的原始值："" 表示跟随系统环境变量，"off" 表示强制直连，
@@ -475,7 +475,7 @@ func (a *App) SetProxy(input string) error {
 		}
 		return nil
 	}
-	return os.WriteFile(path, []byte(stored+"\n"), 0o644)
+	return config.WriteFileAtomic(path, []byte(stored+"\n"), 0o644)
 }
 
 // PathInitResult 描述「激活 PATH」的结果。

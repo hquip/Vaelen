@@ -97,7 +97,7 @@ func (a *app) cmdInstallRoot(args []string) error {
 	if err := os.MkdirAll(abs, 0o755); err != nil {
 		return err
 	}
-	if err := os.WriteFile(path, []byte(abs+"\n"), 0o644); err != nil {
+	if err := config.WriteFileAtomic(path, []byte(abs+"\n"), 0o644); err != nil {
 		return err
 	}
 	fmt.Println("已设置安装根目录:", abs)
@@ -495,7 +495,9 @@ func (a *app) cmdAdopt(args []string) error {
 	if err := a.inst.Adopt(p, version, execPath); err != nil {
 		return err
 	}
-	_ = a.act.GenerateShims()
+	if err := a.act.GenerateShims(); err != nil {
+		fmt.Fprintln(os.Stderr, "警告: 重新生成 shim 失败:", err)
+	}
 	fmt.Printf("已纳管 %s %s\n  -> %s\n", tool, version, execPath)
 	return nil
 }
@@ -518,7 +520,9 @@ func (a *app) adoptAll() error {
 		fmt.Printf("  纳管 %s %s\n", s.Tool, s.Version)
 		n++
 	}
-	_ = a.act.GenerateShims()
+	if err := a.act.GenerateShims(); err != nil {
+		fmt.Fprintln(os.Stderr, "警告: 重新生成 shim 失败:", err)
+	}
 	fmt.Printf("共纳管 %d 个版本\n", n)
 	return nil
 }
@@ -546,7 +550,7 @@ func (a *app) cmdMirror(args []string) error {
 	if err := a.paths.EnsureDirs(); err != nil {
 		return err
 	}
-	if err := os.WriteFile(path, []byte(mode+"\n"), 0o644); err != nil {
+	if err := config.WriteFileAtomic(path, []byte(mode+"\n"), 0o644); err != nil {
 		return err
 	}
 	fmt.Println("已设置下载镜像:", mode)
@@ -583,15 +587,17 @@ func (a *app) cmdProxy(args []string) error {
 	}
 	switch stored {
 	case "":
-		_ = os.Remove(path)
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("清除代理设置失败: %w", err)
+		}
 		fmt.Println("已恢复跟随系统环境变量（HTTP_PROXY/HTTPS_PROXY）")
 	case "off":
-		if err := os.WriteFile(path, []byte("off\n"), 0o644); err != nil {
+		if err := config.WriteFileAtomic(path, []byte("off\n"), 0o644); err != nil {
 			return err
 		}
 		fmt.Println("已禁用代理（强制直连）")
 	default:
-		if err := os.WriteFile(path, []byte(stored+"\n"), 0o644); err != nil {
+		if err := config.WriteFileAtomic(path, []byte(stored+"\n"), 0o644); err != nil {
 			return err
 		}
 		fmt.Println("已设置代理:", stored)

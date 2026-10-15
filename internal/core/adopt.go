@@ -70,9 +70,10 @@ func sameDir(a, b string) bool {
 // 免管理员权限），失败再退回符号链接；其它平台直接用符号链接。
 func linkDir(target, link string) error {
 	if runtime.GOOS == "windows" {
-		// mklink 的参数由 cmd.exe 解析，路径含空格（如 C:\Program Files\Java\...）
-		// 时必须加引号，否则会被按空格切成多个参数而失败。
-		cmd := exec.Command("cmd", "/c", "mklink", "/J", `"`+link+`"`, `"`+target+`"`)
+		// 不要手动给路径加引号：exec.Command 在 Windows 上会自动为含空格的参数加引号
+		// （如 C:\Program Files\Java\...）。再包一层引号会被转义成 \"...\"，
+		// mklink 报「命令语法不正确」，所有 junction 都会创建失败（见 TestLinkDirWithSpaces）。
+		cmd := exec.Command("cmd", "/c", "mklink", "/J", link, target)
 		hideConsole(cmd)
 		if out, err := cmd.CombinedOutput(); err != nil {
 			if serr := os.Symlink(target, link); serr != nil {

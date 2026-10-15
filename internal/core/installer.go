@@ -24,7 +24,11 @@ func (in Installer) Install(p plugin.Plugin, version, customDir string, progress
 		progress = func(string) {}
 	}
 	dest := in.Paths.InstallDir(p.Name(), version)
-	if pathExists(dest) {
+	installed, err := checkExisting(dest)
+	if err != nil {
+		return err
+	}
+	if installed {
 		progress(fmt.Sprintf("%s %s 已安装，跳过", p.Name(), version))
 		return nil
 	}
@@ -66,24 +70,11 @@ func (in Installer) Install(p plugin.Plugin, version, customDir string, progress
 
 	// 官方包通常带一层顶层目录（如 go/ 或 node-vX-os-arch/），剥掉它。
 	root := stripSingleDir(tmp)
-	if customDir == "" {
-		if err := moveInto(root, dest); err != nil {
-			return err
-		}
-	} else {
-		realDir := filepath.Join(customDir, p.Name(), version)
-		if err := moveInto(root, realDir); err != nil {
-			return err
-		}
-		// 标记为 vsm 安装：卸载时连真实目录一起删（纳管的系统目录无此标记，只删链接）。
-		_ = os.WriteFile(filepath.Join(realDir, installMarker), []byte("vsm\n"), 0o644)
-		if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
-			return err
-		}
-		if err := linkDir(realDir, dest); err != nil {
-			return err
-		}
-		progress("已装到自定义目录并链接: " + realDir)
+	if err := placeInstall(root, dest, customDir, p.Name(), version); err != nil {
+		return err
+	}
+	if customDir != "" {
+		progress("已装到自定义目录并链接: " + filepath.Join(customDir, p.Name(), version))
 	}
 	progress(fmt.Sprintf("已安装 %s %s", p.Name(), version))
 	return nil
@@ -92,15 +83,89 @@ func (in Installer) Install(p plugin.Plugin, version, customDir string, progress
 // installMarker 标识某目录由 vsm 安装到自定义位置（用于 junction 卸载时判定是否删真实目录）。
 const installMarker = ".vsm-install"
 
-// moveInto 把 src 目录移动到 dst（跨卷 rename 失败时退回递归复制）。
+// checkExisting 判断 dest 处是否已有可用的安装。
+// 悬空链接（--path 指向的目录或纳管的系统目录已被删除）会被清理并视为未安装；
+// 否则 `vsm install` 会一直报「已安装，跳过」，而这个版本根本用不了。
+func checkExisting(dest string) (bool, error) {
+	if !pathExists(dest) {
+		return false, nil
+	}
+	if dirExists(dest) {
+		return true, nil
+	}
+	if isLink(dest) {
+		if err := os.Remove(dest); err != nil {
+			return false, fmt.Errorf("清理失效链接 %s 失败: %w", dest, err)
+		}
+		return false, nil
+	}
+	return false, fmt.Errorf("%s 已存在但不是目录，请手动处理", dest)
+}
+
+// placeInstall 把解压好的 root 放到最终位置：默认装到 dest；
+// 指定 customDir 时装到 customDir/<tool>/<version>，再在 dest 建链接指过去。
+func placeInstall(root, dest, customDir, tool, version string) error {
+	if customDir == "" {
+		return moveInto(root, dest)
+	}
+	realDir := filepath.Join(customDir, tool, version)
+	if pathExists(realDir) {
+		// 只替换 vsm 自己装的旧目录；别人的目录绝不覆盖
+		if !fileExists(filepath.Join(realDir, installMarker)) {
+			return fmt.Errorf("%s 已存在且不是 vsm 安装的目录，为避免覆盖请换一个 --path", realDir)
+		}
+		if err := os.RemoveAll(realDir); err != nil {
+			return fmt.Errorf("清理旧的安装目录 %s 失败: %w", realDir, err)
+		}
+	}
+	// 标记在搬运之前写进 root，随安装文件一起就位：不会出现「文件在、标记缺」。
+	// 缺标记时卸载只删链接，会把真实目录永久留在磁盘上（此前写标记的错误被直接忽略）。
+	if err := os.WriteFile(filepath.Join(root, installMarker), []byte("vsm\n"), 0o644); err != nil {
+		return fmt.Errorf("写入安装标记失败: %w", err)
+	}
+	if err := moveInto(root, realDir); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
+		return err
+	}
+	return linkDir(realDir, dest)
+}
+
+// renameFn / copyDirFn 供测试注入，模拟跨卷 rename 失败与复制中途失败。
+var (
+	renameFn  = os.Rename
+	copyDirFn = copyDir
+)
+
+// partialDir 返回 dst 的「半成品」暂存目录：与 dst 同目录（同卷，最后一步 rename 是原子的），
+// 以 . 开头，Registry 会忽略它——即使进程在复制中途被杀，它也不会被当成一个已装版本。
+func partialDir(dst string) string {
+	return filepath.Join(filepath.Dir(dst), "."+filepath.Base(dst)+".partial")
+}
+
+// moveInto 把 src 目录移动到 dst。同卷时 rename 本身是原子的；跨卷（如安装根目录在
+// 另一块盘）时先完整复制到暂存目录，成功后再 rename 就位。此前直接复制进 dst，
+// 中途失败会留下半成品，下次安装被 checkExisting 误判为「已安装，跳过」。
 func moveInto(src, dst string) error {
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 		return err
 	}
-	if err := os.Rename(src, dst); err != nil {
-		if cerr := copyDir(src, dst); cerr != nil {
-			return fmt.Errorf("移动安装文件失败: %v / %v", err, cerr)
-		}
+	err := renameFn(src, dst)
+	if err == nil {
+		return nil
+	}
+	partial := partialDir(dst)
+	if rerr := os.RemoveAll(partial); rerr != nil { // 上次中断留下的残留
+		return fmt.Errorf("清理暂存目录 %s 失败: %w", partial, rerr)
+	}
+	if cerr := copyDirFn(src, partial); cerr != nil {
+		os.RemoveAll(partial)
+		return fmt.Errorf("移动安装文件失败: %v / %v", err, cerr)
+	}
+	if rerr := renameFn(partial, dst); rerr != nil {
+		os.RemoveAll(partial)
+		return fmt.Errorf("移动安装文件失败: %w", rerr)
 	}
 	return nil
 }
@@ -117,7 +182,10 @@ func (in Installer) Uninstall(tool, version string) error {
 				target = r
 			}
 		}
-		_ = os.Remove(dest) // 删链接本身
+		// 删链接本身；删不掉就到此为止，不能在链接还在的情况下去删真实目录
+		if err := os.Remove(dest); err != nil {
+			return fmt.Errorf("删除链接 %s 失败: %w", dest, err)
+		}
 		// 仅当目标带 vsm 安装标记（= 自定义目录安装）时才删真实目录；
 		// 纳管的系统目录无标记，绝不删除。
 		if target != "" && fileExists(filepath.Join(target, installMarker)) {

@@ -184,18 +184,26 @@ func (tv *ToolVersions) Text() string {
 	return b.String()
 }
 
-// Save 原子写入：先写同目录临时文件并 fsync，再 rename 覆盖。
+// Save 原子写入 .tool-versions（见 WriteFileAtomic）。
 // 早期实现直接 os.WriteFile（O_TRUNC 原地写），中断/并发时会留下被截断的配置文件。
 func (tv *ToolVersions) Save(path string) error {
+	return WriteFileAtomic(path, []byte(tv.Text()), 0o644)
+}
+
+// WriteFileAtomic 原子写入文件：先写同目录临时文件并 fsync，再 rename 覆盖。
+// 目标已存在时沿用其权限，否则使用 perm。用于 .tool-versions 以及
+// mirror / proxy / install-root 这类配置文件——中断或并发写入时，
+// 读者看到的要么是旧内容、要么是新内容，不会是被截断的一半。
+func WriteFileAtomic(path string, data []byte, perm os.FileMode) error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	mode := os.FileMode(0o644)
+	mode := perm
 	if fi, err := os.Stat(path); err == nil {
 		mode = fi.Mode().Perm()
 	}
-	tmp, err := os.CreateTemp(dir, ".tool-versions.tmp*")
+	tmp, err := os.CreateTemp(dir, "."+filepath.Base(path)+".tmp*")
 	if err != nil {
 		return err
 	}
@@ -207,7 +215,7 @@ func (tv *ToolVersions) Save(path string) error {
 		return err
 	}
 
-	if _, err := tmp.WriteString(tv.Text()); err != nil {
+	if _, err := tmp.Write(data); err != nil {
 		tmp.Close()
 		return err
 	}

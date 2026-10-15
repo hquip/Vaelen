@@ -3,6 +3,7 @@ package core
 import (
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // Registry 提供对已安装版本的查询。
@@ -37,6 +38,10 @@ func dirNames(dir string) ([]string, error) {
 	}
 	var names []string
 	for _, e := range entries {
+		// 点开头的条目是 vsm 的内部暂存（如安装中的 .1.22.0.partial），不是工具或版本
+		if strings.HasPrefix(e.Name(), ".") {
+			continue
+		}
 		if isDirFollow(filepath.Join(dir, e.Name()), e) {
 			names = append(names, e.Name())
 		}
