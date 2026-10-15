@@ -8,13 +8,10 @@ import (
 	"os"
 	"strings"
 
+	"vsm/internal/buildinfo"
 	"vsm/internal/core"
 	"vsm/internal/plugin"
 )
-
-// version 在发布构建时由 -ldflags "-X vsm/internal/cli.version=<tag>" 注入，
-// 保证与 Git tag 一致（此前常量写死为 0.1.0，而线上已发布 v1.0.0）。
-var version = "1.1.0-dev"
 
 // app 聚合一次命令执行所需的核心组件。
 type app struct {
@@ -68,7 +65,7 @@ func Run(args []string) int {
 		printUsage()
 		return 0
 	case "version", "-v", "--version":
-		fmt.Println("vsm " + version)
+		fmt.Println("vsm " + buildinfo.DisplayVersion())
 		return 0
 	}
 
@@ -149,7 +146,7 @@ func Run(args []string) int {
 }
 
 func printUsage() {
-	fmt.Printf(usageText, version, strings.Join(plugin.Names(), ", "))
+	fmt.Printf(usageText, buildinfo.DisplayVersion(), strings.Join(plugin.Names(), ", "))
 }
 
 const usageText = `vsm - 多语言版本管理器 (%s)

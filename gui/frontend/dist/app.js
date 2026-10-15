@@ -774,10 +774,19 @@ async function loadPlatform() {
   }
 }
 
+async function loadVersion() {
+  try {
+    document.getElementById("appVersion").textContent = await call("Version");
+  } catch (e) {
+    // The native window title still identifies the running build.
+  }
+}
+
 window.addEventListener("DOMContentLoaded", () => {
   bindEvents();
   setTimeout(() => {
     loadPlatform();
+    loadVersion();
     load();
     loadDataDir();
     loadCurrentDir();

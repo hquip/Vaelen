@@ -12,6 +12,7 @@ package main
 import (
 	"embed"
 	"runtime"
+	"vsm/internal/buildinfo"
 
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/menu"
@@ -41,7 +42,7 @@ const (
 func main() {
 	app := NewApp()
 	err := wails.Run(&options.App{
-		Title:     appTitle,
+		Title:     appTitle + " · " + buildinfo.DisplayVersion(),
 		Width:     appWidth,
 		Height:    appHeight,
 		MinWidth:  minWidth,
@@ -65,7 +66,7 @@ func main() {
 			// 隐藏标题栏只留红绿灯按钮，界面更贴近原生 macOS 观感
 			TitleBar: mac.TitleBarHiddenInset(),
 			About: &mac.AboutInfo{
-				Title:   appTitle,
+				Title:   appTitle + " · " + buildinfo.DisplayVersion(),
 				Message: "纯 Go 编写的多语言版本管理器\nhttps://github.com/hquip/Vaelen",
 				Icon:    appIcon,
 			},

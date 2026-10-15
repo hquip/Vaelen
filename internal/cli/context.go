@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"vsm/internal/buildinfo"
 	"vsm/internal/core"
 	"vsm/internal/plugin"
 )
@@ -107,7 +108,7 @@ func (a *app) cmdContext(args []string) error {
 		status = "attention_required"
 	}
 	if asJSON {
-		if err := printJSON(map[string]any{"schema_version": 1, "vsm_version": version, "directory": a.cwd, "status": status, "tools": items, "read_only": true}); err != nil {
+		if err := printJSON(map[string]any{"schema_version": 1, "vsm_version": buildinfo.Version, "directory": a.cwd, "status": status, "tools": items, "read_only": true}); err != nil {
 			return err
 		}
 	} else {

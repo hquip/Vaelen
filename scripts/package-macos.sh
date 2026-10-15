@@ -19,7 +19,7 @@ trap 'rm -rf "$WORK"' EXIT
 # 不设置时 CGO 产物的最低系统版本等于 runner 的 SDK 版本（macOS 14），
 # macOS 12/13 用户会直接打不开。Go 1.25 本身要求 macOS 12+，与之对齐。
 export MACOSX_DEPLOYMENT_TARGET=12.0
-LDFLAGS="-s -w -X vsm/internal/cli.version=${VERSION}"
+LDFLAGS="-s -w -X vsm/internal/buildinfo.Version=${VERSION}"
 
 # build <输出> <GOARCH> <CGO> <包> [构建标签]
 # setup-go 的构建缓存在并发 run 下偶发损坏，失败时清缓存重试。

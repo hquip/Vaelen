@@ -15,6 +15,7 @@ import (
 
 	wruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 
+	"vsm/internal/buildinfo"
 	"vsm/internal/config"
 	"vsm/internal/core"
 	"vsm/internal/netcfg"
@@ -165,6 +166,8 @@ func locateVsmCLI() string {
 // Platform 返回运行平台（windows / darwin / linux），前端据此做平台适配
 // （例如 macOS 隐藏标题栏后给红绿灯按钮留位、切换系统字体）。
 func (a *App) Platform() string { return runtime.GOOS }
+
+func (a *App) Version() string { return buildinfo.DisplayVersion() }
 
 func (a *App) startup(ctx context.Context) { a.ctx = ctx }
 
