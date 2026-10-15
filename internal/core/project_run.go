@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"vsm/internal/plugin"
 )
@@ -31,10 +33,18 @@ func (a Activator) RunProject(dir, command string, args []string) error {
 		return fmt.Errorf("run requires a command name (for example go, node or python): %w", err)
 	}
 	program := findExecutable(plan.Paths, command)
+	identity := command
+	if runtime.GOOS == "windows" {
+		identity = strings.ToLower(identity)
+		switch filepath.Ext(identity) {
+		case ".exe", ".cmd", ".bat":
+			identity = strings.TrimSuffix(identity, filepath.Ext(identity))
+		}
+	}
 	if project != nil && project.Mode == "local" {
 		for tool, names := range plugin.DetectCommands() {
 			for _, name := range names {
-				if command == name {
+				if identity == strings.ToLower(name) || runtime.GOOS != "windows" && command == name {
 					configured := false
 					for _, r := range plan.Versions {
 						if r.Tool == tool {
@@ -51,7 +61,7 @@ func (a Activator) RunProject(dir, command string, args []string) error {
 	}
 	for _, r := range plan.Versions {
 		for _, name := range plugin.DetectCommands()[r.Tool] {
-			if command == name {
+			if identity == strings.ToLower(name) || runtime.GOOS != "windows" && command == name {
 				p, _ := plugin.Get(r.Tool)
 				dirs := p.BinPaths(a.Paths.InstallDir(r.Tool, r.Version))
 				if project != nil && project.Mode == "local" && r.Tool == "python" {

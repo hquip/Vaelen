@@ -79,8 +79,12 @@ func (s Server) Serve(parent context.Context, input io.Reader, output io.Writer)
 			continue
 		}
 		var req request
-		if !utf8.Valid(line) || json.Unmarshal(line, &req) != nil {
+		if !utf8.Valid(line) || !json.Valid(line) {
 			respond(nil, nil, -32700, "Parse error")
+			continue
+		}
+		if json.Unmarshal(line, &req) != nil {
+			respond(nil, nil, -32600, "Invalid request")
 			continue
 		}
 		if req.JSONRPC != "2.0" || req.Method == "" {

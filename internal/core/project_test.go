@@ -116,3 +116,19 @@ func TestDockerArgumentsDoNotMountOtherProjects(t *testing.T) {
 		t.Fatal("unsafe Docker privileges")
 	}
 }
+
+func TestLocalProjectDoesNotFallBackForExecutableSuffix(t *testing.T) {
+	if os.PathSeparator != '\\' {
+		t.Skip("Windows executable suffix")
+	}
+	p, err := InitProject(t.TempDir(), "local", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	paths := p.Paths(Paths{})
+	reg := Registry{Paths: paths}
+	a := Activator{Paths: paths, Registry: reg, Resolver: Resolver{Paths: paths, Registry: reg}}
+	if err := a.RunProject(p.Root, "go.exe", []string{"version"}); err == nil || !strings.Contains(err.Error(), "未配置") {
+		t.Fatalf("go.exe bypassed project version requirement: %v", err)
+	}
+}

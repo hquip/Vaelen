@@ -32,7 +32,7 @@ type Resolution struct {
 // Resolve 解析单个工具当前应使用的版本。startDir 通常是当前工作目录。
 func (r Resolver) Resolve(tool, startDir string) Resolution {
 	envKey := "VSM_" + strings.ToUpper(tool) + "_VERSION"
-	if v := os.Getenv(envKey); v != "" && r.Paths.ProjectMode != "local" {
+	if v := os.Getenv(envKey); v != "" && r.Paths.ProjectMode != "local" && r.Paths.ProjectMode != "docker" {
 		return r.match(tool, v, "环境变量 "+envKey)
 	}
 	spec, src, err := findToolVersionChecked(tool, startDir)
