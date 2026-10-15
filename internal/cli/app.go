@@ -92,6 +92,10 @@ func Run(args []string) int {
 		runErr = a.cmdListAll(rest)
 	case "current":
 		runErr = a.cmdCurrent(rest)
+	case "context":
+		runErr = a.cmdContext(rest)
+	case "run":
+		runErr = a.cmdRun(rest)
 	case "which":
 		runErr = a.cmdWhich(rest)
 	case "exec", "x":
@@ -156,12 +160,15 @@ const usageText = `vsm - 多语言版本管理器 (%s)
 命令:
   install   <tool> [version]   安装某工具版本（省略或 latest 装最新稳定版）
             [--path <目录>]      可选：装到自定义目录（建链接进 vsm，可正常切换/卸载）
+            [--require-checksum] 没有发布方 SHA256 时拒绝安装
   install-root [目录|default]  查看/设置全局安装根目录（默认 ~/.vsm/installs）
   uninstall <tool> <version>   卸载某版本
   use [-g]  <tool> <version>   设为当前目录版本（写 .tool-versions）；-g 设为全局
   list      [tool]             列出已安装版本（* 为当前生效）
   list-all  <tool>             列出可安装的远端版本
   current                      显示各工具当前生效的版本及来源
+  context [--json] [--check]    向 Agent/AI 报告项目要求、当前版本与建议命令（只读）
+  run [--install-missing] -- <command> [args] 按项目版本自动执行（补装必须校验 SHA256）
   which     <tool>             打印当前版本主命令的完整路径
   exec      <tool> [--] [args] 在当前解析版本环境下执行命令
   reshim                       为已安装工具重新生成 shim
@@ -180,7 +187,7 @@ const usageText = `vsm - 多语言版本管理器 (%s)
   version                      显示版本
   help                         显示帮助
 
-  list / list-all / current / detect / doctor / size 支持 --json 结构化输出
+  list / list-all / current / detect / doctor / size / clean / context 支持 --json 结构化输出
 
 支持的工具: %s
 

@@ -1,6 +1,8 @@
 package core
 
 import (
+	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -43,17 +45,39 @@ var versionFileSources = map[string][]versionFile{
 
 // projectVersion 在 dir 下按该工具的惯用文件查找版本要求，返回首个命中的 spec 与来源路径。
 func projectVersion(tool, dir string) (spec, source string, ok bool) {
+	spec, source, err := projectVersionChecked(tool, dir)
+	return spec, source, source != "" && err == nil
+}
+
+func projectVersionChecked(tool, dir string) (spec, source string, err error) {
 	for _, src := range versionFileSources[tool] {
 		path := filepath.Join(dir, src.file)
-		data, err := os.ReadFile(path)
-		if err != nil {
+		f, err := os.Open(path)
+		if os.IsNotExist(err) {
 			continue
 		}
+		if err != nil {
+			return "", "", err
+		}
+		data, readErr := io.ReadAll(io.LimitReader(f, (1<<20)+1))
+		closeErr := f.Close()
+		if readErr != nil {
+			return "", "", readErr
+		}
+		if closeErr != nil {
+			return "", "", closeErr
+		}
+		if len(data) > 1<<20 {
+			return "", "", fmt.Errorf("project version file exceeds limit: %s", path)
+		}
 		if v := src.parse(string(data)); v != "" {
-			return v, path, true
+			return v, path, nil
+		}
+		if (src.file == ".nvmrc" || src.file == ".node-version" || src.file == ".python-version" || src.file == ".java-version" || src.file == ".ruby-version" || src.file == ".go-version") && strings.TrimSpace(string(data)) != "" {
+			return "", "", fmt.Errorf("unsupported version declaration in %s", path)
 		}
 	}
-	return "", "", false
+	return "", "", nil
 }
 
 var verNumRe = regexp.MustCompile(`\d+(\.\d+){0,2}`)

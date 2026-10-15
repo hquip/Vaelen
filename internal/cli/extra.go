@@ -46,18 +46,24 @@ type toolStatusJSON struct {
 }
 
 // collectStatus 汇总所有工具状态（CLI 与 GUI 共享同一套核心，字段保持可解析）。
-func (a *app) collectStatus() []toolStatusJSON {
+func (a *app) collectStatus() ([]toolStatusJSON, error) {
 	names := plugin.Names()
 	out := make([]toolStatusJSON, 0, len(names))
 	for _, name := range names {
 		installed, err := a.reg.Installed(name)
 		if err != nil {
-			installed = nil
+			return nil, err
+		}
+		if installed == nil {
+			installed = []string{}
 		}
 		sort.Slice(installed, func(i, j int) bool {
 			return core.CompareVersions(installed[i], installed[j]) > 0
 		})
 		r := a.res.Resolve(name, a.cwd)
+		if r.Error != "" {
+			return nil, fmt.Errorf("%s: %s", name, r.Error)
+		}
 		out = append(out, toolStatusJSON{
 			Tool:      name,
 			Current:   r.Version,
@@ -66,7 +72,7 @@ func (a *app) collectStatus() []toolStatusJSON {
 			Installed: installed,
 		})
 	}
-	return out
+	return out, nil
 }
 
 // ---------- vsm doctor ----------
@@ -291,7 +297,7 @@ func (a *app) cmdCompletion(args []string) error {
 _vsm_completion() {
   COMPREPLY=()
   local cur="${COMP_WORDS[COMP_CWORD]}"
-  local cmds="install uninstall use list list-all current which exec reshim activate env path-init detect adopt mirror proxy install-root doctor completion shell clean size version help"
+  local cmds="install uninstall use list list-all current context run which exec reshim activate env path-init detect adopt mirror proxy install-root doctor completion shell clean size version help"
   if [ "$COMP_CWORD" -eq 1 ]; then
     COMPREPLY=( $(compgen -W "$cmds" -- "$cur") )
     return
@@ -315,7 +321,7 @@ complete -F _vsm_completion vsm
 (( $+functions[compdef] )) || { autoload -Uz compinit && compinit }
 _vsm() {
   local -a cmds tools shells
-  cmds=(install uninstall use list list-all current which exec reshim activate env path-init detect adopt mirror proxy install-root doctor completion shell clean size version help)
+  cmds=(install uninstall use list list-all current context run which exec reshim activate env path-init detect adopt mirror proxy install-root doctor completion shell clean size version help)
   tools=(%s)
   shells=(bash zsh sh fish powershell pwsh cmd)
   if (( CURRENT == 2 )); then
@@ -335,7 +341,7 @@ compdef _vsm vsm
 `, tools)
 	case "fish":
 		fmt.Printf(`# vsm fish 补全：vsm completion fish | source
-set -l vsm_cmds install uninstall use list list-all current which exec reshim activate env path-init detect adopt mirror proxy install-root doctor completion shell clean size version help
+set -l vsm_cmds install uninstall use list list-all current context run which exec reshim activate env path-init detect adopt mirror proxy install-root doctor completion shell clean size version help
 set -l vsm_tools %s
 complete -c vsm -f
 complete -c vsm -n "not __fish_seen_subcommand_from $vsm_cmds" -a "$vsm_cmds"
@@ -349,7 +355,7 @@ complete -c vsm -n "__fish_seen_subcommand_from proxy" -a "off system"
 		fmt.Printf(`# vsm PowerShell 补全：vsm completion powershell | Out-String | Invoke-Expression
 Register-ArgumentCompleter -Native -CommandName vsm -ScriptBlock {
     param($wordToComplete, $commandAst, $cursorPosition)
-    $cmds = @('install','uninstall','use','list','list-all','current','which','exec','reshim','activate','env','path-init','detect','adopt','mirror','proxy','install-root','doctor','completion','shell','clean','size','version','help')
+    $cmds = @('install','uninstall','use','list','list-all','current','context','run','which','exec','reshim','activate','env','path-init','detect','adopt','mirror','proxy','install-root','doctor','completion','shell','clean','size','version','help')
     $tools = @(%s)
     $shells = @('bash','zsh','sh','fish','powershell','pwsh','cmd')
     $words = @($commandAst.CommandElements | ForEach-Object { $_.ToString() })

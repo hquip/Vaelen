@@ -5,6 +5,7 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -43,9 +44,17 @@ func New() *ToolVersions {
 
 // Load 读取 .tool-versions；文件不存在时返回错误（调用方用 LoadOrNew 兜底）。
 func Load(path string) (*ToolVersions, error) {
-	raw, err := os.ReadFile(path)
+	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
+	}
+	defer f.Close()
+	raw, err := io.ReadAll(io.LimitReader(f, (4<<20)+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(raw) > 4<<20 {
+		return nil, fmt.Errorf("version declaration file exceeds 4 MiB limit: %s", path)
 	}
 	tv := New()
 	if bytes.HasPrefix(raw, BOM) {

@@ -136,6 +136,8 @@ bash scripts/package-macos.sh 1.1.0 dist
 | `vsm list [tool]` | 列出已安装版本（`*` 为当前生效） |
 | `vsm list-all <tool>` | 列出可安装的远端版本 |
 | `vsm current` | 显示各工具当前生效版本及来源 |
+| `vsm context [--json] [--check]` | Agent/AI 只读版本上下文：项目要求、解析/已激活版本、冲突和建议命令 |
+| `vsm run [--install-missing] -- <command> [args...]` | 自动采用项目版本执行命令；可补装缺失工具，补装必须校验 SHA256 |
 | `vsm which <tool>` | 打印当前版本主命令的完整路径 |
 | `vsm exec <tool> [args...]` | 在当前解析版本环境下执行工具主命令 |
 | `vsm exec <tool> -- <cmd> [args...]` | 在该工具环境下执行任意命令（如 `npm`） |
@@ -153,7 +155,7 @@ bash scripts/package-macos.sh 1.1.0 dist
 | `vsm size [tool] [--json]` | 统计各版本占用的磁盘空间 |
 | `vsm clean` | 清理下载缓存（安装完成后的压缩包） |
 
-`list` / `list-all` / `current` / `detect` / `doctor` / `size` 均支持 `--json`，便于编辑器插件与 CI 集成。
+`list` / `list-all` / `current` / `detect` / `doctor` / `size` / `clean` / `context` 均支持 `--json`，便于编辑器插件与 CI 集成。
 `vsm exec` 会**原样透传子进程退出码**，可直接用于 `vsm exec go test ./... && deploy` 这类脚本。
 
 ## 快速上手
@@ -201,6 +203,27 @@ Add-Content $PROFILE 'vsm activate powershell | Out-String | Invoke-Expression'
 离开项目目录时，PATH 与 `GOROOT` / `JAVA_HOME` 等变量会自动还原，不会把上一个项目的版本带到别处。
 
 激活后，在配置了 `.tool-versions` 的目录里直接运行 `go` / `node`，会自动解析到对应版本。
+
+## Agent / AI 与切换提示
+
+执行 `vsm context --json` 获取项目要求、版本来源、解析版本、shell 已激活版本以及建议命令；该命令不安装工具、不修改项目和终端环境。
+AI 可直接执行 `vsm run -- go test ./...`、`vsm run -- node app.js`，自动选择项目声明的工具版本；`vsm run --install-missing -- go test ./...` 还会补装缺失工具。
+`run` 的项目声明优先于继承的版本覆盖，作用于这次命令及其子进程，并透传退出码；不会修改项目声明或父终端。
+CI 或 Agent 可用 `vsm context --json --check`：存在缺失版本、覆盖冲突或尚未激活时返回非零状态。
+
+需要看到版本变化时，激活 shell hook 后设置 `VSM_NOTIFY=1`（bash/zsh：`export VSM_NOTIFY=1`；PowerShell：`$env:VSM_NOTIFY='1'`）。
+仅版本组合实际变化时向 stderr 提示，重复进入同一环境不会重复提示；默认保持静默。
+完整示例见 [Agent 接入说明](docs/agent-integration.md)。
+
+## 下载与目录安全
+
+`vsm install go 1.25.11 --require-checksum` 要求发布方提供 SHA256；也可设置 `VSM_REQUIRE_CHECKSUM=1` 对 CLI 和 GUI 统一启用。
+GUI 安装区提供「要求发布方 SHA256 校验」选项。Go、Node 从官方元数据获取校验值，GitHub Release 使用可用的资产摘要，manifest 支持固定摘要。
+获取校验元数据失败、摘要不匹配时停止安装；默认模式遇到发布方没有摘要会明确提示，严格模式会拒绝安装。
+
+解压使用受目录边界约束的文件操作，拒绝路径穿越、越界链接、设备文件与重复文件，并限制展开大小与文件数量。
+卸载自定义安装时同时验证 registry 侧记录和安装目录中的随机令牌；纳管目录始终只删除链接。
+完整边界、限制与兼容性说明见 [安全设计](docs/security.md)。
 
 ## 数据目录
 
@@ -259,7 +282,7 @@ Add-Content $PROFILE 'vsm activate powershell | Out-String | Invoke-Expression'
   - 镜像源加速 `mirror`（go/node/github 国内镜像，下载与元数据均走镜像）。
   - 网络代理 `proxy`（http/https/socks5，统一作用于所有下载与元数据请求；环境变量 `VSM_PROXY` 优先，`off` 强制直连 / `system` 跟随系统环境变量）。
   - `.tar.xz` 解压（调用系统 tar，零新增依赖；zig / typst 等 xz 发行包在 Windows/macOS/Linux 均可安装）。
-  - 并行分块下载 + 进度百分比 + sha256 校验（go 已接入官方校验值）+ 失败重试。
+  - 并行分块下载 + 进度百分比 + SHA256 校验（Go / Node 官方校验值、GitHub 资产摘要、manifest 固定摘要）+ 失败重试。
   - shell hook 进目录自动切换（`activate` 安装 hook，`env` 输出当前目录环境）。
   - Windows 用户级 PATH 广播（`path-init`，新终端免改配置）。
   - 自动识别各生态惯用版本文件（`.nvmrc`/`.python-version`/`.ruby-version`/`.java-version`/`.go-version`

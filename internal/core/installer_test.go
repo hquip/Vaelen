@@ -4,8 +4,22 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
+
+func assertNoPartialInstall(t *testing.T, dst string) {
+	t.Helper()
+	entries, err := os.ReadDir(filepath.Dir(dst))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if strings.HasPrefix(entry.Name(), "."+filepath.Base(dst)+".partial") {
+			t.Fatalf("staging directory leaked: %s", entry.Name())
+		}
+	}
+}
 
 func mkTree(t *testing.T, root string, files map[string]string) {
 	t.Helper()
@@ -57,9 +71,7 @@ func TestMoveIntoCrossVolumeIsAtomic(t *testing.T) {
 	if pathExists(dst) {
 		t.Fatal("失败后 dst 不应存在（半成品会被误判为已安装）")
 	}
-	if pathExists(partialDir(dst)) {
-		t.Fatal("失败后暂存目录应被清理")
-	}
+	assertNoPartialInstall(t, dst)
 }
 
 func TestMoveIntoCrossVolumeSucceeds(t *testing.T) {
@@ -73,9 +85,7 @@ func TestMoveIntoCrossVolumeSucceeds(t *testing.T) {
 	if !fileExists(filepath.Join(dst, "bin", "go")) || !fileExists(filepath.Join(dst, "VERSION")) {
 		t.Fatal("跨卷复制后文件应完整就位")
 	}
-	if pathExists(partialDir(dst)) {
-		t.Fatal("成功后不应残留暂存目录")
-	}
+	assertNoPartialInstall(t, dst)
 }
 
 // TestRegistryIgnoresPartialDirs 中断留下的 .xxx.partial 不能被当成已装版本。

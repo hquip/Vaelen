@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 )
@@ -18,12 +19,13 @@ var manifestFS embed.FS
 // 怎么下载、装到哪、需要哪些环境变量。内置一批，也可放到 ~/.vsm/plugins/*.json
 // （或 $VSM_HOME/plugins）由用户/社区扩展——这正是支持数十种语言而无需改代码的关键。
 type Manifest struct {
-	Name   string            `json:"name"`
-	Source ManifestSource    `json:"source"`
-	URL    string            `json:"url"`    // 下载 URL 模板，占位 {version} {os} {arch} {asset}
-	Assets map[string]string `json:"assets"` // "os/arch" -> asset 名模板（占位 {version} {os} {arch}）
-	Bin    string            `json:"bin"`    // bin 子目录（相对安装目录，空=根），用 / 分隔
-	Env    map[string]string `json:"env"`    // 环境变量，值可用 {dir} 代表安装目录
+	Name      string            `json:"name"`
+	Source    ManifestSource    `json:"source"`
+	URL       string            `json:"url"`                 // 下载 URL 模板，占位 {version} {os} {arch} {asset}
+	Assets    map[string]string `json:"assets"`              // "os/arch" -> asset 名模板（占位 {version} {os} {arch}）
+	Bin       string            `json:"bin"`                 // bin 子目录（相对安装目录，空=根），用 / 分隔
+	Env       map[string]string `json:"env"`                 // 环境变量，值可用 {dir} 代表安装目录
+	Checksums map[string]string `json:"checksums,omitempty"` // version/os/arch -> publisher SHA256
 }
 
 // ManifestSource 描述如何获取可用版本列表。
@@ -180,7 +182,9 @@ func registerManifestData(data []byte) {
 	var arr []Manifest
 	if err := json.Unmarshal(data, &arr); err == nil && len(arr) > 0 {
 		for _, m := range arr {
-			if m.Name != "" {
+			if err := validateManifest(m); err != nil {
+				fmt.Fprintln(os.Stderr, "vsm: skipping unsafe manifest:", err)
+			} else {
 				register(manifestPlugin{m})
 			}
 		}
@@ -188,6 +192,26 @@ func registerManifestData(data []byte) {
 	}
 	var single Manifest
 	if err := json.Unmarshal(data, &single); err == nil && single.Name != "" {
-		register(manifestPlugin{single})
+		if err := validateManifest(single); err != nil {
+			fmt.Fprintln(os.Stderr, "vsm: skipping unsafe manifest:", err)
+		} else {
+			register(manifestPlugin{single})
+		}
 	}
+}
+
+func validateManifest(m Manifest) error {
+	if !regexp.MustCompile(`^[a-z][a-z0-9_+-]*$`).MatchString(m.Name) {
+		return fmt.Errorf("invalid manifest name %q", m.Name)
+	}
+	if m.Bin != "" && (strings.ContainsAny(m.Bin, "\\:\x00\r\n") || !filepath.IsLocal(filepath.FromSlash(m.Bin))) {
+		return fmt.Errorf("%s: bin escapes installation", m.Name)
+	}
+	for k, v := range m.Env {
+		u := strings.ToUpper(k)
+		if !regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`).MatchString(k) || u == "PATH" || u == "VSM_PATH_BASE" || strings.HasPrefix(u, "_VSM_") || strings.ContainsAny(v, "\x00\r\n") {
+			return fmt.Errorf("%s: unsafe environment variable %q", m.Name, k)
+		}
+	}
+	return nil
 }

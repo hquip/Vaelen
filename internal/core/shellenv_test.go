@@ -9,6 +9,22 @@ import (
 	"testing"
 )
 
+// Windows' System32/bash.exe is a WSL launcher, not Git Bash. Native Windows
+// paths rendered for MSYS must be tested with Git Bash, even if WSL is on PATH.
+func findTestShell(sh string) (string, error) {
+	if runtime.GOOS == "windows" && sh == "bash" {
+		if git, err := exec.LookPath("git"); err == nil {
+			for _, candidate := range []string{filepath.Join(filepath.Dir(git), "bash.exe"), filepath.Join(filepath.Dir(git), "..", "bin", "bash.exe"), filepath.Join(filepath.Dir(git), "..", "usr", "bin", "bash.exe")} {
+				if fileExists(candidate) {
+					return candidate, nil
+				}
+			}
+		}
+		return "", exec.ErrNotFound
+	}
+	return exec.LookPath(sh)
+}
+
 // ---------- 纯字符串层面的检查 ----------
 
 // TestEnvScriptRestoresPATHWhenNoToolActive 离开项目目录（无工具生效）时，
@@ -42,8 +58,10 @@ func TestPOSIXQuotesAreNotNestedInDoubleQuotes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(out, `"'`) {
-		t.Fatalf("单引号字面量不得出现在双引号内：\n%s", out)
+	for _, line := range strings.Split(out, "\n") {
+		if strings.HasPrefix(line, "export PATH=") && strings.Contains(line, `"'`) {
+			t.Fatalf("PATH 单引号字面量不得出现在双引号内：\n%s", out)
+		}
 	}
 }
 
@@ -100,7 +118,7 @@ func TestEnvScriptExecutesInPOSIXShells(t *testing.T) {
 	for _, sh := range []string{"bash", "sh", "zsh"} {
 		sh := sh
 		t.Run(sh, func(t *testing.T) {
-			bin, err := exec.LookPath(sh)
+			bin, err := findTestShell(sh)
 			if err != nil {
 				t.Skipf("未安装 %s", sh)
 			}

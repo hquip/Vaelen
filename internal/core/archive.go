@@ -3,169 +3,298 @@ package core
 import (
 	"archive/tar"
 	"archive/zip"
+	"bytes"
 	"compress/gzip"
+	"context"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
-// Extract 根据文件后缀自动选择解压方式（支持 .tar.gz/.tgz 与 .zip），
-// 将 src 解压到 dst 目录。
-func Extract(src, dst string) error {
-	lower := strings.ToLower(src)
-	switch {
+// ArchiveLimits bounds expansion before writing file contents to disk.
+type ArchiveLimits struct {
+	MaxFiles                    int
+	MaxFileBytes, MaxTotalBytes int64
+}
+
+var defaultArchiveLimits = ArchiveLimits{100000, 4 << 30, 16 << 30}
+
+// Extract confines every filesystem operation to dst, including symlink traversal.
+func Extract(src, dst string) error { return ExtractWithLimits(src, dst, defaultArchiveLimits) }
+
+func ExtractWithLimits(src, dst string, limits ArchiveLimits) error {
+	if limits.MaxFiles <= 0 || limits.MaxFileBytes <= 0 || limits.MaxTotalBytes <= 0 {
+		return fmt.Errorf("invalid archive limits")
+	}
+	if err := os.MkdirAll(dst, 0o755); err != nil {
+		return err
+	}
+	root, err := os.OpenRoot(dst)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	b := archiveBudget{limits: limits}
+	switch lower := strings.ToLower(src); {
 	case strings.HasSuffix(lower, ".tar.gz"), strings.HasSuffix(lower, ".tgz"):
-		return extractTarGz(src, dst)
+		f, err := os.Open(src)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		gz, err := gzip.NewReader(f)
+		if err != nil {
+			return err
+		}
+		defer gz.Close()
+		if err := extractTar(tar.NewReader(gz), root, &b); err != nil {
+			return err
+		}
+		// Read through the trailer so a corrupt gzip checksum cannot be ignored.
+		_, err = io.Copy(io.Discard, io.LimitReader(gz, 1<<20))
+		return err
 	case strings.HasSuffix(lower, ".zip"):
-		return extractZip(src, dst)
+		return extractZipRoot(src, root, &b)
 	case strings.HasSuffix(lower, ".tar.xz"):
-		return extractTarXz(src, dst)
+		return extractTarXzRoot(src, root, &b)
 	default:
 		return fmt.Errorf("不支持的压缩格式: %s", src)
 	}
 }
 
-func extractTarGz(src, dst string) error {
-	f, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
+type archiveBudget struct {
+	limits ArchiveLimits
+	files  int
+	bytes  int64
+}
 
-	gz, err := gzip.NewReader(f)
-	if err != nil {
-		return err
+func (b *archiveBudget) add(size int64) error {
+	b.files++
+	if size < 0 || b.files > b.limits.MaxFiles || size > b.limits.MaxFileBytes || size > b.limits.MaxTotalBytes-b.bytes {
+		return fmt.Errorf("archive exceeds file count or expanded size limits")
 	}
-	defer gz.Close()
+	b.bytes += size
+	return nil
+}
 
-	tr := tar.NewReader(gz)
+func archiveName(name string) (string, error) {
+	if strings.ContainsAny(name, "\\:\x00") || strings.HasPrefix(name, "/") {
+		return "", fmt.Errorf("非法归档路径: %q", name)
+	}
+	for _, component := range strings.Split(name, "/") {
+		if component == ".." {
+			return "", fmt.Errorf("归档路径越界: %q", name)
+		}
+		if component != "" && component != "." {
+			if err := validateComponent(component); err != nil {
+				return "", err
+			}
+		}
+	}
+	clean := path.Clean(name)
+	if clean == "." {
+		return ".", nil
+	}
+	if !filepath.IsLocal(filepath.FromSlash(clean)) {
+		return "", fmt.Errorf("非法归档路径: %q", name)
+	}
+	return filepath.FromSlash(clean), nil
+}
+
+func extractTar(tr *tar.Reader, root *os.Root, budget *archiveBudget) error {
 	for {
-		hdr, err := tr.Next()
+		h, err := tr.Next()
 		if err == io.EOF {
-			break
+			return nil
 		}
 		if err != nil {
 			return err
 		}
-		target, err := safeJoin(dst, hdr.Name)
+		name, err := archiveName(h.Name)
 		if err != nil {
 			return err
 		}
-		switch hdr.Typeflag {
+		if err := budget.add(h.Size); err != nil {
+			return err
+		}
+		switch h.Typeflag {
 		case tar.TypeDir:
-			if err := os.MkdirAll(target, 0o755); err != nil {
+			if err := root.MkdirAll(name, 0o755); err != nil {
 				return err
 			}
-		case tar.TypeReg:
-			if err := writeFile(target, tr, os.FileMode(hdr.Mode)); err != nil {
+		case tar.TypeReg, tar.TypeRegA:
+			if err := writeArchiveFile(root, name, tr, os.FileMode(h.Mode), h.Size); err != nil {
 				return err
 			}
 		case tar.TypeSymlink:
-			_ = os.MkdirAll(filepath.Dir(target), 0o755)
-			_ = os.Remove(target)
-			// 链接目标同样要限制在解压目录内：否则归档里可以先放一个
-			// 指向外部的软链，再用后续条目通过它写到目标目录之外。
-			if !linkTargetInside(dst, filepath.Dir(target), hdr.Linkname) {
-				return fmt.Errorf("压缩包内存在越界符号链接: %s -> %s", hdr.Name, hdr.Linkname)
+			if err := archiveSymlink(root, name, h.Linkname); err != nil {
+				return err
 			}
-			if err := os.Symlink(hdr.Linkname, target); err != nil {
-				// 某些平台（如无权限的 Windows）创建符号链接失败可忽略。
-				continue
+		case tar.TypeLink:
+			target, err := archiveName(h.Linkname)
+			if err != nil {
+				return err
 			}
+			fi, err := root.Lstat(target)
+			if err != nil {
+				return err
+			}
+			if !fi.Mode().IsRegular() {
+				return fmt.Errorf("hard link target must be a regular file")
+			}
+			if err := root.MkdirAll(filepath.Dir(name), 0o755); err != nil {
+				return err
+			}
+			if err := root.Link(target, name); err != nil {
+				return err
+			}
+		default:
+			return fmt.Errorf("unsupported archive entry type %d: %s", h.Typeflag, h.Name)
 		}
 	}
-	return nil
 }
 
-// extractTarXz 用系统 tar 解压 .tar.xz（zig / typst 等在 Linux/macOS 的发行格式）。
-// 类 Unix 自带 tar；Windows 10 1803+ 也内置 bsdtar(tar.exe)。tar 会自动识别 xz 压缩，
-// 无需显式 -J，兼容 GNU tar 与 BSD/macOS/Windows 的 bsdtar。这样无需引入第三方 xz 库，
-// 仍保持 CLI 零第三方依赖。
-func extractTarXz(src, dst string) error {
-	if err := os.MkdirAll(dst, 0o755); err != nil {
+func archiveSymlink(root *os.Root, name, target string) error {
+	if strings.ContainsAny(target, "\\:\x00") || path.IsAbs(target) || !linkTargetInside(".", filepath.Dir(name), target) {
+		return fmt.Errorf("压缩包内存在越界符号链接: %s -> %s", name, target)
+	}
+	if err := root.MkdirAll(filepath.Dir(name), 0o755); err != nil {
 		return err
 	}
-	if _, err := exec.LookPath("tar"); err != nil {
-		return fmt.Errorf(".tar.xz 需要系统 tar 解压，但未找到 tar 命令（%s）", src)
-	}
-	cmd := exec.Command("tar", "-xf", src, "-C", dst)
-	hideConsole(cmd)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("解压 .tar.xz 失败: %v: %s", err, strings.TrimSpace(string(out)))
-	}
-	return nil
+	// Never replace existing entries, and never silently discard a failed link.
+	return root.Symlink(filepath.FromSlash(target), name)
 }
 
-func extractZip(src, dst string) error {
+func extractZipRoot(src string, root *os.Root, budget *archiveBudget) error {
 	r, err := zip.OpenReader(src)
 	if err != nil {
 		return err
 	}
 	defer r.Close()
-
-	for _, file := range r.File {
-		target, err := safeJoin(dst, file.Name)
+	for _, f := range r.File {
+		name, err := archiveName(f.Name)
 		if err != nil {
 			return err
 		}
-		if file.FileInfo().IsDir() {
-			if err := os.MkdirAll(target, 0o755); err != nil {
+		if f.UncompressedSize64 > uint64(budget.limits.MaxFileBytes) {
+			return fmt.Errorf("archive file too large: %s", f.Name)
+		}
+		if err := budget.add(int64(f.UncompressedSize64)); err != nil {
+			return err
+		}
+		if f.FileInfo().IsDir() {
+			if err := root.MkdirAll(name, 0o755); err != nil {
 				return err
 			}
 			continue
 		}
-		rc, err := file.Open()
+		if f.Mode()&os.ModeType != 0 && f.Mode()&os.ModeSymlink == 0 {
+			return fmt.Errorf("unsupported zip entry: %s", f.Name)
+		}
+		rc, err := f.Open()
 		if err != nil {
 			return err
 		}
-		err = writeFile(target, rc, file.Mode())
-		rc.Close()
+		if f.Mode()&os.ModeSymlink != 0 {
+			var target []byte
+			target, err = io.ReadAll(io.LimitReader(rc, 4097))
+			if err == nil && len(target) > 4096 {
+				err = fmt.Errorf("symlink target too long")
+			}
+			if err == nil {
+				err = archiveSymlink(root, name, string(target))
+			}
+		} else {
+			err = writeArchiveFile(root, name, rc, f.Mode(), int64(f.UncompressedSize64))
+		}
+		closeErr := rc.Close()
 		if err != nil {
 			return err
+		}
+		if closeErr != nil {
+			return closeErr
 		}
 	}
 	return nil
 }
 
-func writeFile(target string, r io.Reader, mode os.FileMode) error {
-	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+func writeArchiveFile(root *os.Root, name string, r io.Reader, mode os.FileMode, size int64) error {
+	if err := root.MkdirAll(filepath.Dir(name), 0o755); err != nil {
 		return err
 	}
-	out, err := os.OpenFile(target, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, mode)
+	// O_EXCL prevents duplicate entries and writes through existing links/hard links.
+	f, err := root.OpenFile(name, os.O_CREATE|os.O_EXCL|os.O_WRONLY, mode.Perm()&0o755)
 	if err != nil {
 		return err
 	}
-	defer out.Close()
-	_, err = io.Copy(out, r)
-	return err
+	n, copyErr := io.Copy(f, io.LimitReader(r, size+1))
+	closeErr := f.Close()
+	if copyErr != nil {
+		return copyErr
+	}
+	if closeErr != nil {
+		return closeErr
+	}
+	if n != size {
+		return fmt.Errorf("archive size mismatch for %s: got %d want %d", name, n, size)
+	}
+	return nil
 }
 
-// safeJoin 防御 zip-slip / 路径穿越：确保解出的路径仍在 dst 之内。
-func safeJoin(dst, name string) (string, error) {
-	cleanRoot := filepath.Clean(dst)
-	// 归档内条目为绝对路径时（/etc/passwd 或 C:\evil），filepath.Join 会把它
-	// 相对化为 dst/etc/passwd，看似安全但已扭曲原意；直接拒绝更明确。
-	if filepath.IsAbs(name) || (len(name) > 1 && name[1] == ':') {
-		return "", fmt.Errorf("压缩包内存在绝对路径: %s", name)
+// XZ is decoded to a tar stream only; external tools never extract paths to disk.
+func extractTarXzRoot(src string, root *os.Root, budget *archiveBudget) error {
+	abs, err := filepath.Abs(src)
+	if err != nil {
+		return err
 	}
-	target := filepath.Join(cleanRoot, name)
-	if target != cleanRoot && !strings.HasPrefix(target, cleanRoot+string(os.PathSeparator)) {
-		return "", fmt.Errorf("压缩包内存在非法路径: %s", name)
-	}
-	return target, nil
-}
-
-// linkTargetInside 判断软链（位于 linkDir 下、指向 linkTarget）解析后是否仍落在 root 内。
-func linkTargetInside(root, linkDir, linkTarget string) bool {
-	var resolved string
-	if filepath.IsAbs(linkTarget) {
-		resolved = filepath.Clean(linkTarget)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+	var cmd *exec.Cmd
+	if xz, err := exec.LookPath("xz"); err == nil {
+		cmd = exec.CommandContext(ctx, xz, "-dc", "--", abs)
 	} else {
-		resolved = filepath.Clean(filepath.Join(linkDir, linkTarget))
+		// macOS/Windows bsdtar supports @archive inclusion in create mode.
+		cmd = exec.CommandContext(ctx, "tar", "-c", "-f", "-", "@"+abs)
 	}
-	cleanRoot := filepath.Clean(root)
-	return resolved == cleanRoot || strings.HasPrefix(resolved, cleanRoot+string(os.PathSeparator))
+	hideConsole(cmd)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	pipe, err := cmd.StdoutPipe()
+	if err != nil {
+		return err
+	}
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	extractErr := extractTar(tar.NewReader(pipe), root, budget)
+	if extractErr != nil {
+		cancel()
+	} else {
+		_, extractErr = io.Copy(io.Discard, io.LimitReader(pipe, 1<<20))
+		if extractErr != nil {
+			cancel()
+		}
+	}
+	pipe.Close()
+	waitErr := cmd.Wait()
+	if extractErr != nil {
+		return extractErr
+	}
+	if waitErr != nil {
+		return fmt.Errorf("XZ decode failed: %w: %s", waitErr, stderr.String())
+	}
+	return nil
+}
+
+func linkTargetInside(root, linkDir, target string) bool {
+	if filepath.IsAbs(target) {
+		return false
+	}
+	rel, err := filepath.Rel(root, filepath.Join(linkDir, target))
+	return err == nil && (rel == "." || filepath.IsLocal(rel))
 }

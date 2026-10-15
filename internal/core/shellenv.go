@@ -109,23 +109,8 @@ func VsmCommand(vsmExe string) string {
 // EnvFor 计算在 startDir 下所有「已解析且已安装」的工具应注入的 PATH 目录与环境变量。
 // 供 shell hook 进入目录时即时切换：把这些 bin 目录前置到 PATH，并设置 GOROOT 等。
 func (a Activator) EnvFor(startDir string) (pathDirs []string, env map[string]string) {
-	env = map[string]string{}
-	for _, tool := range plugin.Names() {
-		p, ok := plugin.Get(tool)
-		if !ok {
-			continue
-		}
-		res := a.Resolver.Resolve(tool, startDir)
-		if res.Version == "" {
-			continue
-		}
-		installDir := a.Paths.InstallDir(tool, res.Version)
-		pathDirs = append(pathDirs, p.BinPaths(installDir)...)
-		for k, v := range p.ExecEnv(installDir) {
-			env[k] = v
-		}
-	}
-	return pathDirs, env
+	plan, _ := a.PlanEnvironment(startDir)
+	return plan.Paths, plan.Variables
 }
 
 // EnvScript 把 pathDirs/env 渲染成某 shell 可 eval 的语句。
@@ -141,6 +126,9 @@ func EnvScript(shell string, pathDirs []string, env map[string]string) (string, 
 	}
 	keys := make([]string, 0, len(env))
 	for k := range env {
+		if !validEnvKey(k) || strings.ContainsAny(env[k], "\x00\r\n") {
+			return "", fmt.Errorf("unsafe environment variable: %q", k)
+		}
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
@@ -148,6 +136,7 @@ func EnvScript(shell string, pathDirs []string, env map[string]string) (string, 
 	var b strings.Builder
 	switch sh {
 	case "bash", "zsh", "sh":
+		b.WriteString("if [ \"${VSM_PATH_BASE+x}\" != x ]; then export VSM_PATH_BASE=\"$PATH\"; fi\n")
 		// 形如 export PATH='/a':'/b':"${VSM_PATH_BASE:-$PATH}"——
 		// 单引号段与双引号段相邻即拼接，引号由 shell 剥掉，不会残留到 PATH 里。
 		var prefix strings.Builder
@@ -155,15 +144,11 @@ func EnvScript(shell string, pathDirs []string, env map[string]string) (string, 
 			prefix.WriteString(quotePOSIX(shellPath(d)))
 			prefix.WriteByte(':')
 		}
-		b.WriteString("export PATH=" + prefix.String() + `"${VSM_PATH_BASE:-$PATH}"` + "\n")
+		b.WriteString("export PATH=" + prefix.String() + `"${VSM_PATH_BASE}"` + "\n")
 		// zsh 默认不对未加引号的参数做分词，需用 ${=VAR} 强制分词
-		list := "${" + envKeysVar + "}"
-		if sh == "zsh" {
-			list = "${=" + envKeysVar + "}"
-		}
-		b.WriteString(`if [ -n "${` + envKeysVar + `:-}" ]; then for _vsm_k in ` + list +
-			`; do unset "$_vsm_k"; done; unset _vsm_k; fi` + "\n")
+		b.WriteString(restoreManagedVars(sh))
 		for _, k := range keys {
+			b.WriteString(backupManagedVar(sh, k))
 			b.WriteString("export " + k + "=" + quotePOSIX(env[k]) + "\n")
 		}
 		b.WriteString("export " + envKeysVar + "=" + quotePOSIX(strings.Join(keys, " ")) + "\n")
@@ -176,9 +161,9 @@ func EnvScript(shell string, pathDirs []string, env map[string]string) (string, 
 		}
 		parts = append(parts, "$VSM_PATH_BASE")
 		b.WriteString("set -gx PATH " + strings.Join(parts, " ") + "\n")
-		b.WriteString("if set -q " + envKeysVar + "\n    for _vsm_k in $" + envKeysVar +
-			"\n        set -e $_vsm_k\n    end\nend\n")
+		b.WriteString(restoreManagedVars(sh))
 		for _, k := range keys {
+			b.WriteString(backupManagedVar(sh, k))
 			b.WriteString("set -gx " + k + " " + quoteFish(env[k]) + "\n")
 		}
 		b.WriteString("set -gx " + envKeysVar + " " + strings.Join(keys, " ") + "\n")
@@ -193,9 +178,9 @@ func EnvScript(shell string, pathDirs []string, env map[string]string) (string, 
 			b.WriteString("$env:PATH = " + quotePowerShell(strings.Join(pathDirs, sep)+sep) +
 				" + $env:VSM_PATH_BASE\n")
 		}
-		b.WriteString("if ($env:" + envKeysVar + ") { foreach ($_vsm_k in ($env:" + envKeysVar +
-			" -split ' ')) { if ($_vsm_k) { Remove-Item -Path \"env:$_vsm_k\" -ErrorAction SilentlyContinue } } }\n")
+		b.WriteString(restoreManagedVars(sh))
 		for _, k := range keys {
+			b.WriteString(backupManagedVar(sh, k))
 			b.WriteString("$env:" + k + " = " + quotePowerShell(env[k]) + "\n")
 		}
 		b.WriteString("$env:" + envKeysVar + " = " + quotePowerShell(strings.Join(keys, " ")) + "\n")
@@ -207,9 +192,39 @@ func EnvScript(shell string, pathDirs []string, env map[string]string) (string, 
 		} else {
 			b.WriteString("set \"PATH=" + quoteCmd(strings.Join(pathDirs, ";")) + ";%VSM_PATH_BASE%\"\n")
 		}
+		known := map[string]bool{"GOROOT": true, "JAVA_HOME": true}
 		for _, k := range keys {
+			known[k] = true
+		}
+		for _, k := range strings.Fields(os.Getenv(envKeysVar)) {
+			if validEnvKey(k) {
+				known[k] = true
+			}
+		}
+		for _, tool := range plugin.Names() {
+			p, _ := plugin.Get(tool)
+			for k := range p.ExecEnv("") {
+				if validEnvKey(k) {
+					known[k] = true
+				}
+			}
+		}
+		var restoreKeys []string
+		for k := range known {
+			restoreKeys = append(restoreKeys, k)
+		}
+		sort.Strings(restoreKeys)
+		for _, k := range restoreKeys {
+			b.WriteString("if defined _VSM_HAD_" + k + " (\n  if \"%_VSM_HAD_" + k + "%\"==\"1\" (set \"" + k + "=%_VSM_ORIG_" + k + "%\") else (set \"" + k + "=\")\n  set \"_VSM_HAD_" + k + "=\"\n  set \"_VSM_ORIG_" + k + "=\"\n)\n")
+		}
+		for _, k := range keys {
+			b.WriteString(backupManagedVar(sh, k))
 			b.WriteString("set \"" + k + "=" + quoteCmd(env[k]) + "\"\n")
 		}
+		b.WriteString("set \"" + envKeysVar + "=" + strings.Join(keys, " ") + "\"\n")
+	}
+	if sh == "cmd" {
+		return strings.ReplaceAll(b.String(), "\n", "\r\n"), nil
 	}
 	return b.String(), nil
 }
@@ -227,48 +242,46 @@ func HookScript(shell, shimsDir, vsmCmd string) (string, error) {
 	}
 	posixVsm := posixCmd(vsmCmd)
 	shims := quotePOSIX(shellPath(shimsDir))
+	posixInit := "case \":$PATH:\" in *:" + shims + ":*) ;; *) export PATH=" + shims + ":\"$PATH\" ;; esac\nif [ \"${VSM_PATH_BASE+x}\" != x ]; then export VSM_PATH_BASE=\"$PATH\"; fi\n"
 	switch sh {
 	case "bash":
-		return fmt.Sprintf(`export PATH=%s:"$PATH"
-export VSM_PATH_BASE="${VSM_PATH_BASE:-$PATH}"
+		return posixInit + fmt.Sprintf(`
 _vsm_hook() { eval "$(%s env bash)"; }
 case "${PROMPT_COMMAND:-}" in *_vsm_hook*) ;; *) PROMPT_COMMAND="_vsm_hook;${PROMPT_COMMAND:-}" ;; esac
-_vsm_hook`, shims, posixVsm), nil
+_vsm_hook`, posixVsm), nil
 	case "zsh":
-		return fmt.Sprintf(`export PATH=%s:"$PATH"
-export VSM_PATH_BASE="${VSM_PATH_BASE:-$PATH}"
+		return posixInit + fmt.Sprintf(`
 _vsm_hook() { eval "$(%s env zsh)"; }
 autoload -U add-zsh-hook 2>/dev/null && add-zsh-hook chpwd _vsm_hook
-_vsm_hook`, shims, posixVsm), nil
+_vsm_hook`, posixVsm), nil
 	case "sh":
-		return fmt.Sprintf(`export PATH=%s:"$PATH"
-export VSM_PATH_BASE="${VSM_PATH_BASE:-$PATH}"
+		return posixInit + fmt.Sprintf(`
 _vsm_hook() { eval "$(%s env sh)"; }
-_vsm_hook`, shims, posixVsm), nil
+_vsm_hook`, posixVsm), nil
 	case "fish":
 		fishVsm := vsmCmd
 		if vsmCmd != "vsm" {
 			fishVsm = quoteFish(shellPath(vsmCmd))
 		}
-		return fmt.Sprintf(`set -gx PATH %s $PATH
+		return fmt.Sprintf(`contains -- %s $PATH; or set -gx PATH %s $PATH
 if not set -q VSM_PATH_BASE
     set -gx VSM_PATH_BASE $PATH
 end
 function _vsm_hook --on-variable PWD
     %s env fish | source
 end
-_vsm_hook`, quoteFish(shellPath(shimsDir)), fishVsm), nil
+_vsm_hook`, quoteFish(shellPath(shimsDir)), quoteFish(shellPath(shimsDir)), fishVsm), nil
 	case "powershell", "pwsh":
 		psVsm := vsmCmd
 		if vsmCmd != "vsm" {
 			psVsm = "& " + quotePowerShell(vsmCmd)
 		}
-		return fmt.Sprintf(`$env:PATH = %s + ";" + $env:PATH
-if (-not $env:VSM_PATH_BASE) { $env:VSM_PATH_BASE = $env:PATH }
+		return fmt.Sprintf(`if (($env:PATH -split [regex]::Escape([string][IO.Path]::PathSeparator)) -notcontains %s) { $env:PATH = %s + [IO.Path]::PathSeparator + $env:PATH }
+if (-not (Test-Path env:VSM_PATH_BASE)) { $env:VSM_PATH_BASE = $env:PATH }
 function global:prompt {
     %s env powershell | Out-String | Invoke-Expression
     "PS $($executionContext.SessionState.Path.CurrentLocation)> "
-}`, quotePowerShell(shimsDir), psVsm), nil
+}`, quotePowerShell(shimsDir), quotePowerShell(shimsDir), psVsm), nil
 	case "cmd":
 		return "set \"PATH=" + quoteCmd(shimsDir) + ";%PATH%\"", nil
 	}

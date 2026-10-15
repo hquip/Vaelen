@@ -3,7 +3,6 @@ package core
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -18,12 +17,32 @@ import (
 //
 // execPath 是系统检测得到的主命令可执行文件路径（如 C:\Java\jdk-21\bin\java.exe）。
 func (in Installer) Adopt(p plugin.Plugin, version, execPath string) error {
+	if err := validateInstall(p.Name(), version); err != nil {
+		return err
+	}
 	if version == "" {
 		return fmt.Errorf("纳管 %s 需要版本号", p.Name())
 	}
 	root, err := inferInstallRoot(p, execPath)
 	if err != nil {
 		return err
+	}
+	if fi, err := os.Stat(execPath); err != nil {
+		return err
+	} else if !fi.Mode().IsRegular() {
+		return fmt.Errorf("adopt requires a regular executable file")
+	}
+	root, err = filepath.Abs(root)
+	if err != nil {
+		return err
+	}
+	guard, err := in.Paths.openInstalls(p.Name(), true)
+	if err != nil {
+		return err
+	}
+	guard.Close()
+	if pathWithin(in.Paths.Root, root) || pathWithin(root, in.Paths.Root) || pathWithin(in.Paths.Installs(), root) {
+		return fmt.Errorf("adopt target overlaps vsm directories")
 	}
 	if err := in.Paths.EnsureDirs(); err != nil {
 		return err
@@ -66,24 +85,14 @@ func sameDir(a, b string) bool {
 	return ca == cb
 }
 
-// linkDir 创建目录链接 link → target。Windows 优先用 junction（mklink /J，
-// 免管理员权限），失败再退回符号链接；其它平台直接用符号链接。
+// linkDir 创建目录链接 link → target。Windows 直接通过原生 API 创建 junction，
+// 避免合法路径中的 shell 元字符被解释；其它平台使用符号链接。
 func linkDir(target, link string) error {
-	if runtime.GOOS == "windows" {
-		// 不要手动给路径加引号：exec.Command 在 Windows 上会自动为含空格的参数加引号
-		// （如 C:\Program Files\Java\...）。再包一层引号会被转义成 \"...\"，
-		// mklink 报「命令语法不正确」，所有 junction 都会创建失败（见 TestLinkDirWithSpaces）。
-		cmd := exec.Command("cmd", "/c", "mklink", "/J", link, target)
-		hideConsole(cmd)
-		if out, err := cmd.CombinedOutput(); err != nil {
-			if serr := os.Symlink(target, link); serr != nil {
-				return fmt.Errorf("创建 junction 失败: %v (%s)；符号链接亦失败: %v",
-					err, strings.TrimSpace(string(out)), serr)
-			}
-		}
-		return nil
+	abs, err := filepath.Abs(target)
+	if err != nil {
+		return err
 	}
-	return os.Symlink(target, link)
+	return platformLinkDir(abs, link)
 }
 
 // isLink 判断 path 是否为符号链接 / Windows junction（reparse point）。
@@ -105,7 +114,7 @@ func isLink(path string) bool {
 
 // InstallTarget 返回版本目录的真实位置，以及它是否归 vsm 所有：
 //   - vsm 直接安装的目录：返回自身，owned=true；
-//   - --path 装到自定义位置（链接 + .vsm-install 标记）：返回真实目录，owned=true；
+//   - --path 自定义安装（匹配 registry 记录及目录标记）：返回真实目录，owned=true；
 //   - 纳管的系统版本（链接、无标记）：返回系统目录，owned=false。
 //
 // 与 Installer.Uninstall 的判定规则一致，供 size 等命令区分「vsm 占用的空间」。
@@ -122,7 +131,11 @@ func InstallTarget(dir string) (real string, owned bool) {
 	if target == "" {
 		return dir, false
 	}
-	return target, fileExists(filepath.Join(target, installMarker))
+	if !filepath.IsAbs(target) {
+		target = filepath.Join(filepath.Dir(dir), target)
+	}
+	_, owned, err := ownedReceipt(dir, target, filepath.Base(filepath.Dir(dir)), filepath.Base(dir))
+	return target, owned && err == nil
 }
 
 func pathExists(p string) bool {

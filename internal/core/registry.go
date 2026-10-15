@@ -13,6 +13,17 @@ type Registry struct {
 
 // Installed 返回某工具已安装的所有版本（目录名）。
 func (r Registry) Installed(tool string) ([]string, error) {
+	if err := validateComponent(tool); err != nil {
+		return nil, err
+	}
+	guard, err := r.Paths.openInstalls(tool, false)
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	guard.Close()
 	return dirNames(r.Paths.ToolInstalls(tool))
 }
 

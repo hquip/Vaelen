@@ -25,23 +25,25 @@ import (
 // 安装根目录切换时整体替换（见 reload），读取方通过原子指针拿到一致的快照，
 // 避免「一个 goroutine 正在读 paths、另一个正在改写」的数据竞争。
 type components struct {
-	paths core.Paths
-	reg   core.Registry
-	res   core.Resolver
-	inst  core.Installer
-	act   core.Activator
+	initErr error
+	paths   core.Paths
+	reg     core.Registry
+	res     core.Resolver
+	inst    core.Installer
+	act     core.Activator
 }
 
 func newComponents() *components {
-	paths, _ := core.DefaultPaths()
+	paths, initErr := core.DefaultPaths()
 	reg := core.Registry{Paths: paths}
 	res := core.Resolver{Paths: paths, Registry: reg}
 	return &components{
-		paths: paths,
-		reg:   reg,
-		res:   res,
-		inst:  core.Installer{Paths: paths},
-		act:   core.Activator{Paths: paths, Resolver: res, Registry: reg, VsmExe: locateVsmCLI()},
+		initErr: initErr,
+		paths:   paths,
+		reg:     reg,
+		res:     res,
+		inst:    core.Installer{Paths: paths},
+		act:     core.Activator{Paths: paths, Resolver: res, Registry: reg, VsmExe: locateVsmCLI()},
 	}
 }
 
@@ -76,6 +78,9 @@ func (a *App) c() *components { return a.st.Load() }
 
 // begin 尝试获取写操作锁，成功时返回解锁函数。
 func (a *App) begin() (func(), error) {
+	if err := a.c().initErr; err != nil {
+		return nil, err
+	}
 	if !a.mu.TryLock() {
 		return nil, errBusy
 	}
@@ -190,6 +195,9 @@ func (a *App) resolveDir() string {
 // Status 返回所有工具的当前状态（已装版本 + 生效版本 + 来源）。
 func (a *App) Status() ([]ToolStatus, error) {
 	c := a.c()
+	if c.initErr != nil {
+		return nil, c.initErr
+	}
 	dir := a.resolveDir()
 	names := plugin.Names()
 	out := make([]ToolStatus, 0, len(names))
@@ -205,6 +213,9 @@ func (a *App) Status() ([]ToolStatus, error) {
 			return core.CompareVersions(installed[i], installed[j]) > 0
 		})
 		r := c.res.Resolve(name, dir)
+		if r.Error != "" {
+			return nil, fmt.Errorf("%s: %s", name, r.Error)
+		}
 		out = append(out, ToolStatus{
 			Tool:      name,
 			Current:   r.Version,
@@ -228,6 +239,14 @@ func (a *App) RemoteVersions(tool string) ([]string, error) {
 // Install 安装某工具版本（version 可为 latest / 模糊版本）；dir 为空装到默认根目录，
 // 非空装到该自定义目录（链接进 vsm）。安装进度通过 "install:progress" 事件实时推送。
 func (a *App) Install(tool, version, dir string) error {
+	return a.install(tool, version, dir, false)
+}
+
+func (a *App) InstallVerified(tool, version, dir string, requireChecksum bool) error {
+	return a.install(tool, version, dir, requireChecksum)
+}
+
+func (a *App) install(tool, version, dir string, requireChecksum bool) error {
 	done, err := a.begin()
 	if err != nil {
 		return err
@@ -248,7 +267,9 @@ func (a *App) Install(tool, version, dir string) error {
 		return err
 	}
 	a.emit("解析到版本 " + resolved)
-	if err := c.inst.Install(p, resolved, dir, a.emit); err != nil {
+	installer := c.inst
+	installer.RequireChecksum = requireChecksum
+	if err := installer.Install(p, resolved, dir, a.emit); err != nil {
 		return err
 	}
 	return c.act.GenerateShims()
@@ -294,6 +315,9 @@ func (a *App) SetInstallRoot(dir string) error {
 	} else {
 		abs, err := filepath.Abs(dir)
 		if err != nil {
+			return err
+		}
+		if err := c.paths.ValidateInstallRoot(abs); err != nil {
 			return err
 		}
 		if err := os.MkdirAll(abs, 0o755); err != nil {

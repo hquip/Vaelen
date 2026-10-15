@@ -9,6 +9,7 @@ package netcfg
 
 import (
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -87,6 +88,9 @@ func Normalize(s string) (string, error) {
 // proxyForRequest 实现 http.Transport.Proxy 的签名，按 vsm 配置决定每个请求的代理。
 // 每请求读取配置，因此运行时切换即时生效；配置非法时回退系统环境变量而非直接断网。
 func proxyForRequest(req *http.Request) (*url.URL, error) {
+	if err := ValidateURL(req.URL.String()); err != nil {
+		return nil, err
+	}
 	stored, err := Normalize(ProxySetting())
 	if err != nil || stored == "" {
 		return http.ProxyFromEnvironment(req)
@@ -106,7 +110,35 @@ func Transport() *http.Transport {
 
 // Client 返回带 vsm 代理配置与给定超时的 *http.Client。
 func Client(timeout time.Duration) *http.Client {
-	return &http.Client{Timeout: timeout, Transport: Transport()}
+	return &http.Client{Timeout: timeout, Transport: Transport(), CheckRedirect: func(req *http.Request, via []*http.Request) error {
+		if len(via) >= 10 {
+			return fmt.Errorf("too many redirects")
+		}
+		if err := ValidateURL(req.URL.String()); err != nil {
+			return err
+		}
+		if len(via) > 0 && via[len(via)-1].URL.Scheme == "https" && req.URL.Scheme != "https" {
+			return fmt.Errorf("HTTPS downgrade redirect refused")
+		}
+		return nil
+	}}
+}
+
+// HTTPS is required for remote resources. Loopback HTTP supports local mirrors/tests.
+func ValidateURL(raw string) error {
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" || u.User != nil {
+		return fmt.Errorf("invalid resource URL")
+	}
+	if u.Scheme == "https" {
+		return nil
+	}
+	host := u.Hostname()
+	ip := net.ParseIP(host)
+	if u.Scheme == "http" && (strings.EqualFold(host, "localhost") || (ip != nil && ip.IsLoopback()) || os.Getenv("VSM_ALLOW_INSECURE_HTTP") == "1") {
+		return nil
+	}
+	return fmt.Errorf("resource downloads require HTTPS (local loopback HTTP is allowed)")
 }
 
 // Describe 返回适合展示的 (生效值, 来源) 二元组，供 CLI/GUI 呈现当前代理状态。

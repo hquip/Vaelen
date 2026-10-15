@@ -17,7 +17,12 @@ import (
 func (a *app) cmdInstall(args []string) error {
 	var rest []string
 	customDir := ""
+	requireChecksum := false
 	for i := 0; i < len(args); i++ {
+		if args[i] == "--require-checksum" {
+			requireChecksum = true
+			continue
+		}
 		if args[i] == "--path" || args[i] == "-p" {
 			// 结尾裸 --path 此前会被当成工具名，报出「不支持的工具: --path」这种误导性错误
 			if i+1 >= len(args) {
@@ -58,7 +63,9 @@ func (a *app) cmdInstall(args []string) error {
 		return err
 	}
 	fmt.Printf("安装 %s %s ...\n", tool, version)
-	if err := a.inst.Install(p, version, customDir, func(msg string) { fmt.Println("  " + msg) }); err != nil {
+	installer := a.inst
+	installer.RequireChecksum = requireChecksum
+	if err := installer.Install(p, version, customDir, func(msg string) { fmt.Println("  " + msg) }); err != nil {
 		return err
 	}
 	if err := a.act.GenerateShims(); err != nil {
@@ -93,6 +100,9 @@ func (a *app) cmdInstallRoot(args []string) error {
 	abs, err := filepath.Abs(dir)
 	if err != nil {
 		return fmt.Errorf("无法解析目录 %q: %w", dir, err)
+	}
+	if err := a.paths.ValidateInstallRoot(abs); err != nil {
+		return err
 	}
 	if err := os.MkdirAll(abs, 0o755); err != nil {
 		return err
@@ -154,7 +164,7 @@ func (a *app) cmdUse(args []string) error {
 	if version == "" {
 		return fmt.Errorf("版本号不能为空（用法: vsm use [-g] <tool> <version>）")
 	}
-	if strings.ContainsAny(version, " \t") {
+	if strings.ContainsAny(version, " \t\r\n\x00") {
 		return fmt.Errorf("版本号不能包含空格: %q", version)
 	}
 
@@ -264,7 +274,11 @@ func (a *app) cmdListAll(args []string) error {
 func (a *app) cmdCurrent(args []string) error {
 	if _, asJSON := jsonFlag(args); asJSON {
 		var out []toolStatusJSON
-		for _, st := range a.collectStatus() {
+		status, err := a.collectStatus()
+		if err != nil {
+			return err
+		}
+		for _, st := range status {
 			if st.Spec != "" {
 				out = append(out, st)
 			}
@@ -276,6 +290,9 @@ func (a *app) cmdCurrent(args []string) error {
 	}
 	for _, tool := range plugin.Names() {
 		r := a.res.Resolve(tool, a.cwd)
+		if r.Error != "" {
+			return fmt.Errorf("%s: %s", tool, r.Error)
+		}
 		if r.Spec == "" {
 			fmt.Printf("%-6s  -\n", tool)
 			continue
@@ -352,17 +369,29 @@ func (a *app) cmdActivate(args []string) error {
 }
 
 func (a *app) cmdEnv(args []string) error {
+	if len(args) > 1 {
+		return fmt.Errorf("用法: vsm env [shell]")
+	}
 	shell := "bash"
 	if len(args) >= 1 {
 		shell = args[0]
 	}
-	dirs, env := a.act.EnvFor(a.cwd)
-	script, err := core.EnvScript(shell, dirs, env)
+	plan, planErr := a.act.PlanEnvironment(a.cwd)
+	// A failed plan emits only the complete baseline restore, never a partial switch.
+	if planErr != nil {
+		plan = core.EnvironmentPlan{}
+	}
+	script, err := core.EnvScript(shell, plan.Paths, plan.Variables)
+	if err != nil {
+		return err
+	}
+	notice, err := core.SwitchNoticeScript(shell, plan.Label())
 	if err != nil {
 		return err
 	}
 	fmt.Print(script)
-	return nil
+	fmt.Print(notice)
+	return planErr
 }
 
 // cmdPathInit 让新开的终端自动启用 vsm：

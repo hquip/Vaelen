@@ -29,11 +29,19 @@ func (a Activator) Which(tool, startDir string) (string, error) {
 		return "", fmt.Errorf("不支持的工具: %s", tool)
 	}
 	res := a.Resolver.Resolve(tool, startDir)
+	if res.Error != "" {
+		return "", fmt.Errorf("%s", res.Error)
+	}
 	if res.Version == "" {
 		return "", fmt.Errorf("%s 未找到可用版本", tool)
 	}
 	installDir := a.Paths.InstallDir(tool, res.Version)
-	exe := findExecutable(p.BinPaths(installDir), tool)
+	exe := ""
+	for _, name := range plugin.DetectCommands()[tool] {
+		if exe = findExecutable(p.BinPaths(installDir), name); exe != "" {
+			break
+		}
+	}
 	if exe == "" {
 		return "", fmt.Errorf("在 %s %s 中找不到 %s 可执行文件", tool, res.Version, tool)
 	}
@@ -48,6 +56,9 @@ func (a Activator) Run(tool, startDir, cmdName string, cmdArgs []string) error {
 		return fmt.Errorf("不支持的工具: %s", tool)
 	}
 	res := a.Resolver.Resolve(tool, startDir)
+	if res.Error != "" {
+		return fmt.Errorf("%s", res.Error)
+	}
 	if res.Version == "" {
 		return fmt.Errorf("%s 未找到可用版本（要求 %q），请先 vsm install / vsm use", tool, res.Spec)
 	}
@@ -55,6 +66,13 @@ func (a Activator) Run(tool, startDir, cmdName string, cmdArgs []string) error {
 	binDirs := p.BinPaths(installDir)
 
 	exe := findExecutable(binDirs, cmdName)
+	if exe == "" && cmdName == tool {
+		for _, name := range plugin.DetectCommands()[tool] {
+			if exe = findExecutable(binDirs, name); exe != "" {
+				break
+			}
+		}
+	}
 	if exe == "" {
 		return fmt.Errorf("在 %s %s 中找不到可执行文件 %q", tool, res.Version, cmdName)
 	}
@@ -124,6 +142,9 @@ func (a Activator) writeShim(tool string) error {
 }
 
 func findExecutable(dirs []string, name string) string {
+	if err := validateComponent(name); err != nil {
+		return ""
+	}
 	var candidates []string
 	if runtime.GOOS == "windows" {
 		candidates = []string{name + ".exe", name + ".cmd", name + ".bat", name}

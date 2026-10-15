@@ -71,7 +71,7 @@ type goReleaseFull struct {
 // Checksum 从 go.dev/dl 的 JSON 元数据中取出对应平台归档包的官方 sha256。
 func (g *golangPlugin) Checksum(version string, t Target) (string, error) {
 	var releases []goReleaseFull
-	if err := fetchJSON("https://go.dev/dl/?mode=json&include=all", &releases); err != nil {
+	if err := fetchJSONOfficial("https://go.dev/dl/?mode=json&include=all", &releases); err != nil {
 		return "", err
 	}
 	want := fmt.Sprintf("go%s.%s-%s%s", version, t.OS, t.Arch, extFor(t.OS))

@@ -286,6 +286,9 @@ function renderDetail(tool) {
         <button id="pickDirBtn" class="mini">📁 选择安装位置</button>
         <span id="installDirLabel" class="install-dir-label">默认目录</span>
       </div>
+      <label class="install-path" title="发布方没有提供 SHA256 校验值时停止安装">
+        <input id="requireChecksum" type="checkbox"> 要求发布方 SHA256 校验
+      </label>
       <div id="installProgress" class="progress hidden"><div class="progress-bar" id="installBar"></div><span class="progress-text" id="installPct"></span></div>
       <pre id="installLog" class="log"></pre>
     </div>`;
@@ -507,7 +510,8 @@ async function doInstall(tool) {
   log.textContent = `开始安装 ${tool} ${version} …\n`;
   btn.disabled = true;
   try {
-    await call("Install", tool, version, installDir);
+    await call("InstallVerified", tool, version, installDir,
+      document.getElementById("requireChecksum").checked);
     toast(`已安装 ${tool} ${version}`);
     await load();
     renderDetail(tool);
