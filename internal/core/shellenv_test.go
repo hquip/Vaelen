@@ -139,6 +139,7 @@ func TestEnvScriptExecutesInPOSIXShells(t *testing.T) {
 			leaveFile := writeTemp(t, "leave.sh", leave)
 
 			script := strings.Join([]string{
+				"unset GOROOT JAVA_HOME _VSM_ENV_KEYS",
 				"export VSM_PATH_BASE='/usr/bin:/bin'",
 				`eval "$(cat ` + quotePOSIX(shellPath(enterFile)) + `)"`,
 				`printf 'IN_PATH=%s\n' "$PATH"`,
@@ -187,7 +188,7 @@ func TestEnvScriptExecutesInFish(t *testing.T) {
 	leave, _ := EnvScript("fish", nil, nil)
 	ef := writeTemp(t, "enter.fish", enter)
 	lf := writeTemp(t, "leave.fish", leave)
-	script := "set -gx VSM_PATH_BASE /usr/bin /bin\n" +
+	script := "set -e GOROOT JAVA_HOME _VSM_ENV_KEYS\nset -gx VSM_PATH_BASE /usr/bin /bin\n" +
 		"source " + quoteFish(ef) + "\n" +
 		"echo IN_PATH=(string join : $PATH)\n" +
 		"echo IN_GOROOT=$GOROOT\n" +
@@ -227,7 +228,7 @@ func TestEnvScriptExecutesInPowerShell(t *testing.T) {
 	leave, _ := EnvScript("powershell", nil, nil)
 	ef := writeTemp(t, "enter.ps1", enter)
 	lf := writeTemp(t, "leave.ps1", leave)
-	script := "$env:VSM_PATH_BASE = " + quotePowerShell(base) + "\n" +
+	script := "Remove-Item env:GOROOT,env:JAVA_HOME,env:_VSM_ENV_KEYS -ErrorAction SilentlyContinue\n$env:VSM_PATH_BASE = " + quotePowerShell(base) + "\n" +
 		"Invoke-Expression ([System.IO.File]::ReadAllText(" + quotePowerShell(ef) + "))\n" +
 		"[Console]::Out.WriteLine('IN_PATH=' + $env:PATH)\n" +
 		"[Console]::Out.WriteLine('IN_GOROOT=' + $env:GOROOT)\n" +
