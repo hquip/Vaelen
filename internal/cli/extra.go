@@ -304,6 +304,7 @@ _vsm_completion() {
   fi
   if [ "$COMP_CWORD" -eq 2 ]; then
     case "${COMP_WORDS[1]}" in
+      help) COMPREPLY=( $(compgen -W "$cmds" -- "$cur") ) ;;
       use|install|uninstall|list|list-all|which|exec|adopt|shell|size)
         COMPREPLY=( $(compgen -W "%s" -- "$cur") ) ;;
       activate|env|completion|path-init)
@@ -330,6 +331,7 @@ _vsm() {
   fi
   if (( CURRENT == 3 )); then
     case $words[2] in
+      help) _describe 'command' cmds ;;
       use|install|uninstall|list|list-all|which|exec|adopt|shell|size) _describe 'tool' tools ;;
       activate|env|completion|path-init) _describe 'shell' shells ;;
       mirror) _values 'mode' cn off ;;
@@ -345,6 +347,7 @@ set -l vsm_cmds install uninstall use list list-all current context run project 
 set -l vsm_tools %s
 complete -c vsm -f
 complete -c vsm -n "not __fish_seen_subcommand_from $vsm_cmds" -a "$vsm_cmds"
+complete -c vsm -n "__fish_seen_subcommand_from help" -a "$vsm_cmds"
 complete -c vsm -n "__fish_seen_subcommand_from use install uninstall list list-all which exec adopt shell" -a "$vsm_tools"
 complete -c vsm -n "__fish_seen_subcommand_from activate env completion" -a "bash zsh sh fish powershell pwsh cmd"
 complete -c vsm -n "__fish_seen_subcommand_from mirror" -a "cn off"
@@ -365,6 +368,7 @@ Register-ArgumentCompleter -Native -CommandName vsm -ScriptBlock {
     if ($idx -le 1) { $cands = $cmds }
     elseif ($idx -eq 2) {
         switch ($words[1]) {
+            'help' { $cands = $cmds }
             { $_ -in @('use','install','uninstall','list','list-all','which','exec','adopt','shell','size') } { $cands = $tools }
             { $_ -in @('activate','env','completion','path-init') } { $cands = $shells }
             'mirror' { $cands = @('cn','off') }
