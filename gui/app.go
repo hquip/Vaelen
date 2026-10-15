@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -12,12 +13,14 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	wruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 
 	"vsm/internal/buildinfo"
 	"vsm/internal/config"
 	"vsm/internal/core"
+	"vsm/internal/mcpserver"
 	"vsm/internal/netcfg"
 	"vsm/internal/plugin"
 )
@@ -486,9 +489,36 @@ func (a *App) MCPConfig() (map[string]any, error) {
 	}
 	exe := locateVsmCLI()
 	if exe == "" {
-		return nil, fmt.Errorf("请先将 vsm CLI 放在 GUI 同目录")
+		return nil, fmt.Errorf("未找到 vsm CLI。请将 v1.0.2 或更新版本的 CLI 重命名为 vsm（Windows 为 vsm.exe），放在 GUI 同目录后重试")
 	}
-	return map[string]any{"mcpServers": map[string]any{"vsm": map[string]any{"command": exe, "args": []string{"mcp", "serve", "--project", dir}}}}, nil
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, exe, "mcp", "config", "--project", dir)
+	cmd.Dir = dir
+	mcpserver.ConfigureProcess(cmd)
+	cmd.WaitDelay = time.Second
+	return mcpConfigFromCLI(cmd)
+}
+
+// Ask the selected CLI for its configuration so an older executable cannot
+// silently produce a configuration for a command it does not implement.
+func mcpConfigFromCLI(cmd *exec.Cmd) (map[string]any, error) {
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("无法使用 CLI %s 生成 MCP 配置：%w。请检查该文件是否为 v1.0.2 或更新版本，并将新版 CLI 放在 GUI 同目录", cmd.Path, err)
+	}
+	var config map[string]any
+	if err := json.Unmarshal(output, &config); err != nil {
+		return nil, fmt.Errorf("CLI %s 未返回有效的 MCP 配置，请更新 CLI 后重试", cmd.Path)
+	}
+	servers, _ := config["mcpServers"].(map[string]any)
+	server, _ := servers["vsm"].(map[string]any)
+	command, _ := server["command"].(string)
+	args, _ := server["args"].([]any)
+	if command == "" || len(args) < 2 || args[0] != "mcp" || args[1] != "serve" {
+		return nil, fmt.Errorf("CLI %s 不支持所需的 MCP 配置，请更新 CLI 后重试", cmd.Path)
+	}
+	return config, nil
 }
 
 // PickProjectDir 弹出目录选择框让用户选择项目目录；取消时保持原值并返回空串。
