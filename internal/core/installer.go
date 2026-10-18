@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"vsm/internal/logging"
 	"vsm/internal/plugin"
 )
 
@@ -25,7 +26,9 @@ var ErrDockerHostInstall = errors.New("Docker 项目的工具由镜像提供；�
 // Install 下载并安装 p 的 version。customDir 为空时装到默认 installs 目录；
 // 非空时装到 customDir/<tool>/<version> 并在 installs 下建 junction 链接过去
 // （这样既能自选磁盘位置，vsm 又能照常识别/切换/卸载）。
-func (in Installer) Install(p plugin.Plugin, version, customDir string, progress ProgressFunc) error {
+func (in Installer) Install(p plugin.Plugin, version, customDir string, progress ProgressFunc) (err error) {
+	finish := logging.Start("core", "install", logging.Fields{"tool": p.Name(), "version": version, "mode": in.Paths.ProjectMode})
+	defer func() { finish(err) }()
 	if in.Paths.ProjectMode == "docker" {
 		return ErrDockerHostInstall
 	}
@@ -250,7 +253,9 @@ func moveInto(src, dst string) error {
 
 // Uninstall 删除某版本的安装目录。对“纳管的外部版本”（链接）只删除链接本身，
 // 绝不递归删除系统里的真实目录。
-func (in Installer) Uninstall(tool, version string) error {
+func (in Installer) Uninstall(tool, version string) (err error) {
+	finish := logging.Start("core", "uninstall", logging.Fields{"tool": tool, "version": version, "mode": in.Paths.ProjectMode})
+	defer func() { finish(err) }()
 	if err := validateInstall(tool, version); err != nil {
 		return err
 	}

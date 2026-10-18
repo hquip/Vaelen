@@ -10,6 +10,8 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"vsm/internal/logging"
 )
 
 // SystemVersion 描述在系统中（非 vsm 管理）发现的某个语言运行时。
@@ -201,7 +203,17 @@ func normDir(p string) string {
 
 // probeVersion 用给定可执行文件依次尝试常见版本子命令，返回首个匹配到的版本号。
 // 覆盖三类约定：`--version`（多数）、`version`（go/zig 等子命令式）、`-version`（java）。
-func probeVersion(tool, bin string) (string, error) {
+func probeVersion(tool, bin string) (version string, err error) {
+	defer func() {
+		fields := logging.Fields{"tool": tool, "version": version}
+		level := "debug"
+		if err != nil {
+			level = "warn"
+			fields["error"] = err.Error()
+		}
+		logging.Record(level, "detect", "version.probe", fields)
+	}()
+
 	if tool == "go" {
 		return probeGoVersion(bin)
 	}

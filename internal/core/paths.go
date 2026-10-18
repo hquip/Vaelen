@@ -150,7 +150,7 @@ func (p Paths) ValidateInstallRoot(dir string) error {
 	if filepath.Dir(abs) == abs || pathWithin(abs, root) {
 		return fmt.Errorf("install root must not be a filesystem root or contain VSM_HOME")
 	}
-	for _, name := range []string{"shims", "downloads", "plugins"} {
+	for _, name := range []string{"shims", "downloads", "plugins", "logs"} {
 		d := filepath.Join(root, name)
 		if pathWithin(d, abs) || pathWithin(abs, d) {
 			return fmt.Errorf("install root overlaps vsm %s directory", name)

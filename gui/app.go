@@ -20,6 +20,7 @@ import (
 	"vsm/internal/buildinfo"
 	"vsm/internal/config"
 	"vsm/internal/core"
+	"vsm/internal/logging"
 	"vsm/internal/mcpconfig"
 	"vsm/internal/mcpserver"
 	"vsm/internal/netcfg"
@@ -208,7 +209,14 @@ func (a *App) ApplyUpdate() (updater.Result, error) {
 	return client.Apply(ctx, info, exe, true)
 }
 
-func (a *App) startup(ctx context.Context) { a.ctx = ctx }
+func (a *App) startup(ctx context.Context) {
+	a.ctx = ctx
+	logging.Record("info", "gui", "app.started", logging.Fields{"platform": runtime.GOOS})
+	if err := a.c().initErr; err != nil {
+		logging.Record("error", "gui", "initialization.failed", logging.Fields{"error": err.Error()})
+	}
+}
+func (a *App) shutdown(ctx context.Context) { logging.Record("info", "gui", "app.stopped", nil) }
 
 // ToolStatus 是前端展示一个工具所需的数据。
 type ToolStatus struct {
@@ -235,7 +243,8 @@ func (a *App) resolveDir() string {
 }
 
 // Status 返回所有工具的当前状态（已装版本 + 生效版本 + 来源）。
-func (a *App) Status() ([]ToolStatus, error) {
+func (a *App) Status() (status []ToolStatus, err error) {
+	defer logGUIError("status.failed", &err)()
 	c := a.c()
 	if c.initErr != nil {
 		return nil, c.initErr
@@ -281,7 +290,8 @@ func (a *App) Status() ([]ToolStatus, error) {
 }
 
 // RemoteVersions 返回某工具可安装的远端版本列表。
-func (a *App) RemoteVersions(tool string) ([]string, error) {
+func (a *App) RemoteVersions(tool string) (versions []string, err error) {
+	defer logGUI("versions.remote", logging.Fields{"tool": tool}, &err)()
 	p, ok := plugin.Get(tool)
 	if !ok {
 		return nil, fmt.Errorf("不支持的工具: %s", tool)
@@ -299,7 +309,8 @@ func (a *App) InstallVerified(tool, version, dir string, requireChecksum bool) e
 	return a.install(tool, version, dir, requireChecksum)
 }
 
-func (a *App) install(tool, version, dir string, requireChecksum bool) error {
+func (a *App) install(tool, version, dir string, requireChecksum bool) (err error) {
+	defer logGUI("install", logging.Fields{"tool": tool, "version": version}, &err)()
 	done, err := a.begin()
 	if err != nil {
 		return err
@@ -352,7 +363,8 @@ func (a *App) PickDirectory(title string) (string, error) {
 func (a *App) GetInstallRoot() string { return a.c().paths.Installs() }
 
 // SetInstallRoot 设置全局安装根目录（dir 为空恢复默认），并热重载使之立即生效。
-func (a *App) SetInstallRoot(dir string) error {
+func (a *App) SetInstallRoot(dir string) (err error) {
+	defer logGUI("install_root.set", logging.Fields{}, &err)()
 	if a.c().paths.ProjectMode == "local" || a.c().paths.ProjectMode == "docker" {
 		return fmt.Errorf("项目隔离环境使用固定目录，不修改全局安装根目录")
 	}
@@ -391,7 +403,8 @@ func (a *App) SetInstallRoot(dir string) error {
 }
 
 // SetGlobal 设全局默认版本（写 ~/.vsm/.tool-versions）。
-func (a *App) SetGlobal(tool, version string) error {
+func (a *App) SetGlobal(tool, version string) (err error) {
+	defer logGUI("version.global", logging.Fields{"tool": tool, "version": version}, &err)()
 	if a.c().paths.ProjectMode == "local" {
 		return fmt.Errorf("本地隔离环境请使用「设为本目录」")
 	}
@@ -406,7 +419,8 @@ func (a *App) SetGlobal(tool, version string) error {
 }
 
 // Uninstall 卸载某版本。
-func (a *App) Uninstall(tool, version string) error {
+func (a *App) Uninstall(tool, version string) (err error) {
+	defer logGUI("uninstall", logging.Fields{"tool": tool, "version": version}, &err)()
 	done, err := a.begin()
 	if err != nil {
 		return err
@@ -441,7 +455,8 @@ func detectNames(tool string) []string {
 }
 
 // AdoptTool 把系统检测到的某版本纳管进 vsm（创建链接），随后重建 shim。
-func (a *App) AdoptTool(tool, version, path string) error {
+func (a *App) AdoptTool(tool, version, path string) (err error) {
+	defer logGUI("adopt", logging.Fields{"tool": tool, "version": version}, &err)()
 	done, err := a.begin()
 	if err != nil {
 		return err
@@ -467,7 +482,8 @@ func (a *App) ProjectDir() string {
 
 // SetProjectDir 设置项目目录（之后的「设为本目录」写入该目录的 .tool-versions，
 // 版本解析也以它为起点）。空串表示清除。
-func (a *App) SetProjectDir(dir string) error {
+func (a *App) SetProjectDir(dir string) (err error) {
+	defer logGUI("project.select", logging.Fields{}, &err)()
 	if !a.mu.TryLock() {
 		return errBusy
 	}
@@ -494,7 +510,8 @@ func (a *App) SetProjectDir(dir string) error {
 	return nil
 }
 
-func (a *App) ProjectEnvironment() (*core.Project, error) {
+func (a *App) ProjectEnvironment() (project *core.Project, err error) {
+	defer logGUIError("project.status.failed", &err)()
 	dir := a.ProjectDir()
 	if dir == "" {
 		return nil, nil
@@ -502,7 +519,8 @@ func (a *App) ProjectEnvironment() (*core.Project, error) {
 	return core.FindProject(dir)
 }
 
-func (a *App) InitProjectEnvironment(mode, image string) (*core.Project, error) {
+func (a *App) InitProjectEnvironment(mode, image string) (project *core.Project, err error) {
+	defer logGUI("project.init", logging.Fields{"mode": mode}, &err)()
 	done, err := a.begin()
 	if err != nil {
 		return nil, err
@@ -540,7 +558,8 @@ func (a *App) MCPConfig() (map[string]any, error) {
 
 func (a *App) MCPClients() []mcpconfig.Client { return mcpconfig.Clients(runtime.GOOS) }
 
-func (a *App) MCPConfigForClient(client string, readOnly bool) (mcpconfig.Configuration, error) {
+func (a *App) MCPConfigForClient(client string, readOnly bool) (configuration mcpconfig.Configuration, err error) {
+	defer logGUI("mcp.config", logging.Fields{"client": client, "read_only": readOnly}, &err)()
 	config, err := a.MCPConfig()
 	if err != nil {
 		return mcpconfig.Configuration{}, err
@@ -597,7 +616,8 @@ func (a *App) PickProjectDir() (string, error) {
 }
 
 // SetLocal 把某版本写入项目目录的 .tool-versions（等价于在该目录执行 vsm use）。
-func (a *App) SetLocal(tool, version string) error {
+func (a *App) SetLocal(tool, version string) (err error) {
+	defer logGUI("version.local", logging.Fields{"tool": tool, "version": version}, &err)()
 	if _, ok := plugin.Get(tool); !ok {
 		return fmt.Errorf("不支持的工具: %s", tool)
 	}
@@ -620,7 +640,8 @@ func (a *App) GetMirror() string {
 }
 
 // SetMirror 写入下载镜像设置（cn 国内加速 / off 关闭）。
-func (a *App) SetMirror(mode string) error {
+func (a *App) SetMirror(mode string) (err error) {
+	defer logGUI("mirror.set", logging.Fields{"mode": mode}, &err)()
 	mode = strings.ToLower(strings.TrimSpace(mode))
 	if mode != "cn" && mode != "off" && mode != "custom" {
 		return fmt.Errorf("不支持的镜像: %s（可选 cn / off / custom）", mode)
@@ -643,7 +664,8 @@ func (a *App) GetProxy() string {
 
 // SetProxy 写入网络代理设置。入参可为代理 URL（http/https/socks5）、off（强制直连），
 // 或空字符串 / system（清除配置，回退系统环境变量）。
-func (a *App) SetProxy(input string) error {
+func (a *App) SetProxy(input string) (err error) {
+	defer logGUI("proxy.set", logging.Fields{}, &err)()
 	stored, err := netcfg.Normalize(input)
 	if err != nil {
 		return err
@@ -674,7 +696,8 @@ type PathInitResult struct {
 // PathInit 让新开的终端自动启用 vsm：
 //   - Windows：把 shims 写入用户级 PATH 并广播；
 //   - macOS / Linux：把激活语句写进 ~/.zshrc 等 shell 配置文件（此前这里直接报错）。
-func (a *App) PathInit() (PathInitResult, error) {
+func (a *App) PathInit() (result PathInitResult, err error) {
+	defer logGUI("path.init", logging.Fields{}, &err)()
 	if a.c().paths.ProjectMode == "local" || a.c().paths.ProjectMode == "docker" {
 		return PathInitResult{}, fmt.Errorf("隔离项目使用 vsm run，不把项目目录写入系统 PATH")
 	}
@@ -703,7 +726,8 @@ func (a *App) PathInit() (PathInitResult, error) {
 }
 
 // AdoptAll 纳管系统检测到的全部版本（跳过已纳管/已装），返回成功纳管数量。
-func (a *App) AdoptAll() (int, error) {
+func (a *App) AdoptAll() (count int, err error) {
+	defer logGUI("adopt_all", logging.Fields{}, &err)()
 	done, err := a.begin()
 	if err != nil {
 		return 0, err
@@ -713,7 +737,8 @@ func (a *App) AdoptAll() (int, error) {
 }
 
 // AdoptToolAll 纳管某工具系统检测到的全部版本，返回成功纳管数量。
-func (a *App) AdoptToolAll(tool string) (int, error) {
+func (a *App) AdoptToolAll(tool string) (count int, err error) {
+	defer logGUI("adopt_tool_all", logging.Fields{"tool": tool}, &err)()
 	done, err := a.begin()
 	if err != nil {
 		return 0, err

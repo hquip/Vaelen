@@ -323,6 +323,21 @@ GUI 安装区提供「要求发布方 SHA256 校验」选项。Go、Node 从官�
 当下载/版本逻辑需要特殊处理（如重定向、解析 assets）时，实现 `internal/plugin.Plugin`
 接口并在 `init()` 中 `register`。参考 `golang.go` / `java.go` / `zig.go`。
 
+## 本地运行日志
+
+CLI、GUI 和 MCP 统一记录操作、下载重试与失败原因，文件自动轮换（最多约 8 MiB）。
+GUI 左下角「日志」支持筛选、导出和清理。
+
+```bash
+vsm logs --tail 100
+vsm logs --level error
+vsm logs export vsm-report.jsonl
+vsm logs clear
+```
+
+默认保存在 `~/.vsm/logs`（或 `VSM_HOME/logs`），通过 `VSM_LOG_LEVEL=debug|info|warn|error|off` 控制记录级别。
+日志保存在本地，代理凭据、URL 查询参数与常见密钥会脱敏。详见[日志说明](docs/logging.md)。
+
 ## 许可证
 
 [Apache 2.0](LICENSE)

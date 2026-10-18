@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"vsm/internal/core"
+	"vsm/internal/logging"
 	"vsm/internal/netcfg"
 )
 
@@ -57,7 +58,9 @@ func New() Client {
 	return Client{netcfg.Client(10 * time.Minute), "https://api.github.com/repos/hquip/Vaelen/releases"}
 }
 
-func (c Client) Check(ctx context.Context, current, version string) (Info, error) {
+func (c Client) Check(ctx context.Context, current, version string) (info Info, err error) {
+	finish := logging.Start("updater", "check", logging.Fields{"current": current, "requested": version})
+	defer func() { finish(err) }()
 	endpoint := c.api + "/latest"
 	if version != "" {
 		if !stableVersion.MatchString(version) {
@@ -248,8 +251,10 @@ func guiAsset() (string, error) {
 
 // Apply stages all requested components before modifying any installed file.
 // Windows may retain a running executable backup until the process exits.
-func (c Client) Apply(ctx context.Context, info Info, executable string, withGUI bool) (Result, error) {
-	result := Result{Version: info.Latest}
+func (c Client) Apply(ctx context.Context, info Info, executable string, withGUI bool) (result Result, err error) {
+	finish := logging.Start("updater", "apply", logging.Fields{"version": info.Latest, "gui": withGUI})
+	defer func() { finish(err) }()
+	result = Result{Version: info.Latest}
 	if !stableVersion.MatchString(info.Latest) || core.CompareVersions(info.Latest, info.Current) <= 0 {
 		return result, fmt.Errorf("目标版本不比当前版本新，拒绝降级或重复替换")
 	}
