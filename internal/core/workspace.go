@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -56,7 +57,11 @@ func WorkspaceConfigurationPath(start string) (string, error) {
 }
 
 func FindWorkspace(start string) (*Workspace, error) {
-	project, err := FindProject(start)
+	return findWorkspaceBounded(start, os.Getenv("VSM_PROJECT_BOUNDARY"))
+}
+
+func findWorkspaceBounded(start, boundary string) (*Workspace, error) {
+	project, err := findProjectBounded(start, boundary)
 	if err != nil {
 		return nil, err
 	}
@@ -81,7 +86,7 @@ func FindWorkspace(start string) (*Workspace, error) {
 		if project != nil && sameDir(project.Root, dir) {
 			return nil, nil
 		}
-		if boundary := os.Getenv("VSM_PROJECT_BOUNDARY"); boundary != "" && sameDir(boundary, dir) {
+		if boundary != "" && sameDir(boundary, dir) {
 			return nil, nil
 		}
 		parent := filepath.Dir(dir)
@@ -176,7 +181,16 @@ func (w Workspace) readInputs() (string, map[string][]byte, error) {
 		return "", nil, fmt.Errorf("项目配置在操作期间发生变化，请刷新后重试")
 	}
 	h := sha256.New()
-	h.Write(data)
+	h.Write([]byte("vsm-workspace-trust-v2\n"))
+	// Length framing prevents file contents from impersonating the separators
+	// and names of other inputs (dotenv comments can contain arbitrary bytes).
+	writeInput := func(name string, content []byte) {
+		_ = binary.Write(h, binary.BigEndian, uint64(len(name)))
+		h.Write([]byte(name))
+		_ = binary.Write(h, binary.BigEndian, uint64(len(content)))
+		h.Write(content)
+	}
+	writeInput(config.WorkspaceName, data)
 	guard, err := os.OpenRoot(w.Root)
 	if err != nil {
 		return "", nil, err
@@ -202,10 +216,7 @@ func (w Workspace) readInputs() (string, map[string][]byte, error) {
 			return "", nil, fmt.Errorf("env file too large")
 		}
 		files[name] = value
-		h.Write([]byte{0})
-		h.Write([]byte(name))
-		h.Write([]byte{0})
-		h.Write(value)
+		writeInput(name, value)
 	}
 	return hex.EncodeToString(h.Sum(nil)), files, nil
 }

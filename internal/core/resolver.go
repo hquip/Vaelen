@@ -19,6 +19,15 @@ type Resolver struct {
 	Paths    Paths
 	Registry Registry
 	Pinned   map[string]string
+	// Boundary limits project discovery without changing process-wide environment.
+	Boundary string
+}
+
+func (r Resolver) boundary() string {
+	if r.Boundary != "" {
+		return r.Boundary
+	}
+	return os.Getenv("VSM_PROJECT_BOUNDARY")
 }
 
 // Resolution 描述一次解析结果。
@@ -39,7 +48,7 @@ func (r Resolver) Resolve(tool, startDir string) Resolution {
 	if v := os.Getenv(envKey); v != "" && r.Paths.ProjectMode != "local" && r.Paths.ProjectMode != "docker" {
 		return r.match(tool, v, "环境变量 "+envKey)
 	}
-	spec, src, err := findToolVersionChecked(tool, startDir)
+	spec, src, err := findToolVersionBounded(tool, startDir, r.boundary())
 	if err != nil {
 		return Resolution{Tool: tool, Error: err.Error()}
 	}
@@ -78,7 +87,11 @@ func findToolVersion(tool, startDir string) (spec, source string, ok bool) {
 }
 
 func findToolVersionChecked(tool, startDir string) (spec, source string, err error) {
-	project, err := FindProject(startDir)
+	return findToolVersionBounded(tool, startDir, os.Getenv("VSM_PROJECT_BOUNDARY"))
+}
+
+func findToolVersionBounded(tool, startDir, boundary string) (spec, source string, err error) {
+	project, err := findProjectBounded(startDir, boundary)
 	if err != nil {
 		return "", "", err
 	}
@@ -120,7 +133,7 @@ func findToolVersionChecked(tool, startDir string) (spec, source string, err err
 		if project != nil && sameDir(project.Root, dir) {
 			return "", "", nil
 		}
-		if boundary := os.Getenv("VSM_PROJECT_BOUNDARY"); boundary != "" && sameDir(boundary, dir) {
+		if boundary != "" && sameDir(boundary, dir) {
 			return "", "", nil
 		}
 		if parent == dir {

@@ -15,6 +15,7 @@ import (
 	"runtime"
 	"strings"
 	"time"
+	"unicode/utf8"
 	"vsm/internal/buildinfo"
 	"vsm/internal/core"
 	"vsm/internal/mcpconfig"
@@ -317,14 +318,7 @@ func mcpCall(ctx context.Context, executable, root, name string, raw json.RawMes
 		if ctx.Err() != nil && project != nil && project.Mode == "docker" {
 			cleanupMCPContainers(requestID)
 		}
-		budget := 1 << 20
-		for i := range report.Tasks {
-			if len(report.Tasks[i].Output) > budget {
-				report.Tasks[i].Output = strings.ToValidUTF8(report.Tasks[i].Output[:budget], "�")
-				report.Tasks[i].Truncated = true
-			}
-			budget -= len(report.Tasks[i].Output)
-		}
+		capMCPTaskOutput(&report, 1<<20)
 		data := map[string]any{"project": root, "report": report}
 		if runErr != nil {
 			data["error"] = runErr.Error()
@@ -373,6 +367,24 @@ func mcpCall(ctx context.Context, executable, root, name string, raw json.RawMes
 		result["error"] = runErr.Error()
 	}
 	return mcpserver.ToolResult(result, runErr != nil), nil
+}
+
+func capMCPTaskOutput(report *core.TaskReport, budget int) {
+	budget = max(budget, 0)
+	for i := range report.Tasks {
+		task := &report.Tasks[i]
+		if len(task.Output) > budget {
+			end := budget
+			// RunTasks returns valid UTF-8. Keep complete runes so truncation
+			// cannot expand the output past its remaining byte budget.
+			for end > 0 && !utf8.RuneStart(task.Output[end]) {
+				end--
+			}
+			task.Output = task.Output[:end]
+			task.Truncated = true
+		}
+		budget -= len(task.Output)
+	}
 }
 
 func cleanupMCPContainers(requestID string) {
