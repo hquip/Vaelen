@@ -438,3 +438,12 @@ html.platform-darwin .tbadge {
 .logs-output { min-height: 80px; max-height: 48vh; flex: 1 1 auto; overflow: auto; font-size: 11px; line-height: 1.7; }
 .logs-card button:disabled, .logs-card select:disabled { opacity: .5; cursor: default; }
 #logsLocation { user-select: text; -webkit-user-select: text; }
+
+.update-progress { flex-shrink: 0; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); padding: 10px 12px; margin-bottom: 10px; }
+.update-progress-row { display: flex; gap: 12px; justify-content: space-between; font-size: 12px; }
+#updatePercent { flex-shrink: 0; color: var(--accent); font-variant-numeric: tabular-nums; }
+#updateProgressBar { display: block; width: 100%; height: 8px; margin-top: 9px; accent-color: var(--accent); border: 0; border-radius: 5px; overflow: hidden; }
+#updateProgressBar::-webkit-progress-bar { background: var(--border); border-radius: 5px; }
+#updateProgressBar::-webkit-progress-value { background: var(--accent); border-radius: 5px; }
+#updateProgressBar::-moz-progress-bar { background: var(--accent); border-radius: 5px; }
+#updateProgressDetails { white-space: pre-line; margin-top: 7px; font-variant-numeric: tabular-nums; }

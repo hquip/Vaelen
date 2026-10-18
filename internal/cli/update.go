@@ -35,6 +35,11 @@ func runUpdate(args []string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 	client := updater.New()
+	// Human-readable progress belongs to stderr; JSON stdout remains a single
+	// result object, including when output is consumed by an AI client.
+	if !asJSON && !check {
+		client = client.WithProgress(updateProgressPrinter(os.Stderr))
+	}
 	info, err := client.Check(ctx, buildinfo.DisplayVersion(), version)
 	if err != nil {
 		return err

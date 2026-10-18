@@ -120,7 +120,7 @@ sudo ln -sf /Applications/VSM.app/Contents/MacOS/vsm /usr/local/bin/vsm
 自行打包（需在 Mac 上，产出与 Release 相同的通用版 zip）：
 
 ```bash
-bash scripts/package-macos.sh 1.0.6 dist
+bash scripts/package-macos.sh 1.0.7 dist
 ```
 
 > 打 `v*` tag 即可由 GitHub Actions 在 Windows / macOS / Linux 三个 runner 上分别本地编译，
@@ -364,5 +364,6 @@ vsm logs clear
 - **已完成（v1.0.4）**：`help <command>` 详细帮助、嵌套子命令帮助、命令别名与 `-h` / `--help`，以及帮助主题的 shell 补全。详见 [发布说明](docs/releases/v1.0.4.md)。
 - **已完成（v1.0.5）**：GitHub 自更新、Python 元数据 EOF 修复、自定义来源镜像、代理/镜像 JSON 查看，以及精简和彩色 `current` 输出。详见 [发布说明](docs/releases/v1.0.5.md)。
 - **已完成（v1.0.6）**：CLI / GUI / MCP 统一本地运行日志、日志筛选与导出、自动轮换与敏感信息脱敏。详见 [发布说明](docs/releases/v1.0.6.md)。
+- **已完成（v1.0.7）**：GitHub 自更新显示实时下载进度、速度、整体大小、重试与校验/替换阶段。详见 [发布说明](docs/releases/v1.0.7.md)。
 - **v1（待办）**：Lua 插件运行时（gopher-lua）外部扩展、`.zst` 解压。
 - **v2（待办）**：Bubble Tea TUI（`vsm ui`）、远程插件仓库。

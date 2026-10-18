@@ -197,7 +197,7 @@ func (a *App) ApplyUpdate() (updater.Result, error) {
 	defer a.mu.Unlock()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
-	client := updater.New()
+	client := updater.New().WithProgress(a.emitUpdateProgress)
 	info, err := client.Check(ctx, buildinfo.DisplayVersion(), "")
 	if err != nil {
 		return updater.Result{}, err
@@ -207,6 +207,12 @@ func (a *App) ApplyUpdate() (updater.Result, error) {
 		return updater.Result{}, err
 	}
 	return client.Apply(ctx, info, exe, true)
+}
+
+func (a *App) emitUpdateProgress(progress updater.Progress) {
+	if a.ctx != nil {
+		wruntime.EventsEmit(a.ctx, "update:progress", progress)
+	}
 }
 
 func (a *App) startup(ctx context.Context) {
