@@ -5,16 +5,21 @@ import (
 	"encoding/csv"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
+	"vsm/internal/config"
 	"vsm/internal/plugin"
 )
 
 func (p Project) DockerArgs(dir, image, command string, args []string) ([]string, error) {
+	return p.dockerArgsEnvironment(dir, image, command, args, nil)
+}
+func (p Project) dockerArgsEnvironment(dir, image, command string, args []string, env map[string]string) ([]string, error) {
 	if err := p.Validate(); err != nil {
 		return nil, err
 	}
@@ -51,11 +56,20 @@ func (p Project) DockerArgs(dir, image, command string, args []string) ([]string
 	if registry := plugin.NPMRegistry(); registry != "" {
 		flags = append(flags, "--env", "npm_config_registry="+registry)
 	}
+	for k, v := range env {
+		if !config.ValidUserEnv(k, v) {
+			return nil, fmt.Errorf("unsafe Docker project variable %s", k)
+		}
+		flags = append(flags, "--env", k+"="+v)
+	}
 	flags = append(flags, image, command)
 	return append(flags, args...), nil
 }
 
 func (p Project) RunDocker(ctx context.Context, dir, command string, args []string) error {
+	return p.runDockerEnvironment(ctx, dir, command, args, nil, os.Stdin, os.Stdout, os.Stderr)
+}
+func (p Project) runDockerEnvironment(ctx context.Context, dir, command string, args []string, env map[string]string, stdin io.Reader, stdout, stderr io.Writer) error {
 	if err := p.ValidateStateRoot(); err != nil {
 		return err
 	}
@@ -148,14 +162,14 @@ func (p Project) RunDocker(ctx context.Context, dir, command string, args []stri
 			return fmt.Errorf("Docker 镜像缺少项目要求的 %s %s，请在自定义镜像中安装", tool, spec)
 		}
 	}
-	flags, err := p.DockerArgs(dir, image, command, args)
+	flags, err := p.dockerArgsEnvironment(dir, image, command, args, env)
 	if err != nil {
 		return err
 	}
 	cmd := exec.CommandContext(ctx, docker, flags...)
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	cmd.Stdin = stdin
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
 	if err := cmd.Run(); err != nil {
 		var ee *exec.ExitError
 		if errors.As(err, &ee) {

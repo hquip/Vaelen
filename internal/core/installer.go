@@ -5,8 +5,11 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 
 	"vsm/internal/logging"
 	"vsm/internal/plugin"
@@ -16,6 +19,7 @@ import (
 type Installer struct {
 	Paths           Paths
 	RequireChecksum bool
+	Pinned          *plugin.Artifact
 }
 
 // ProgressFunc 用于回报安装过程中的进度信息。
@@ -55,6 +59,11 @@ func (in Installer) Install(p plugin.Plugin, version, customDir string, progress
 		return err
 	}
 	if installed {
+		if in.Pinned != nil {
+			if err := CheckInstalledArtifact(dest, *in.Pinned); err != nil {
+				return err
+			}
+		}
 		usable := false
 		for _, name := range plugin.DetectCommands()[p.Name()] {
 			if findExecutable(p.BinPaths(dest), name) != "" {
@@ -75,12 +84,18 @@ func (in Installer) Install(p plugin.Plugin, version, customDir string, progress
 	var source string
 	var sum string
 	var size int64
-	if provider, ok := p.(plugin.ArtifactProvider); ok {
+	var format string
+	if in.Pinned != nil {
+		if err := validArtifact(*in.Pinned); err != nil {
+			return err
+		}
+		source, sum, size, format = in.Pinned.URL, in.Pinned.SHA256, in.Pinned.Size, in.Pinned.Format
+	} else if provider, ok := p.(plugin.ArtifactProvider); ok {
 		artifact, err := provider.Artifact(version, plugin.CurrentTarget())
 		if err != nil {
 			return fmt.Errorf("获取官方安装包元数据失败: %w", err)
 		}
-		source, sum, size = artifact.URL, artifact.SHA256, artifact.Size
+		source, sum, size, format = artifact.URL, artifact.SHA256, artifact.Size, artifact.Format
 	} else {
 		var err error
 		source, err = p.DownloadURL(version, plugin.CurrentTarget())
@@ -104,7 +119,7 @@ func (in Installer) Install(p plugin.Plugin, version, customDir string, progress
 	if sum == "" {
 		progress("警告：发布方未提供 SHA256；仅检查传输长度、归档格式与解压边界。可用 --require-checksum 拒绝此类安装。")
 	}
-	dlPath, err := downloadCandidates(plugin.DownloadURLs(source), in.Paths.Downloads(), p.Name()+"-"+version, progress, downloadIntegrity{SHA256: sum, Size: size})
+	dlPath, err := downloadCandidates(plugin.DownloadURLs(source), in.Paths.Downloads(), p.Name()+"-"+version, progress, downloadIntegrity{SHA256: sum, Size: size, Format: format})
 	if err != nil {
 		return err
 	}
@@ -116,12 +131,45 @@ func (in Installer) Install(p plugin.Plugin, version, customDir string, progress
 	defer os.RemoveAll(tmp)
 
 	progress("解压中 ...")
-	if err := Extract(dlPath, tmp); err != nil {
+	if format == "binary" {
+		command := plugin.DetectCommands()[p.Name()][0]
+		if runtime.GOOS == "windows" && !strings.EqualFold(filepath.Ext(command), ".exe") {
+			command += ".exe"
+		}
+		binDir := p.BinPaths(tmp)[0]
+		if !pathWithin(tmp, binDir) {
+			return fmt.Errorf("binary destination escapes installation")
+		}
+		if err := os.MkdirAll(binDir, 0o755); err != nil {
+			return err
+		}
+		src, err := os.Open(dlPath)
+		if err != nil {
+			return err
+		}
+		out, err := os.OpenFile(filepath.Join(binDir, command), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o755)
+		if err != nil {
+			src.Close()
+			return err
+		}
+		_, copyErr := io.Copy(out, src)
+		src.Close()
+		closeErr := out.Close()
+		if copyErr != nil {
+			return copyErr
+		}
+		if closeErr != nil {
+			return closeErr
+		}
+	} else if err := Extract(dlPath, tmp); err != nil {
 		return err
 	}
 
 	// 官方包通常带一层顶层目录（如 go/ 或 node-vX-os-arch/），剥掉它。
-	root := stripSingleDir(tmp)
+	root := tmp
+	if format != "binary" {
+		root = stripSingleDir(tmp)
+	}
 	validBinary := false
 	for _, name := range plugin.DetectCommands()[p.Name()] {
 		if findExecutable(p.BinPaths(root), name) != "" {
@@ -131,6 +179,9 @@ func (in Installer) Install(p plugin.Plugin, version, customDir string, progress
 	}
 	if !validBinary {
 		return fmt.Errorf("archive does not contain the expected %s executable", p.Name())
+	}
+	if err := writeArtifactReceipt(root, plugin.Artifact{URL: source, SHA256: sum, Size: size, Format: format}); err != nil {
+		return err
 	}
 	if err := placeInstall(root, dest, customDir, p.Name(), version); err != nil {
 		return err

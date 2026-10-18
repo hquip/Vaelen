@@ -41,7 +41,7 @@ func helpTopicForArgs(command string, args []string) ([]string, bool) {
 		}
 		if isHelpFlag(arg) {
 			topic := []string{command}
-			if (command == "project" || command == "mcp" || command == "logs") && len(args) > 0 && !strings.HasPrefix(args[0], "-") {
+			if (command == "project" || command == "mcp" || command == "logs" || command == "tasks" || command == "tools") && len(args) > 0 && !strings.HasPrefix(args[0], "-") {
 				topic = append(topic, args[0])
 			}
 			return topic, true
@@ -87,6 +87,20 @@ func printHelpSection(title string, lines []string) {
 }
 
 var commandHelpTopics = map[string]commandHelp{
+	"project import": {Summary: "预览或导入 mise 工具版本", Usage: []string{"vsm project import --from mise [--file 导出的JSON] [--apply]"}, Notes: []string{"默认只预览。--apply 创建新的 vsm.json，不覆盖已有文件。只导入工具版本，不复制任务或秘密变量。未指定文件时以 MISE_SAFE=1 调用 mise ls --current --json。"}, Examples: []string{"vsm project import --from mise", "vsm project import --from mise --file mise-tools.json --apply"}},
+
+	"lock":              {Summary: "锁定项目工具链的具体安装包", Usage: []string{"vsm lock [--platform os/arch,...] [--update|--check] [--json]"}, Options: []string{"--platform  windows/amd64,linux/arm64 等目标", "--update  重新解析版本与包摘要", "--check  只检查锁文件与项目要求是否一致", "--json  结构化结果"}, Notes: []string{"安装包必须有发布方 SHA256。普通 lock 保留已有锁定构建。提交 vsm.lock 后使用 install --locked。"}, Examples: []string{"vsm lock", "vsm lock --platform windows/amd64,darwin/arm64,linux/amd64", "vsm install --locked", "vsm run --locked -- go test ./..."}},
+	"tasks":             {Summary: "列出、规划或执行项目任务", Usage: []string{"vsm tasks list|graph [任务] [--json]", "vsm tasks run <任务...> [--jobs N] [--locked] [--no-cache] [--json] [--dry-run] [-- 参数]"}, Notes: []string{"任务在 vsm.json 中以命令参数数组声明。执行前需 project trust；依赖先完成，独立任务可并行。"}, Examples: []string{"vsm tasks list", "vsm tasks run test --jobs 4", "vsm tasks run build --locked --json"}},
+	"tasks list":        {Summary: "列出项目任务", Usage: []string{"vsm tasks list [--json]"}, Examples: []string{"vsm tasks list --json"}},
+	"tasks graph":       {Summary: "查看任务依赖执行顺序", Usage: []string{"vsm tasks graph [任务...] [--json]"}, Examples: []string{"vsm tasks graph build --json"}},
+	"tasks run":         {Summary: "执行任务及其依赖", Usage: []string{"vsm tasks run <任务...> [--jobs 1–16] [--locked] [--no-cache] [--dry-run] [--json] [-- 参数]"}, Notes: []string{"默认最多并行 4 个任务。超时终止进程树，依赖失败阻止下游；只有声明 inputs 和 outputs 的任务会使用内容缓存。"}, Examples: []string{"vsm tasks run test", "vsm tasks run build --locked --jobs 4"}},
+	"tools":             {Summary: "查找工具及添加 GitHub 安装来源", Usage: []string{"vsm tools list|search [关键词] [--json]", "vsm tools add <名称> github:owner/repo [--command 命令] [--bin 子目录] [--match 资产关键词]"}, Notes: []string{"GitHub 自动匹配当前平台的官方发布包；资产含 SHA256 且匹配唯一时才安装。不会执行第三方安装脚本。"}, Examples: []string{"vsm tools search python", "vsm tools add ripgrep github:BurntSushi/ripgrep --command rg --match msvc"}},
+	"tools list":        {Summary: "查看工具目录", Usage: []string{"vsm tools list [--json]"}, Examples: []string{"vsm tools list --json"}},
+	"tools search":      {Summary: "按名称或安装来源搜索工具", Usage: []string{"vsm tools search [关键词] [--json]"}, Examples: []string{"vsm tools search github --json"}},
+	"tools add":         {Summary: "添加 GitHub 发布工具", Usage: []string{"vsm tools add <名称> github:owner/repo [--command 命令] [--bin 子目录] [--match 关键词]"}, Notes: []string{"定义保存在全局 plugins，不覆盖已有工具。新进程自动加载。多个资产无法唯一匹配时拒绝猜测。"}, Examples: []string{"vsm tools add ripgrep github:BurntSushi/ripgrep --command rg --match msvc"}},
+	"project configure": {Summary: "创建统一项目配置", Usage: []string{"vsm project configure"}, Notes: []string{"生成 vsm.json，导入已声明工具并为 Go/Node 项目添加任务示例；保留已有配置。"}, Examples: []string{"vsm project configure"}},
+	"project trust":     {Summary: "信任已检查的项目配置", Usage: []string{"vsm project trust"}, Notes: []string{"信任绑定本机项目路径及 vsm.json/env_files 内容；修改后失效。MCP 不能授予信任。"}, Examples: []string{"vsm project trust"}},
+	"project inspect":   {Summary: "查看项目配置概况", Usage: []string{"vsm project inspect [--json]"}, Notes: []string{"报告工具、任务和环境变量名称，不返回环境变量值。"}, Examples: []string{"vsm project inspect --json"}},
 	"logs path": {
 		Summary: "显示全局日志目录", Usage: []string{"vsm logs path"},
 		Notes: []string{"只输出路径，不创建目录；不受项目配置或自定义安装目录影响。"}, Examples: []string{"vsm logs path"},
@@ -114,7 +128,7 @@ var commandHelpTopics = map[string]commandHelp{
 	},
 	"install": {
 		Summary: "下载并安装指定工具的版本", Aliases: []string{"i"},
-		Usage:    []string{"vsm install <tool> [version] [--path <目录>] [--require-checksum]"},
+		Usage:    []string{"vsm install <tool> [version] [--path <目录>] [--require-checksum]", "vsm install --locked"},
 		Options:  []string{"--path, -p <目录>  自定义安装位置", "--require-checksum  发布方缺少 SHA256 时拒绝安装"},
 		Notes:    []string{"省略版本或使用 latest 安装最新稳定版；支持数字前缀，如 node 22。", "local 项目在项目内安装；Docker 项目的工具由镜像提供。"},
 		Examples: []string{"vsm install go 1.25.11", "vsm install node 22 --require-checksum", `vsm install go 1.25.11 --path "D:\sdk"`},
@@ -155,7 +169,7 @@ var commandHelpTopics = map[string]commandHelp{
 		Examples: []string{"vsm context --json", "vsm context --json --check"},
 	},
 	"run": {
-		Summary: "使用项目要求的完整工具链执行命令", Usage: []string{"vsm run [--install-missing] -- <command> [args...]"},
+		Summary: "使用项目要求的完整工具链执行命令", Usage: []string{"vsm run [--install-missing] [--locked] [--env KEY=VALUE] -- <command> [args...]"},
 		Options:  []string{"--install-missing  先补装缺失工具，强制验证发布方 SHA256", "--require-checksum  兼容选项；自动补装始终要求 SHA256", "--  分隔 VSM 选项与子命令"},
 		Notes:    []string{"按项目隔离模式执行并透传子进程退出码，不修改父终端。", "-- 之后的 -h / --help 会原样传给子命令。"},
 		Examples: []string{"vsm run -- go test ./...", "vsm run --install-missing -- python app.py", "vsm run -- node --help"},

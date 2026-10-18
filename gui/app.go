@@ -73,6 +73,8 @@ type App struct {
 	// 用 TryLock 而不是排队等待：安装可能持续数分钟，排队会让按钮看起来毫无反应。
 	mu sync.Mutex
 
+	workMu     sync.Mutex
+	taskCancel context.CancelFunc
 	dirMu      sync.RWMutex
 	projectDir string // 「设为本目录」写入 .tool-versions 的目标目录；空表示尚未选择
 }
@@ -222,7 +224,10 @@ func (a *App) startup(ctx context.Context) {
 		logging.Record("error", "gui", "initialization.failed", logging.Fields{"error": err.Error()})
 	}
 }
-func (a *App) shutdown(ctx context.Context) { logging.Record("info", "gui", "app.stopped", nil) }
+func (a *App) shutdown(ctx context.Context) {
+	a.CancelWorkspaceTask()
+	logging.Record("info", "gui", "app.stopped", nil)
+}
 
 // ToolStatus 是前端展示一个工具所需的数据。
 type ToolStatus struct {
@@ -631,7 +636,7 @@ func (a *App) SetLocal(tool, version string) (err error) {
 	if dir == "" {
 		return errNoProjectDir
 	}
-	return config.SetIn(filepath.Join(dir, ".tool-versions"), tool, version)
+	return core.SetProjectVersion(dir, tool, version)
 }
 
 // CurrentDir 返回项目目录，供前端展示（保留旧方法名以兼容前端调用）。
@@ -780,16 +785,5 @@ func (a *App) adoptList(sys []core.SystemVersion) (int, error) {
 
 // resolveRemote 把版本要求（latest / "20" 等）解析为远端具体版本号。
 func resolveRemote(p plugin.Plugin, spec string) (string, error) {
-	if spec == "" || spec == "latest" {
-		return p.LatestStable()
-	}
-	all, err := p.ListAll()
-	if err != nil {
-		return "", err
-	}
-	v := core.BestMatch(spec, all)
-	if v == "" {
-		return "", fmt.Errorf("找不到匹配 %q 的 %s 版本", spec, p.Name())
-	}
-	return v, nil
+	return core.ResolveToolVersion(p, spec)
 }

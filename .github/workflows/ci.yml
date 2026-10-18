@@ -34,6 +34,15 @@ jobs:
         continue-on-error: true
         run: sudo apt-get update -o Acquire::Retries=3 && sudo apt-get install -y --no-install-recommends fish zsh
 
+      - name: Test Unix installer without network
+        if: matrix.os != 'windows-latest'
+        run: bash scripts/test-install.sh
+
+      - name: Test Windows installer without network
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: ./scripts/test_install_windows.ps1
+
       - name: Vet
         run: go vet ./internal/... .
 

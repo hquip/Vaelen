@@ -447,3 +447,23 @@ html.platform-darwin .tbadge {
 #updateProgressBar::-webkit-progress-value { background: var(--accent); border-radius: 5px; }
 #updateProgressBar::-moz-progress-bar { background: var(--accent); border-radius: 5px; }
 #updateProgressDetails { white-space: pre-line; margin-top: 7px; font-variant-numeric: tabular-nums; }
+
+.workbench-card { display:flex; flex-direction:column; width:820px; max-height:calc(100vh - 24px); }
+.workbench-card > :not(.workbench-body) { flex-shrink:0; }
+.workbench-tabs { display:flex; gap:8px; margin:12px 0; flex-wrap:wrap; }
+.workbench-tabs .active { color:var(--accent); border-color:var(--accent); }
+.workbench-body { min-height:0; flex:1 1 auto; }
+.workbench-pane { padding-right:4px; }
+.workbench-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+.workbench-catalog { max-height:180px; overflow:auto; margin-top:10px; }
+.workbench-tool { display:flex; gap:12px; align-items:baseline; padding:7px; border-bottom:1px solid var(--border); font-size:12px; }
+.workbench-tool span { overflow-wrap:anywhere; }
+.workbench-tool .source { color:var(--muted); min-width:0; flex:1; }
+#workbenchJobs { width:50px; color:var(--text); background:var(--bg); border:1px solid var(--border); border-radius:4px; padding:4px; }
+#workbenchEditor { min-height:160px; resize:vertical; margin-bottom:8px; user-select:text; -webkit-user-select:text; }
+#workbenchOutput { max-height:90px; overflow:auto; margin:6px 0 0; }
+#workbenchOutputWrap summary { color:var(--muted); font-size:12px; cursor:pointer; margin-top:8px; }
+.workbench-card button:disabled { opacity:.45; cursor:default; }
+@media(max-width:600px) { .workbench-grid { grid-template-columns:1fr; } }
+
+#workbenchError { max-height:80px; overflow:auto; }

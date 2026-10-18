@@ -72,7 +72,7 @@ func TestJavaArtifactPinsOfficialURLSizeAndSHA(t *testing.T) {
 		t.Fatalf("artifact required multiple metadata reads: %d", calls.Load())
 	}
 	before := calls.Load()
-	for _, version := range []string{"../21", "21.0.12", "-1", "0"} {
+	for _, version := range []string{"../21", "21.invalid", "-1", "0"} {
 		if _, err := j.Artifact(version, Target{"windows", "amd64"}); err == nil {
 			t.Fatalf("bad version accepted: %s", version)
 		}
@@ -142,5 +142,17 @@ func TestJavaDoesNotInstallEarlyAccessAsStable(t *testing.T) {
 	t.Cleanup(func() { httpClient = previous })
 	if _, err := (&javaPlugin{}).Artifact("21", Target{"windows", "amd64"}); err == nil {
 		t.Fatal("early access treated as stable")
+	}
+}
+
+func TestJavaReleaseIdentityKeepsExactBuild(t *testing.T) {
+	for _, tc := range []struct{ name, semver, want string }{
+		{"jdk-21.0.12.1+1", "21.0.12+101.0.LTS", "21.0.12.1+1"},
+		{"jdk8u482-b08", "8.0.482+8", "8.0.482+8"},
+		{"jdk-17.0.16+8", "17.0.16+8.LTS", "17.0.16+8"},
+	} {
+		if got := javaReleaseIdentity(tc.name, tc.semver); got != tc.want {
+			t.Fatalf("identity=%s, want %s", got, tc.want)
+		}
 	}
 }

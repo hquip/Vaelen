@@ -53,7 +53,7 @@ func (a Activator) planEnvironment(startDir string, preferProject bool) (Environ
 	for _, tool := range plugin.Names() {
 		p, _ := plugin.Get(tool)
 		r := a.Resolver.Resolve(tool, startDir)
-		if preferProject {
+		if preferProject && a.Resolver.Pinned[tool] == "" {
 			spec, source, err := ProjectRequirement(tool, startDir)
 			if err != nil {
 				return EnvironmentPlan{}, err
@@ -104,6 +104,19 @@ func (a Activator) planEnvironment(startDir string, preferProject bool) (Environ
 				plan.Paths = append([]string{project.pythonVenvBin(r.Version)}, plan.Paths...)
 				plan.Variables["VIRTUAL_ENV"] = venv
 			}
+		}
+	}
+	workspace, err := FindWorkspace(startDir)
+	if err != nil {
+		return EnvironmentPlan{}, err
+	}
+	if workspace != nil {
+		env, err := workspace.Environment()
+		if err != nil {
+			return EnvironmentPlan{}, err
+		}
+		for k, v := range env {
+			plan.Variables[k] = v
 		}
 	}
 	return plan, nil

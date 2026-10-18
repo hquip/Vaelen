@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"strings"
 
+	"vsm/internal/config"
 	"vsm/internal/plugin"
 )
 
@@ -52,6 +53,11 @@ func (a Activator) Which(tool, startDir string) (string, error) {
 // cmdName 通常是工具主命令（如 go），也可以是该工具环境附带的其它命令（如 npm）。
 func (a Activator) Run(tool, startDir, cmdName string, cmdArgs []string) error {
 	if a.Paths.ProjectMode == "local" || a.Paths.ProjectMode == "docker" {
+		if cmdName == tool {
+			if names := plugin.DetectCommands()[tool]; len(names) > 0 {
+				cmdName = names[0]
+			}
+		}
 		return a.RunProject(startDir, cmdName, cmdArgs)
 	}
 	p, ok := plugin.Get(tool)
@@ -118,6 +124,7 @@ func (a Activator) GenerateShims() error {
 	if err != nil {
 		return err
 	}
+	owners := map[string]string{}
 	for _, tool := range tools {
 		if _, ok := plugin.Get(tool); !ok {
 			continue
@@ -127,6 +134,25 @@ func (a Activator) GenerateShims() error {
 			return err
 		}
 		if len(versions) == 0 {
+			for _, command := range plugin.DetectCommands()[tool] {
+				if command == tool {
+					continue
+				}
+				name := command
+				if runtime.GOOS == "windows" {
+					name += ".cmd"
+				}
+				file := filepath.Join(a.Paths.Shims(), name)
+				data, err := config.ReadBounded(file, 64<<10)
+				if err != nil && !os.IsNotExist(err) {
+					return err
+				}
+				if err == nil && strings.Contains(string(data), " exec "+tool+" -- ") {
+					if err := os.Remove(file); err != nil {
+						return err
+					}
+				}
+			}
 			name := tool
 			if runtime.GOOS == "windows" {
 				name += ".cmd"
@@ -139,6 +165,26 @@ func (a Activator) GenerateShims() error {
 		if err := a.writeShim(tool); err != nil {
 			return err
 		}
+		for _, command := range plugin.DetectCommands()[tool] {
+			key := command
+			if runtime.GOOS == "windows" {
+				key = strings.ToLower(key)
+			}
+			if owner := owners[key]; owner != "" && owner != tool {
+				return fmt.Errorf("command %s belongs to both %s and %s", command, owner, tool)
+			}
+			owners[key] = tool
+			if command == tool {
+				continue
+			}
+			if _, registered := plugin.Get(command); registered && command != tool {
+				return fmt.Errorf("command alias %s conflicts with another registered tool", command)
+			}
+			if err := a.writeCommandShim(tool, command); err != nil {
+				return err
+			}
+		}
+
 	}
 	return nil
 }
@@ -151,11 +197,36 @@ func (a Activator) writeShim(tool string) error {
 	if runtime.GOOS == "windows" {
 		// .cmd 里 % 会被展开，路径中的 % 需写成 %%
 		content := "@echo off\r\n\"" + quoteCmd(vsm) + "\" exec " + tool + " %*\r\n"
-		return os.WriteFile(filepath.Join(a.Paths.Shims(), tool+".cmd"), []byte(content), 0o644)
+		return a.saveShim(tool+".cmd", content, 0o644)
 	}
 	// 单引号字面量：路径里的 $、反引号、空格都不会被 shell 解释
 	content := "#!/bin/sh\nexec " + quotePOSIX(vsm) + " exec " + tool + " \"$@\"\n"
-	return os.WriteFile(filepath.Join(a.Paths.Shims(), tool), []byte(content), 0o755)
+	return a.saveShim(tool, content, 0o755)
+}
+
+func (a Activator) writeCommandShim(tool, command string) error {
+	if err := validateComponent(command); err != nil {
+		return err
+	}
+	vsm := a.VsmExe
+	if vsm == "" {
+		vsm = "vsm"
+	}
+	if runtime.GOOS == "windows" {
+		content := "@echo off\r\n\"" + quoteCmd(vsm) + "\" exec " + tool + " -- " + command + " %*\r\n"
+		return a.saveShim(command+".cmd", content, 0o644)
+	}
+	content := "#!/bin/sh\nexec " + quotePOSIX(vsm) + " exec " + tool + " -- " + quotePOSIX(command) + " \"$@\"\n"
+	return a.saveShim(command, content, 0o755)
+}
+
+func (a Activator) saveShim(name, content string, mode os.FileMode) error {
+	root, err := os.OpenRoot(a.Paths.Shims())
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	return config.WriteRootAtomic(root, name, []byte(content), mode)
 }
 
 func findExecutable(dirs []string, name string) string {

@@ -18,6 +18,7 @@ import (
 type Resolver struct {
 	Paths    Paths
 	Registry Registry
+	Pinned   map[string]string
 }
 
 // Resolution 描述一次解析结果。
@@ -31,6 +32,9 @@ type Resolution struct {
 
 // Resolve 解析单个工具当前应使用的版本。startDir 通常是当前工作目录。
 func (r Resolver) Resolve(tool, startDir string) Resolution {
+	if version := r.Pinned[tool]; version != "" {
+		return r.match(tool, version, "vsm.lock")
+	}
 	envKey := "VSM_" + strings.ToUpper(tool) + "_VERSION"
 	if v := os.Getenv(envKey); v != "" && r.Paths.ProjectMode != "local" && r.Paths.ProjectMode != "docker" {
 		return r.match(tool, v, "环境变量 "+envKey)
@@ -83,6 +87,15 @@ func findToolVersionChecked(tool, startDir string) (spec, source string, err err
 		return "", "", err
 	}
 	for {
+		// Explicit workspace configuration wins over ecosystem version files.
+		workspacePath := filepath.Join(dir, config.WorkspaceName)
+		if workspace, err := config.LoadWorkspace(workspacePath); err == nil {
+			if spec, ok := workspace.Tools[tool]; ok {
+				return spec, workspacePath, nil
+			}
+		} else if !os.IsNotExist(err) {
+			return "", "", err
+		}
 		// 同一目录内：.tool-versions 的显式声明优先，其次各生态惯用版本文件
 		// （.nvmrc / go.mod / .python-version 等）。越靠近当前目录的越优先。
 		path := filepath.Join(dir, ".tool-versions")

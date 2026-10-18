@@ -44,6 +44,7 @@
         <div class="foot-text">
           <span class="foot-label">项目环境与 AI</span>
           <button id="projectEnvBtn" class="mini" title="选择项目、初始化独立环境，并连接 AI 客户端">隔离环境 / MCP</button>
+          <button id="workbenchBtn" class="mini" title="工具链锁定、项目配置、任务和工具目录">项目工作台</button>
         </div>
       </div>
       <div class="filter-wrap">
@@ -193,6 +194,45 @@
       </div>
     </div>
   </div>
+  <div id="workbenchModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="workbenchTitle">
+    <div class="modal-card workbench-card">
+      <h3 id="workbenchTitle" class="modal-title">项目工作台</h3>
+      <div class="project-dir-row"><span id="workbenchRoot" class="project-dir">请选择项目</span><button id="workbenchPick" class="ghost-btn">选择项目</button><button id="workbenchRefresh" class="ghost-btn">刷新</button></div>
+      <p id="workbenchStatus" class="project-hint" role="status"></p>
+      <div class="workbench-tabs" role="tablist"><button data-wb-tab="chain" class="ghost-btn">工具链与配置</button><button data-wb-tab="tasks" class="ghost-btn">项目任务</button><button data-wb-tab="catalog" class="ghost-btn">工具目录</button></div>
+      <div class="project-env-body workbench-body">
+        <section id="workbench-chain" class="workbench-pane">
+          <div class="project-action-row"><button id="workbenchConfigure" class="primary-btn">生成 vsm.json</button><button id="workbenchEdit" class="ghost-btn">查看 / 编辑配置</button></div>
+          <div id="workbenchEditorWrap" class="hidden"><label class="project-field-label" for="workbenchEditor">项目配置（保存后需重新检查并信任）</label><textarea id="workbenchEditor" class="modal-input" rows="10" spellcheck="false"></textarea><button id="workbenchSave" class="ghost-btn">保存配置</button></div>
+          <label class="project-readonly"><input id="workbenchReviewed" type="checkbox" />我已检查配置、任务命令及引用的环境文件</label>
+          <button id="workbenchTrust" class="ghost-btn">信任当前配置</button>
+          <p class="project-hint">信任仅保存在本机。配置或环境文件变化后失效，AI 无权自行授予信任。</p>
+          <h4 class="project-field-label">工具链锁定</h4><p id="workbenchLockStatus" class="project-hint"></p>
+          <label for="workbenchPlatforms" class="project-field-label">目标平台（可多选；不选使用当前平台）</label>
+          <select id="workbenchPlatforms" class="modal-input" multiple size="3"><option value="windows/amd64">Windows x64</option><option value="windows/arm64">Windows ARM64</option><option value="darwin/amd64">macOS Intel</option><option value="darwin/arm64">macOS Apple Silicon</option><option value="linux/amd64">Linux x64</option><option value="linux/arm64">Linux ARM64</option></select>
+          <div class="project-action-row"><button id="workbenchLock" class="primary-btn">生成 / 补全锁文件</button><button id="workbenchBump" class="ghost-btn">重新解析更新锁文件</button><button id="workbenchInstall" class="ghost-btn">按锁文件安装</button></div>
+          <pre id="workbenchLockSummary" class="project-commands"></pre>
+        </section>
+        <section id="workbench-tasks" class="workbench-pane hidden">
+          <p class="project-hint">执行 vsm.json 中的命名任务及依赖。可并行执行独立任务，超时会终止进程树；缓存只在输入和输出内容匹配时复用。</p>
+          <label class="project-field-label" for="workbenchTask">任务</label><select id="workbenchTask" class="modal-input"></select>
+          <pre id="workbenchTaskGraph" class="project-commands"></pre>
+          <div class="project-action-row"><label>并发 <input id="workbenchJobs" type="number" min="1" max="16" value="4" /></label><label><input id="workbenchLocked" type="checkbox" />使用锁定工具链</label><label><input id="workbenchNoCache" type="checkbox" />跳过缓存</label></div>
+        </section>
+        <section id="workbench-catalog" class="workbench-pane hidden">
+          <label class="project-field-label" for="workbenchSearch">搜索已登记工具</label><input id="workbenchSearch" class="modal-input" placeholder="名称或来源，例如 java、github" /><div id="workbenchCatalog" class="workbench-catalog"></div>
+          <h4 class="project-field-label">添加 GitHub 工具</h4><p class="project-hint">只读取发布资产并验证官方 SHA256，不执行安装脚本。多个包不能唯一匹配时会要求明确筛选。</p>
+          <div class="workbench-grid"><input id="workbenchToolName" class="modal-input" placeholder="管理名称，例如 ripgrep" aria-label="工具名称" /><input id="workbenchRepo" class="modal-input" placeholder="owner/repo" aria-label="GitHub 仓库" /><input id="workbenchCommand" class="modal-input" placeholder="主命令，例如 rg" aria-label="主命令" /><input id="workbenchMatch" class="modal-input" placeholder="可选：资产关键词，例如 msvc" aria-label="资产筛选关键词" /><input id="workbenchBin" class="modal-input" placeholder="可选：包内 bin 子目录" aria-label="命令子目录" /></div>
+          <div class="project-action-row"><button id="workbenchAdd" class="primary-btn">添加安装来源</button></div>
+        </section>
+      </div>
+      <div id="workbenchTaskActions" class="project-action-row hidden"><button id="workbenchRun" class="primary-btn">运行任务</button><button id="workbenchCancel" class="ghost-btn" disabled>停止任务</button></div>
+      <p id="workbenchError" class="project-error hidden" role="alert"></p>
+      <details id="workbenchOutputWrap"><summary>操作输出</summary><pre id="workbenchOutput" class="project-commands"></pre></details>
+      <div class="modal-actions"><span class="modal-spacer"></span><button id="workbenchClose" class="ghost-btn">关闭</button></div>
+    </div>
+  </div>
   <script src="app.js"></script>
+  <script src="workbench.js"></script>
 </body>
 </html>
