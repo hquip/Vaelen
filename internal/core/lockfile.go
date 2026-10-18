@@ -50,9 +50,13 @@ func WorkspaceRoot(dir string) (string, error) {
 }
 
 func ProjectRequirements(dir string) (map[string]string, error) {
+	return projectRequirementsBounded(dir, os.Getenv("VSM_PROJECT_BOUNDARY"))
+}
+
+func projectRequirementsBounded(dir, boundary string) (map[string]string, error) {
 	out := map[string]string{}
 	for _, tool := range plugin.Names() {
-		spec, src, err := ProjectRequirement(tool, dir)
+		spec, src, err := findToolVersionBounded(tool, dir, boundary)
 		if err != nil {
 			return nil, err
 		}
@@ -91,6 +95,21 @@ func validArtifact(a plugin.Artifact) error {
 }
 
 func LoadLock(dir string) (*ToolchainLock, error) {
+	lock, err := readLock(dir)
+	if err != nil {
+		return nil, err
+	}
+	for tool := range lock.Tools {
+		if _, ok := plugin.Get(tool); !ok {
+			return nil, fmt.Errorf("locked tool %s is not registered", tool)
+		}
+	}
+	return lock, nil
+}
+
+// Parsing an old lock does not require removed tool sources to remain
+// registered. Execution still uses LoadLock and validates every source.
+func readLock(dir string) (*ToolchainLock, error) {
 	root, err := WorkspaceRoot(dir)
 	if err != nil {
 		return nil, err
@@ -107,9 +126,6 @@ func LoadLock(dir string) (*ToolchainLock, error) {
 		return nil, fmt.Errorf("unsupported or invalid vsm.lock")
 	}
 	for tool, entry := range lock.Tools {
-		if _, ok := plugin.Get(tool); !ok {
-			return nil, fmt.Errorf("locked tool %s is not registered", tool)
-		}
 		if err := validateInstall(tool, entry.Version); err != nil {
 			return nil, err
 		}
@@ -129,7 +145,11 @@ func LoadLock(dir string) (*ToolchainLock, error) {
 }
 
 func (lock ToolchainLock) ValidateRequirements(dir string) error {
-	required, err := ProjectRequirements(dir)
+	return lock.validateRequirementsBounded(dir, os.Getenv("VSM_PROJECT_BOUNDARY"))
+}
+
+func (lock ToolchainLock) validateRequirementsBounded(dir, boundary string) error {
+	required, err := projectRequirementsBounded(dir, boundary)
 	if err != nil {
 		return err
 	}
@@ -200,7 +220,7 @@ func CreateLock(dir string, targets []plugin.Target, update bool, progress Progr
 	if len(targets) == 0 {
 		targets = []plugin.Target{plugin.CurrentTarget()}
 	}
-	previous, err := LoadLock(dir)
+	previous, err := readLock(dir)
 	if err != nil && !os.IsNotExist(err) {
 		return nil, err
 	}

@@ -34,7 +34,7 @@ func (a Activator) PlanProjectEnvironment(startDir string) (EnvironmentPlan, err
 
 func (a Activator) planEnvironment(startDir string, preferProject bool) (EnvironmentPlan, error) {
 	plan := EnvironmentPlan{Variables: map[string]string{}}
-	project, err := FindProject(startDir)
+	project, err := findProjectBounded(startDir, a.Resolver.boundary())
 	if err != nil {
 		return plan, err
 	}
@@ -54,7 +54,7 @@ func (a Activator) planEnvironment(startDir string, preferProject bool) (Environ
 		p, _ := plugin.Get(tool)
 		r := a.Resolver.Resolve(tool, startDir)
 		if preferProject && a.Resolver.Pinned[tool] == "" {
-			spec, source, err := ProjectRequirement(tool, startDir)
+			spec, source, err := findToolVersionBounded(tool, startDir, a.Resolver.boundary())
 			if err != nil {
 				return EnvironmentPlan{}, err
 			}
@@ -106,7 +106,7 @@ func (a Activator) planEnvironment(startDir string, preferProject bool) (Environ
 			}
 		}
 	}
-	workspace, err := FindWorkspace(startDir)
+	workspace, err := findWorkspaceBounded(startDir, a.Resolver.boundary())
 	if err != nil {
 		return EnvironmentPlan{}, err
 	}

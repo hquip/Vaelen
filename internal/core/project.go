@@ -129,11 +129,14 @@ func (p Project) Validate() error {
 }
 
 func FindProject(start string) (*Project, error) {
+	return findProjectBounded(start, os.Getenv("VSM_PROJECT_BOUNDARY"))
+}
+
+func findProjectBounded(start, boundary string) (*Project, error) {
 	dir, err := filepath.Abs(start)
 	if err != nil {
 		return nil, err
 	}
-	boundary := os.Getenv("VSM_PROJECT_BOUNDARY")
 	if boundary != "" && !pathWithin(boundary, dir) {
 		return nil, fmt.Errorf("directory outside bound project")
 	}

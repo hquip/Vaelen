@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -144,14 +145,14 @@ func RunTasks(parent context.Context, dir, executable string, names []string, op
 		if err != nil {
 			return report, err
 		}
-		if err := lock.ValidateRequirements(dir); err != nil {
+		if err := lock.validateRequirementsBounded(dir, plan.Root); err != nil {
 			return report, err
 		}
 		global, err := DefaultPaths()
 		if err != nil {
 			return report, err
 		}
-		paths, err := PathsForDirectory(global, dir)
+		paths, err := taskPaths(global, dir, plan.Root)
 		if err != nil {
 			return report, err
 		}
@@ -346,8 +347,15 @@ func runWorkspaceTask(ctx context.Context, w Workspace, executable string, task 
 	}
 	cacheKey := ""
 	var err error
-	if !options.NoCache && len(def.Inputs) > 0 && len(def.Outputs) > 0 && len(args) == 0 {
-		cacheKey, err = taskFingerprint(w, task)
+	project, err := findProjectBounded(workDir, w.Root)
+	if err != nil {
+		return finish(err)
+	}
+	// Docker tags can be retargeted without a project-file change. Until the
+	// cache records the exact image used by execution, always run these tasks.
+	cacheable := project == nil || project.Mode != "docker"
+	if cacheable && !options.NoCache && len(def.Inputs) > 0 && len(def.Outputs) > 0 && len(args) == 0 {
+		cacheKey, err = taskFingerprint(w, task, options, workDir)
 		if err != nil {
 			return finish(err)
 		}
@@ -450,9 +458,8 @@ func hashWorkspaceFiles(root string, patterns []string) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		h.Write([]byte(name))
-		h.Write([]byte{0})
-		n, err := io.Copy(h, io.LimitReader(f, (512<<20)+1))
+		fileHash := sha256.New()
+		n, err := io.Copy(fileHash, io.LimitReader(f, (512<<20)+1))
 		f.Close()
 		total += n
 		if err != nil {
@@ -461,7 +468,9 @@ func hashWorkspaceFiles(root string, patterns []string) (string, error) {
 		if total > 512<<20 {
 			return "", fmt.Errorf("cache input size limit exceeded")
 		}
-		h.Write([]byte{0})
+		_ = binary.Write(h, binary.BigEndian, uint64(len(name)))
+		h.Write([]byte(name))
+		h.Write(fileHash.Sum(nil))
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
@@ -527,7 +536,7 @@ func workspaceGlob(root fs.FS, pattern string) ([]string, error) {
 	return out, err
 }
 
-func taskFingerprint(w Workspace, task PlannedTask) (string, error) {
+func taskFingerprint(w Workspace, task PlannedTask, options TaskOptions, workDir string) (string, error) {
 	inputs, err := hashWorkspaceFiles(w.Root, task.Definition.Inputs)
 	if err != nil {
 		return "", err
@@ -539,7 +548,11 @@ func taskFingerprint(w Workspace, task PlannedTask) (string, error) {
 	// Inherited variables can change build outputs. Hash values without storing them.
 	baseEnv := os.Environ()
 	sort.Strings(baseEnv)
-	data, _ := json.Marshal([]any{task, inputs, env, baseEnv, runtime.GOOS, runtime.GOARCH, buildinfo.Version})
+	toolchain, err := taskToolchain(workDir, w.Root, options.Locked)
+	if err != nil {
+		return "", err
+	}
+	data, _ := json.Marshal([]any{task, inputs, env, baseEnv, toolchain, options.Locked, runtime.GOOS, runtime.GOARCH, buildinfo.Version})
 	h := sha256.New()
 	h.Write(data)
 	for _, file := range []string{config.WorkspaceName, LockName, ".tool-versions"} {
@@ -550,6 +563,70 @@ func taskFingerprint(w Workspace, task PlannedTask) (string, error) {
 		}
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+func taskPaths(global Paths, dir, boundary string) (Paths, error) {
+	project, err := findProjectBounded(dir, boundary)
+	if err != nil {
+		return Paths{}, err
+	}
+	if project == nil {
+		return global, nil
+	}
+	if err := project.ValidateStateRoot(); err != nil {
+		return Paths{}, err
+	}
+	return project.Paths(global), nil
+}
+
+// Record the resolved tools as well as the declarations: a broad requirement
+// can select a different build after installation without any config change.
+func taskToolchain(dir, boundary string, locked bool) (any, error) {
+	global, err := DefaultPaths()
+	if err != nil {
+		return nil, err
+	}
+	paths, err := taskPaths(global, dir, boundary)
+	if err != nil {
+		return nil, err
+	}
+	registry := Registry{Paths: paths}
+	resolver := Resolver{Paths: paths, Registry: registry, Boundary: boundary}
+	if locked {
+		lock, err := LoadLock(dir)
+		if err != nil {
+			return nil, err
+		}
+		if err := lock.validateRequirementsBounded(dir, boundary); err != nil {
+			return nil, err
+		}
+		resolver.Pinned = map[string]string{}
+		for name, entry := range lock.Tools {
+			resolver.Pinned[name] = entry.Version
+		}
+	}
+	plan, err := (Activator{Paths: paths, Resolver: resolver, Registry: registry}).PlanProjectEnvironment(dir)
+	if err != nil {
+		return nil, err
+	}
+	type identity struct {
+		Tool, Version, Directory, Definition string
+		Receipt                              []byte
+	}
+	tools := []identity{}
+	for _, resolved := range plan.Versions {
+		p, _ := plugin.Get(resolved.Tool)
+		directory, err := canonicalPath(paths.InstallDir(resolved.Tool, resolved.Version))
+		if err != nil {
+			return nil, err
+		}
+		receipt, err := config.ReadBounded(filepath.Join(directory, artifactReceiptName), 16<<10)
+		if err != nil && !os.IsNotExist(err) {
+			return nil, err
+		}
+		tools = append(tools, identity{resolved.Tool, resolved.Version, directory, plugin.DefinitionID(p), receipt})
+	}
+	return []any{plan, tools}, nil
 }
 
 func taskCachePath(w Workspace, task PlannedTask) string {
