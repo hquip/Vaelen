@@ -7,6 +7,7 @@ import (
 	"runtime"
 	"strings"
 
+	"vsm/internal/logging"
 	"vsm/internal/plugin"
 )
 
@@ -16,7 +17,9 @@ import (
 // 绝不会动到系统里的真实目录（见 Installer.Uninstall 的链接保护）。
 //
 // execPath 是系统检测得到的主命令可执行文件路径（如 C:\Java\jdk-21\bin\java.exe）。
-func (in Installer) Adopt(p plugin.Plugin, version, execPath string) error {
+func (in Installer) Adopt(p plugin.Plugin, version, execPath string) (err error) {
+	finish := logging.Start("core", "adopt", logging.Fields{"tool": p.Name(), "version": version, "mode": in.Paths.ProjectMode})
+	defer func() { finish(err) }()
 	if in.Paths.ProjectMode == "docker" {
 		return ErrDockerHostInstall
 	}

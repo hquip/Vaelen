@@ -41,7 +41,7 @@ func helpTopicForArgs(command string, args []string) ([]string, bool) {
 		}
 		if isHelpFlag(arg) {
 			topic := []string{command}
-			if (command == "project" || command == "mcp") && len(args) > 0 && !strings.HasPrefix(args[0], "-") {
+			if (command == "project" || command == "mcp" || command == "logs") && len(args) > 0 && !strings.HasPrefix(args[0], "-") {
 				topic = append(topic, args[0])
 			}
 			return topic, true
@@ -87,6 +87,25 @@ func printHelpSection(title string, lines []string) {
 }
 
 var commandHelpTopics = map[string]commandHelp{
+	"logs path": {
+		Summary: "显示全局日志目录", Usage: []string{"vsm logs path"},
+		Notes: []string{"只输出路径，不创建目录；不受项目配置或自定义安装目录影响。"}, Examples: []string{"vsm logs path"},
+	},
+	"logs export": {
+		Summary: "导出全部保留日志", Usage: []string{"vsm logs export <新文件.jsonl>"},
+		Notes: []string{"导出 JSON Lines 文件，不覆盖已有文件，不支持导出到活动日志目录。"}, Examples: []string{"vsm logs export vsm-report.jsonl"},
+	},
+	"logs clear": {
+		Summary: "清理 VSM 运行日志", Usage: []string{"vsm logs clear"},
+		Notes: []string{"仅删除主日志及轮换备份；保留工具、项目配置、下载缓存及其它文件。"}, Examples: []string{"vsm logs clear"},
+	},
+	"logs": {
+		Summary:  "查看、导出和清理本地诊断日志",
+		Usage:    []string{"vsm logs [--tail N] [--level debug|info|warn|error] [--json]", "vsm logs path", "vsm logs export <新文件.jsonl>", "vsm logs clear"},
+		Options:  []string{"--tail N  最近 N 条，默认 100，范围 1–1000", "--level  最低显示级别，默认显示所有已记录级别", "--json  输出目录、级别、文件和记录"},
+		Notes:    []string{"日志位于全局 VSM_HOME/logs（默认 ~/.vsm/logs），每个文件最多 2 MiB，保留 3 个备份。", "VSM_LOG_LEVEL=debug|info|warn|error|off 控制记录级别，默认 info。off 关闭新日志，不删除旧日志。", "不记录完整命令参数、子进程输出、MCP 请求正文或环境变量；URL 凭据、查询参数及常见密钥会脱敏。", "export 导出全部保留日志到新文件，不覆盖已有文件；分享前请检查其中的本地路径。clear 只清理 VSM 日志。"},
+		Examples: []string{"vsm logs --tail 50 --level error", "vsm logs --json", "vsm logs export vsm-diagnostics.jsonl", "vsm logs clear"},
+	},
 	"update": {
 		Summary: "从官方 GitHub 更新 VSM 自身", Usage: []string{"vsm update [--check] [--version <版本>] [--gui] [--json]"},
 		Options:  []string{"--check  仅检查可用版本，不修改程序", "--version <版本>  指定稳定版；不会降级", "--gui  同时更新相邻 GUI（macOS 应用内自动整体更新）", "--json  输出结构化结果"},

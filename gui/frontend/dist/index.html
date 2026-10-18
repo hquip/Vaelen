@@ -65,7 +65,7 @@
           <span id="dataDir" class="foot-path">~/.vsm</span>
         </div>
       </div>
-      <div class="sidebar-foot"><button id="updateBtn" class="ghost-btn">检查 VSM 更新</button></div>
+      <div class="sidebar-foot sidebar-actions"><button id="updateBtn" class="ghost-btn">检查 VSM 更新</button><button id="logsBtn" class="ghost-btn">日志</button></div>
     </aside>
 
     <main id="detail" class="detail">
@@ -78,6 +78,33 @@
   </div>
 
   <div id="toast" class="toast hidden"></div>
+
+  <div id="logsModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="logsTitle">
+    <div class="modal-card logs-card">
+      <h3 id="logsTitle" class="modal-title">运行日志</h3>
+      <p class="modal-sub">查看最近 200 条记录。导出包含全部保留日志，可用于反馈安装、下载和更新问题。</p>
+      <div class="logs-toolbar">
+        <label for="logsLevel">显示级别</label>
+        <select id="logsLevel" class="mirror-sel">
+          <option value="">全部</option><option value="debug">调试及以上</option><option value="info">信息及以上</option><option value="warn">警告及以上</option><option value="error">仅错误</option>
+        </select>
+        <button id="logsRefresh" class="ghost-btn">刷新</button>
+      </div>
+      <p id="logsLocation" class="project-hint"></p>
+      <p id="logsStatus" class="project-hint" role="status"></p>
+      <pre id="logsText" class="project-commands logs-output" tabindex="0" aria-label="日志内容"></pre>
+      <p id="logsError" class="project-error hidden" role="alert"></p>
+      <div id="logsClearConfirm" class="hidden">
+        <p class="project-hint">确认删除全部 VSM 日志？工具、项目环境和下载缓存会保留。</p>
+        <div class="logs-toolbar"><button id="logsConfirmClear" class="ghost-btn">确认清理</button><button id="logsCancelClear" class="ghost-btn">取消</button></div>
+      </div>
+      <div class="modal-actions">
+        <button id="logsClear" class="ghost-btn">清理日志</button>
+        <button id="logsExport" class="primary-btn">导出日志</button>
+        <span class="modal-spacer"></span><button id="logsClose" class="ghost-btn">关闭</button>
+      </div>
+    </div>
+  </div>
 
   <div id="updateModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="updateTitle">
     <div class="modal-card project-env-card">

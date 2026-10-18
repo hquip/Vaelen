@@ -13,6 +13,7 @@ import (
 	"embed"
 	"runtime"
 	"vsm/internal/buildinfo"
+	"vsm/internal/logging"
 
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/menu"
@@ -53,6 +54,7 @@ func main() {
 		BackgroundColour: &options.RGBA{R: 17, G: 18, B: 23, A: 1},
 		Menu:             appMenu(),
 		OnStartup:        app.startup,
+		OnShutdown:       app.shutdown,
 		Bind:             []any{app},
 		Windows: &windows.Options{
 			WebviewIsTransparent: false,
@@ -73,6 +75,7 @@ func main() {
 		},
 	})
 	if err != nil {
+		logging.Record("error", "gui", "app.failed", logging.Fields{"error": err.Error()})
 		println("Error:", err.Error())
 	}
 }

@@ -429,3 +429,12 @@ html.platform-darwin .tbadge {
 /* 可点击的统计卡片（项目目录） */
 .stat-card.clickable { cursor: pointer; transition: border-color .12s; }
 .stat-card.clickable:hover { border-color: var(--accent); }
+
+.sidebar-actions { flex-wrap: wrap; gap: 8px; }
+.sidebar-actions .ghost-btn { padding: 7px 9px; white-space: nowrap; }
+.logs-card { display: flex; flex-direction: column; width: 760px; max-height: calc(100vh - 32px); min-height: 0; }
+.logs-card > :not(.logs-output) { flex-shrink: 0; }
+.logs-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12px; }
+.logs-output { min-height: 80px; max-height: 48vh; flex: 1 1 auto; overflow: auto; font-size: 11px; line-height: 1.7; }
+.logs-card button:disabled, .logs-card select:disabled { opacity: .5; cursor: default; }
+#logsLocation { user-select: text; -webkit-user-select: text; }

@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"vsm/internal/logging"
 	"vsm/internal/netcfg"
 )
 
@@ -27,7 +28,9 @@ const (
 
 // downloadResolve 下载 url（自动跟随重定向），按“最终 URL”的后缀决定压缩格式扩展名，
 // 保存为 dir/<base><ext>。失败自动重试。
-func downloadResolve(url, dir, base string, progress ProgressFunc) (string, error) {
+func downloadResolve(url, dir, base string, progress ProgressFunc) (path string, err error) {
+	finish := logging.Start("download", "archive", logging.Fields{"url": url})
+	defer func() { finish(err) }()
 	if progress == nil {
 		progress = func(string) {}
 	}
@@ -42,6 +45,7 @@ func downloadResolve(url, dir, base string, progress ProgressFunc) (string, erro
 			return path, nil
 		}
 		lastErr = err
+		logging.Record("warn", "download", "attempt.failed", logging.Fields{"attempt": attempt, "error": err.Error(), "url": url})
 	}
 	return "", fmt.Errorf("下载失败（已重试 %d 次）: %w", dlAttempts, lastErr)
 }
@@ -85,6 +89,7 @@ func downloadOnce(url, dir, base string, progress ProgressFunc) (string, error) 
 		if err := downloadParallel(finalURL, dest, size, dlConnections, progress, etag); err == nil {
 			done = true
 		} else {
+			logging.Record("warn", "download", "parallel.fallback", logging.Fields{"error": err.Error()})
 			progress(fmt.Sprintf("并行下载失败，回退单连接：%v", err))
 		}
 	}

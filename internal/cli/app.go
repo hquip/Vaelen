@@ -7,9 +7,11 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"vsm/internal/buildinfo"
 	"vsm/internal/core"
+	"vsm/internal/logging"
 	"vsm/internal/plugin"
 )
 
@@ -63,7 +65,7 @@ type exitCoder interface {
 }
 
 // Run 是 CLI 入口，返回进程退出码。
-func Run(args []string) int {
+func Run(args []string) (code int) {
 	if len(args) == 0 {
 		printUsage()
 		return 1
@@ -76,12 +78,48 @@ func Run(args []string) int {
 	if topic, requested := helpTopicForArgs(cmd, rest); requested {
 		return printCommandHelp(topic)
 	}
+	// Arguments, environment variables and child output are deliberately excluded.
+	// Hooks run at every prompt, so successful env requests are debug-only.
+	var logErr error
+	if cmd != "logs" && cmd != "version" {
+		name := cmd
+		if _, known := commandHelpTopics[name]; !known {
+			name = "unknown"
+		}
+		level := "info"
+		if cmd == "env" {
+			level = "debug"
+		}
+		start := time.Now()
+		logging.Record(level, "cli", "command.started", logging.Fields{"command": name})
+		defer func() {
+			fields := logging.Fields{"command": name, "exit_code": code, "duration_ms": time.Since(start).Milliseconds()}
+			event := "command.completed"
+			if code != 0 {
+				level = "error"
+				event = "command.failed"
+			}
+			if logErr != nil {
+				fields["error"] = logErr.Error()
+			}
+			logging.Record(level, "cli", event, fields)
+		}()
+	}
+
 	switch cmd {
 	case "version", "-v", "--version":
 		fmt.Println("vsm " + buildinfo.DisplayVersion())
 		return 0
 	case "update":
 		if err := runUpdate(rest); err != nil {
+			logErr = err
+			fmt.Fprintln(os.Stderr, "错误:", err)
+			return 1
+		}
+		return 0
+	}
+	if cmd == "logs" {
+		if err := runLogs(rest); err != nil {
 			fmt.Fprintln(os.Stderr, "错误:", err)
 			return 1
 		}
@@ -90,6 +128,7 @@ func Run(args []string) int {
 
 	a, err := newApp()
 	if err != nil {
+		logErr = err
 		fmt.Fprintln(os.Stderr, "错误:", err)
 		return 1
 	}
@@ -154,6 +193,7 @@ func Run(args []string) int {
 		return 1
 	}
 	if runErr != nil {
+		logErr = runErr
 		// 透传子进程退出码（`vsm exec` 场景）：仅在没有可透传的码时才压成 1。
 		var ec exitCoder
 		if errors.As(runErr, &ec) {
@@ -210,6 +250,7 @@ const usageText = `vsm - 多语言版本管理器 (%s)
   clean                        清理下载缓存
   version                      显示版本
   update [--check] [--gui]      从官方 GitHub 检查/校验并更新 VSM 自身
+  logs [--tail N] [--level 级别] 查看日志；path / export <文件> / clear 管理日志
   help [command [subcommand]]  查看总览或指定命令的用法、选项与示例
 
   list / list-all / current / detect / doctor / size / clean / context 支持 --json 结构化输出

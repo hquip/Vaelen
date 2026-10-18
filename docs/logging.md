@@ -1,0 +1,53 @@
+# 本地运行日志
+
+CLI、GUI 与 MCP 共用一套本地 JSON Lines 日志，便于定位安装、下载、版本切换、项目环境和更新失败。
+日志不会自动上传，也不会混入命令的 JSON、shell 脚本或 MCP 标准输出。
+
+## 查看与导出
+
+```bash
+vsm logs                          # 最近 100 条，按记录顺序显示
+vsm logs --tail 200 --level error  # 最近 200 条错误
+vsm logs --json                   # 目录、记录级别、文件信息和日志
+vsm logs path                     # 日志目录
+vsm logs export vsm-report.jsonl   # 导出全部保留日志到新文件
+vsm logs clear                    # 只清理日志
+vsm help logs
+```
+
+GUI 左侧底部点击「日志」，可按最低级别筛选、刷新、导出和清理；清理前需点击确认。
+导出使用系统文件对话框，不会覆盖已有文件，请选择新文件名。
+即使项目配置或安装目录配置损坏，仍可使用日志入口。
+
+默认位置是 `~/.vsm/logs`，设置 `VSM_HOME` 时使用 `VSM_HOME/logs`。
+项目 `local` / `docker` 隔离不会改变此位置，各入口可以一起诊断。
+主文件为 `vsm.jsonl`，达到 2 MiB 时轮换为 `.1`、`.2`、`.3`，总计最多约 8 MiB。
+多个 CLI 进程与 GUI 使用系统文件锁协调轮换和写入；进程异常退出后锁自动释放。
+日志不可写或暂时被占用时不改变原命令的结果；查看、导出、清理失败会明确报错。
+
+## 记录级别
+
+在启动 CLI、GUI 或 MCP 服务前设置 `VSM_LOG_LEVEL`，支持 `debug` / `info` / `warn` / `error` / `off`，默认 `info`。
+
+```powershell
+$env:VSM_LOG_LEVEL = "debug"
+vsm list-all python
+vsm logs --tail 200
+```
+
+```bash
+VSM_LOG_LEVEL=debug vsm list-all python
+```
+
+`info` 记录操作开始、结束、耗时；`warn` 记录下载重试、网络错误和版本探测失败；`error` 记录操作失败。
+`debug` 额外记录 HTTP 状态及成功版本探测；每次提示符触发的 `env` 成功调用仅在调试级别记录。
+筛选不会开启未记录的调试信息。`off` 停止新增日志，已有日志仍可查看和清理。
+帮助、版本查询与日志管理不记录自身，避免反复查看日志产生新日志。
+
+## 日志内容
+
+每条记录包含 UTC 时间、级别、组件、事件、进程 ID、VSM 版本，以及操作相关字段。
+不记录完整命令参数、环境变量转储、子进程输出或 MCP 请求/返回正文。
+URL 用户名密码、完整查询字符串和片段、常见密码/令牌字段及已知密钥环境值会脱敏。
+错误信息可能包含本地文件路径；分享导出文件前可检查相关路径。
+Unix 上新建日志目录权限为 `0700`，文件为 `0600`；Windows 使用当前用户目录的继承 ACL。

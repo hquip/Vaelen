@@ -14,6 +14,62 @@ function call(method, ...args) {
   return app[method](...args);
 }
 
+let logsBusy = false;
+function logsError(message) {
+  const error = document.getElementById("logsError");
+  error.textContent = message || "";
+  error.classList.toggle("hidden", !message);
+}
+function logsLoading(busy) {
+  logsBusy = busy;
+  for (const id of ["logsLevel", "logsRefresh", "logsExport", "logsClear", "logsConfirmClear", "logsCancelClear", "logsClose"]) {
+    document.getElementById(id).disabled = busy;
+  }
+}
+async function refreshLogs() {
+  const snapshot = await call("Logs", 200, document.getElementById("logsLevel").value);
+  document.getElementById("logsLocation").textContent = snapshot.directory;
+  const bytes = (snapshot.files || []).reduce((sum, file) => sum + file.bytes, 0);
+  document.getElementById("logsStatus").textContent = "记录级别: " + snapshot.level + " · " +
+    (bytes / 1024).toFixed(1) + " KiB · " + snapshot.entries.length + " 条记录（最新在前）";
+  document.getElementById("logsText").textContent = snapshot.entries.length
+    ? [...snapshot.entries].reverse().map(entry => entry.time + " [" + entry.level.toUpperCase() + "] " +
+      entry.component + " · " + entry.event + "\n" + JSON.stringify(entry.fields || {})).join("\n\n")
+    : "暂无符合条件的日志。完成操作后点击刷新；调试记录需在启动 VSM 前设置 VSM_LOG_LEVEL=debug。";
+}
+async function logsAction(action) {
+  if (logsBusy) return;
+  logsLoading(true);
+  logsError("");
+  try { await action(); }
+  catch (error) { logsError(String(error)); }
+  finally { logsLoading(false); }
+}
+document.getElementById("logsBtn").addEventListener("click", () => {
+  document.getElementById("logsModal").classList.remove("hidden");
+  document.getElementById("logsClearConfirm").classList.add("hidden");
+  logsAction(refreshLogs);
+});
+document.getElementById("logsRefresh").addEventListener("click", () => logsAction(refreshLogs));
+document.getElementById("logsLevel").addEventListener("change", () => logsAction(refreshLogs));
+document.getElementById("logsExport").addEventListener("click", () => logsAction(async () => {
+  const path = await call("ExportLogs");
+  if (path) document.getElementById("logsStatus").textContent = "已导出全部保留日志: " + path;
+}));
+document.getElementById("logsClear").addEventListener("click", () => document.getElementById("logsClearConfirm").classList.remove("hidden"));
+document.getElementById("logsCancelClear").addEventListener("click", () => document.getElementById("logsClearConfirm").classList.add("hidden"));
+document.getElementById("logsConfirmClear").addEventListener("click", () => logsAction(async () => {
+  await call("ClearLogs");
+  document.getElementById("logsClearConfirm").classList.add("hidden");
+  await refreshLogs();
+}));
+function closeLogs() {
+  if (!logsBusy) document.getElementById("logsModal").classList.add("hidden");
+}
+document.getElementById("logsClose").addEventListener("click", closeLogs);
+document.getElementById("logsModal").addEventListener("click", event => { if (event.target.id === "logsModal") closeLogs(); });
+document.addEventListener("keydown", event => { if (event.key === "Escape") closeLogs(); });
+
 let state = [];
 let selected = null;
 let sysCache = {};

@@ -120,7 +120,7 @@ sudo ln -sf /Applications/VSM.app/Contents/MacOS/vsm /usr/local/bin/vsm
 自行打包（需在 Mac 上，产出与 Release 相同的通用版 zip）：
 
 ```bash
-bash scripts/package-macos.sh 1.0.5 dist
+bash scripts/package-macos.sh 1.0.6 dist
 ```
 
 > 打 `v*` tag 即可由 GitHub Actions 在 Windows / macOS / Linux 三个 runner 上分别本地编译，
@@ -323,6 +323,21 @@ GUI 安装区提供「要求发布方 SHA256 校验」选项。Go、Node 从官�
 当下载/版本逻辑需要特殊处理（如重定向、解析 assets）时，实现 `internal/plugin.Plugin`
 接口并在 `init()` 中 `register`。参考 `golang.go` / `java.go` / `zig.go`。
 
+## 本地运行日志
+
+CLI、GUI 和 MCP 统一记录操作、下载重试与失败原因，文件自动轮换（最多约 8 MiB）。
+GUI 左下角「日志」支持筛选、导出和清理。
+
+```bash
+vsm logs --tail 100
+vsm logs --level error
+vsm logs export vsm-report.jsonl
+vsm logs clear
+```
+
+默认保存在 `~/.vsm/logs`（或 `VSM_HOME/logs`），通过 `VSM_LOG_LEVEL=debug|info|warn|error|off` 控制记录级别。
+日志保存在本地，代理凭据、URL 查询参数与常见密钥会脱敏。详见[日志说明](docs/logging.md)。
+
 ## 许可证
 
 [Apache 2.0](LICENSE)
@@ -348,5 +363,6 @@ GUI 安装区提供「要求发布方 SHA256 校验」选项。Go、Node 从官�
 - **已完成（v1.0.3）**：多 AI 客户端配置预设与只读模式、项目选择和使用引导、Docker 镜像工具视图，以及 Python venv、预发布版本选择和 MCP 安装超时修复。详见 [发布说明](docs/releases/v1.0.3.md)。
 - **已完成（v1.0.4）**：`help <command>` 详细帮助、嵌套子命令帮助、命令别名与 `-h` / `--help`，以及帮助主题的 shell 补全。详见 [发布说明](docs/releases/v1.0.4.md)。
 - **已完成（v1.0.5）**：GitHub 自更新、Python 元数据 EOF 修复、自定义来源镜像、代理/镜像 JSON 查看，以及精简和彩色 `current` 输出。详见 [发布说明](docs/releases/v1.0.5.md)。
+- **已完成（v1.0.6）**：CLI / GUI / MCP 统一本地运行日志、日志筛选与导出、自动轮换与敏感信息脱敏。详见 [发布说明](docs/releases/v1.0.6.md)。
 - **v1（待办）**：Lua 插件运行时（gopher-lua）外部扩展、`.zst` 解压。
 - **v2（待办）**：Bubble Tea TUI（`vsm ui`）、远程插件仓库。

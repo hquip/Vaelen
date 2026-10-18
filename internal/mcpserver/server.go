@@ -9,6 +9,8 @@ import (
 	"io"
 	"sync"
 	"unicode/utf8"
+
+	"vsm/internal/logging"
 )
 
 type Tool struct {
@@ -45,7 +47,9 @@ type request struct {
 	Params  json.RawMessage `json:"params"`
 }
 
-func (s Server) Serve(parent context.Context, input io.Reader, output io.Writer) error {
+func (s Server) Serve(parent context.Context, input io.Reader, output io.Writer) (err error) {
+	finish := logging.Start("mcp", "session", nil)
+	defer func() { finish(err) }()
 	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
 	var writes sync.Mutex
@@ -210,18 +214,26 @@ func (s Server) Serve(parent context.Context, input io.Reader, output io.Writer)
 			jobs.Add(1)
 			go func(req request, name string, arguments json.RawMessage) {
 				defer jobs.Done()
+				finish := logging.Start("mcp", "tool", logging.Fields{"tool": name})
+				var callErr error
+				defer func() { finish(callErr) }()
 				defer func() { <-slots; pendingMu.Lock(); delete(pending, string(req.ID)); pendingMu.Unlock(); stop() }()
 				select {
 				case execution <- struct{}{}:
 					defer func() { <-execution }()
 				case <-jobCtx.Done():
+					callErr = jobCtx.Err()
 					respond(req.ID, ToolResult(map[string]any{"error": "Cancelled"}, true), 0, "")
 					return
 				}
 				result, err := s.Call(jobCtx, name, arguments)
 				if err != nil {
+					callErr = err
 					respond(req.ID, ToolResult(map[string]any{"error": err.Error()}, true), 0, "")
 					return
+				}
+				if result.IsError {
+					callErr = fmt.Errorf("tool returned an error; see MCP response")
 				}
 				respond(req.ID, result, 0, "")
 			}(req, params.Name, params.Arguments)
