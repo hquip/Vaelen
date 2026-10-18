@@ -29,6 +29,17 @@ type Checksummer interface {
 	Checksum(version string, t Target) (string, error)
 }
 
+// ArtifactProvider pins URL, size and publisher digest in one metadata response.
+type ArtifactProvider interface {
+	Artifact(version string, target Target) (Artifact, error)
+}
+
+type Artifact struct {
+	URL    string
+	SHA256 string
+	Size   int64
+}
+
 // Target 描述目标平台，命名沿用 Go 的 GOOS/GOARCH。
 type Target struct {
 	OS   string // windows / linux / darwin

@@ -600,12 +600,12 @@ func (a *app) cmdMirror(args []string) error {
 			return printJSON(map[string]any{"mode": mode, "sources": custom})
 		}
 		fmt.Println("当前镜像模式:", mode)
-		for _, source := range []string{"go", "node", "npm", "github", "github-api"} {
+		for _, source := range []string{"go", "node", "java", "npm", "github", "github-api"} {
 			if raw := custom[source]; raw != "" {
 				fmt.Printf("  %s = %s\n", source, raw)
 			}
 		}
-		fmt.Println("设置: vsm mirror cn|off；自定义: vsm mirror set <go|node|npm|github|github-api> <URL>")
+		fmt.Println("设置: vsm mirror cn|off；自定义: vsm mirror set <go|node|java|npm|github|github-api> <URL>")
 		return nil
 	}
 	if rest[0] == "set" || rest[0] == "unset" {
