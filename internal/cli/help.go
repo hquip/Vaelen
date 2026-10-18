@@ -236,9 +236,9 @@ var commandHelpTopics = map[string]commandHelp{
 		Examples: []string{"vsm adopt go", "vsm adopt go 1.25.11 /opt/go/bin/go", "vsm adopt --all"},
 	},
 	"mirror": {
-		Summary: "查看或设置下载镜像", Usage: []string{"vsm mirror [cn|off|custom]", "vsm mirror set <go|node|npm|github|github-api> <URL>", "vsm mirror unset <源>", "vsm mirror list [--json]"},
+		Summary: "查看或设置下载镜像", Usage: []string{"vsm mirror [cn|off|custom]", "vsm mirror set <go|node|java|npm|github|github-api> <URL>", "vsm mirror unset <源>", "vsm mirror list [--json]"},
 		Options: []string{"--json  输出镜像配置"},
-		Notes:   []string{"省略参数查看设置；cn 启用国内镜像，off 关闭所有重写；自定义源优先。", "github 基地址作为代理前缀，后面附加完整原始 URL；其余源替换对应上游基地址。", "发布方 SHA256 仍从原站获取。npm 源通过 vsm run 的子进程环境生效，不改 .npmrc。"}, Examples: []string{"vsm mirror list --json", "vsm mirror set github https://mirror.example/", "vsm mirror set node https://mirror.example/node/"},
+		Notes:   []string{"省略参数查看设置；cn 启用国内镜像，off 关闭所有重写；自定义源优先。", "github 基地址作为代理前缀；java 使用 Adoptium 镜像根目录（例如 https://mirrors.tuna.tsinghua.edu.cn/Adoptium/）；其余源替换对应上游基地址。", "cn 对 JDK 启用清华镜像；失败时回退官方文件，并使用同一官方 SHA256。", "发布方 SHA256 仍从原站获取。npm 源通过 vsm run 的子进程环境生效，不改 .npmrc。"}, Examples: []string{"vsm mirror list --json", "vsm mirror set github https://mirror.example/", "vsm mirror set node https://mirror.example/node/"},
 	},
 	"proxy": {
 		Summary: "查看或设置网络代理", Usage: []string{"vsm proxy [url|off|system]", "vsm proxy --json"},

@@ -1,13 +1,16 @@
 package core
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -26,9 +29,58 @@ const (
 	dlMaxBytes    = 8 << 30
 )
 
+type downloadIntegrity struct {
+	SHA256 string
+	Size   int64
+}
+
+var errDownloadIntegrity = errors.New("下载完整性检查失败")
+var errInvalidRange = errors.New("invalid range response")
+
+type downloadHTTPError int
+
+func (e downloadHTTPError) Error() string { return fmt.Sprintf("HTTP %d", int(e)) }
+func retryableDownload(err error) bool {
+	if errors.Is(err, errDownloadIntegrity) || errors.Is(err, errInvalidRange) || errors.Is(err, context.Canceled) {
+		return false
+	}
+	var status downloadHTTPError
+	if errors.As(err, &status) {
+		return status == 408 || status == 429 || status >= 500
+	}
+	var disk *os.PathError
+	return !errors.As(err, &disk)
+}
+
+func downloadCandidates(candidates []string, dir, base string, progress ProgressFunc, integrity downloadIntegrity) (string, error) {
+	if progress == nil {
+		progress = func(string) {}
+	}
+	var last error
+	for n, candidate := range candidates {
+		if n > 0 {
+			progress("镜像下载失败，回退官方原始包（保持同一版本和 SHA256）")
+		}
+		progress("下载 " + candidate)
+		path, err := downloadResolve(candidate, dir, base, progress, integrity)
+		if err == nil {
+			return path, nil
+		}
+		last = err
+		var disk *os.PathError
+		if errors.As(err, &disk) {
+			return "", err
+		}
+	}
+	if last == nil {
+		last = fmt.Errorf("没有可用下载源")
+	}
+	return "", last
+}
+
 // downloadResolve 下载 url（自动跟随重定向），按“最终 URL”的后缀决定压缩格式扩展名，
 // 保存为 dir/<base><ext>。失败自动重试。
-func downloadResolve(url, dir, base string, progress ProgressFunc) (path string, err error) {
+func downloadResolve(url, dir, base string, progress ProgressFunc, integrity downloadIntegrity) (path string, err error) {
 	finish := logging.Start("download", "archive", logging.Fields{"url": url})
 	defer func() { finish(err) }()
 	if progress == nil {
@@ -40,24 +92,44 @@ func downloadResolve(url, dir, base string, progress ProgressFunc) (path string,
 			progress(fmt.Sprintf("下载失败，第 %d/%d 次重试：%v", attempt, dlAttempts, lastErr))
 			time.Sleep(time.Duration(attempt) * time.Second)
 		}
-		path, err := downloadOnce(url, dir, base, progress)
+		path, err := downloadOnce(url, dir, base, progress, integrity)
 		if err == nil {
 			return path, nil
 		}
 		lastErr = err
 		logging.Record("warn", "download", "attempt.failed", logging.Fields{"attempt": attempt, "error": err.Error(), "url": url})
+		if !retryableDownload(err) {
+			break
+		}
 	}
-	return "", fmt.Errorf("下载失败（已重试 %d 次）: %w", dlAttempts, lastErr)
+	return "", fmt.Errorf("下载失败: %w", lastErr)
 }
 
-func downloadOnce(url, dir, base string, progress ProgressFunc) (string, error) {
+func downloadOnce(url, dir, base string, progress ProgressFunc, integrity downloadIntegrity) (string, error) {
+	if integrity.SHA256 != "" {
+		decoded, err := hex.DecodeString(integrity.SHA256)
+		if err != nil || len(decoded) != sha256.Size {
+			return "", fmt.Errorf("%w: invalid publisher SHA256", errDownloadIntegrity)
+		}
+	}
+	if integrity.Size < 0 || integrity.Size > dlMaxBytes {
+		return "", fmt.Errorf("%w: invalid publisher size", errDownloadIntegrity)
+	}
+
 	if err := netcfg.ValidateURL(url); err != nil {
 		return "", err
 	}
 	if err := validateComponent(base); err != nil {
 		return "", err
 	}
+	progress("连接下载源并探测分块支持…")
 	finalURL, size, acceptRanges, etag := probe(url)
+	if integrity.Size > 0 {
+		if size > 0 && size != integrity.Size {
+			return "", fmt.Errorf("%w: 下载源大小 %d，与官方 %d 不符", errDownloadIntegrity, size, integrity.Size)
+		}
+		size = integrity.Size
+	}
 	if size > dlMaxBytes {
 		return "", fmt.Errorf("download exceeds size limit")
 	}
@@ -85,7 +157,12 @@ func downloadOnce(url, dir, base string, progress ProgressFunc) (string, error) 
 	defer func() { os.Remove(tmp.Name()) }()
 
 	done := false
-	if acceptRanges && size >= dlMinParallel && etag != "" && !strings.HasPrefix(etag, "W/") {
+	strongETag := etag != "" && !strings.HasPrefix(etag, "W/")
+	if acceptRanges && size >= dlMinParallel && (strongETag || integrity.SHA256 != "") {
+		if !strongETag {
+			etag = ""
+		}
+		progress(fmt.Sprintf("启用 %d 连接分块下载（%s）", dlConnections, humanBytes(size)))
 		if err := downloadParallel(finalURL, dest, size, dlConnections, progress, etag); err == nil {
 			done = true
 		} else {
@@ -97,6 +174,13 @@ func downloadOnce(url, dir, base string, progress ProgressFunc) (string, error) 
 		if err := downloadStream(finalURL, dest, size, progress); err != nil {
 			return "", err
 		}
+	}
+	if integrity.SHA256 != "" {
+		progress("校验 sha256 …")
+		if err := verifyChecksum(dest, integrity.SHA256); err != nil {
+			return "", err
+		}
+		progress("校验通过")
 	}
 	// 用内容魔数纠正扩展名，确保 Extract 用对解压器。
 	sniff := sniffArchiveExt(dest)
@@ -132,45 +216,74 @@ func sniffArchiveExt(path string) string {
 	return ""
 }
 
-// probe 用 HEAD 探测最终 URL、内容大小与是否支持 Range；HEAD 不可用时返回 size=-1。
-func probe(url string) (finalURL string, size int64, acceptRanges bool, etag string) {
-	finalURL = url
-	client := netcfg.Client(30 * time.Second)
-	req, err := http.NewRequest(http.MethodHead, url, nil)
-	if err != nil {
-		return url, -1, false, ""
+// Use a one-byte range when HEAD is missing or omits range support. Never
+// buffer a whole JDK just to discover its size or range capability.
+func probe(raw string) (finalURL string, size int64, acceptRanges bool, etag string) {
+	finalURL, size = raw, -1
+	client := netcfg.Client(15 * time.Second)
+	defer client.CloseIdleConnections()
+	request := func(method string, ranged bool) (*http.Response, error) {
+		req, err := http.NewRequest(method, raw, nil)
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("User-Agent", "vsm")
+		req.Header.Set("Accept-Encoding", "identity")
+		if ranged {
+			req.Header.Set("Range", "bytes=0-0")
+		}
+		return client.Do(req)
 	}
-	req.Header.Set("User-Agent", "vsm")
-	resp, err := client.Do(req)
-	if err != nil {
-		return url, -1, false, ""
+	if resp, err := request(http.MethodHead, false); err == nil {
+		if resp.StatusCode == http.StatusOK {
+			if resp.Request != nil && resp.Request.URL != nil {
+				finalURL = resp.Request.URL.String()
+			}
+			size, etag = resp.ContentLength, resp.Header.Get("ETag")
+			acceptRanges = strings.EqualFold(resp.Header.Get("Accept-Ranges"), "bytes")
+		}
+		resp.Body.Close()
+		if acceptRanges && size > 0 {
+			return
+		}
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return url, -1, false, ""
+	if resp, err := request(http.MethodGet, true); err == nil {
+		defer resp.Body.Close()
+		if resp.Request != nil && resp.Request.URL != nil {
+			finalURL = resp.Request.URL.String()
+		}
+		if resp.StatusCode == http.StatusPartialContent {
+			cr := resp.Header.Get("Content-Range")
+			if strings.HasPrefix(cr, "bytes 0-0/") {
+				total, err := strconv.ParseInt(strings.TrimPrefix(cr, "bytes 0-0/"), 10, 64)
+				body, readErr := io.ReadAll(io.LimitReader(resp.Body, 2))
+				if err == nil && readErr == nil && total > 0 && len(body) == 1 && (resp.ContentLength < 0 || resp.ContentLength == 1) {
+					return finalURL, total, true, resp.Header.Get("ETag")
+				}
+			}
+		} else if resp.StatusCode == http.StatusOK {
+			return finalURL, resp.ContentLength, false, resp.Header.Get("ETag")
+		}
 	}
-	if resp.Request != nil && resp.Request.URL != nil {
-		finalURL = resp.Request.URL.String()
-	}
-	return finalURL, resp.ContentLength, strings.EqualFold(resp.Header.Get("Accept-Ranges"), "bytes"), resp.Header.Get("ETag")
+	return
 }
 
 func downloadStream(url, dest string, size int64, progress ProgressFunc) error {
 	client := netcfg.Client(30 * time.Minute)
+	defer client.CloseIdleConnections()
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
 		return err
 	}
 	req.Header.Set("User-Agent", "vsm")
 	req.Header.Set("Accept-Encoding", "identity")
-	req.Header.Set("Accept-Encoding", "identity")
 	resp, err := client.Do(req)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("HTTP %d", resp.StatusCode)
+		return downloadHTTPError(resp.StatusCode)
 	}
 	if size <= 0 {
 		size = resp.ContentLength
@@ -182,7 +295,7 @@ func downloadStream(url, dest string, size int64, progress ProgressFunc) error {
 	if err != nil {
 		return err
 	}
-	cw := &countingWriter{total: size, label: "下载中", progress: progress}
+	cw := &countingWriter{total: size, label: "下载中", progress: progress, started: time.Now()}
 	n, copyErr := io.Copy(out, io.LimitReader(io.TeeReader(resp.Body, cw), dlMaxBytes+1))
 	closeErr := out.Close()
 	if copyErr != nil {
@@ -210,14 +323,18 @@ func downloadParallel(url, dest string, size int64, conns int, progress Progress
 		out.Close()
 		return err
 	}
-	out.Close()
-
+	if err := out.Close(); err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+	defer cancel()
+	client := netcfg.Client(30 * time.Minute)
+	defer client.CloseIdleConnections()
 	chunk := size / int64(conns)
-	cw := &countingWriter{total: size, label: "并行下载", progress: progress}
+	cw := &countingWriter{total: size, label: "并行下载", progress: progress, started: time.Now()}
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 	var firstErr error
-
 	for i := 0; i < conns; i++ {
 		start := int64(i) * chunk
 		end := start + chunk - 1
@@ -227,10 +344,11 @@ func downloadParallel(url, dest string, size int64, conns int, progress Progress
 		wg.Add(1)
 		go func(start, end int64) {
 			defer wg.Done()
-			if err := downloadChunk(url, dest, start, end, size, cw, etag); err != nil {
+			if err := downloadChunkWithClient(ctx, client, url, dest, start, end, size, cw, etag); err != nil {
 				mu.Lock()
 				if firstErr == nil {
 					firstErr = err
+					cancel()
 				}
 				mu.Unlock()
 			}
@@ -247,9 +365,42 @@ func downloadParallel(url, dest string, size int64, conns int, progress Progress
 
 func downloadChunk(url, dest string, start, end, total int64, cw *countingWriter, etag string) error {
 	client := netcfg.Client(30 * time.Minute)
-	req, err := http.NewRequest(http.MethodGet, url, nil)
+	defer client.CloseIdleConnections()
+	return downloadChunkWithClient(context.Background(), client, url, dest, start, end, total, cw, etag)
+}
+
+func downloadChunkWithClient(ctx context.Context, client *http.Client, url, dest string, start, end, total int64, cw *countingWriter, etag string) error {
+	offset := start
+	var last error
+	for attempt := 1; attempt <= dlAttempts; attempt++ {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		n, err := readDownloadRange(ctx, client, url, dest, offset, end, total, cw, etag)
+		if err == nil {
+			return nil
+		}
+		last = err
+		offset += n
+		if offset > end || !retryableDownload(err) {
+			break
+		}
+		if attempt < dlAttempts {
+			logging.Record("warn", "download", "chunk.resume", logging.Fields{"offset": offset, "attempt": attempt + 1, "error": err.Error()})
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(time.Duration(attempt) * 200 * time.Millisecond):
+			}
+		}
+	}
+	return fmt.Errorf("分块 %d-%d 下载失败（已接收 %d 字节）: %w", start, end, offset-start, last)
+}
+
+func readDownloadRange(ctx context.Context, client *http.Client, url, dest string, start, end, total int64, cw *countingWriter, etag string) (int64, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	req.Header.Set("User-Agent", "vsm")
 	req.Header.Set("Range", fmt.Sprintf("bytes=%d-%d", start, end))
@@ -259,32 +410,41 @@ func downloadChunk(url, dest string, start, end, total int64, cw *countingWriter
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusPartialContent {
-		return fmt.Errorf("服务器不支持 Range: HTTP %d", resp.StatusCode)
+		return 0, downloadHTTPError(resp.StatusCode)
 	}
 	want := end - start + 1
-	if resp.Header.Get("Content-Range") != fmt.Sprintf("bytes %d-%d/%d", start, end, total) || (resp.ContentLength >= 0 && resp.ContentLength != want) || (etag != "" && resp.Header.Get("ETag") != "" && resp.Header.Get("ETag") != etag) {
-		return fmt.Errorf("invalid Content-Range, length, or entity tag")
+	encoding := resp.Header.Get("Content-Encoding")
+	if resp.Header.Get("Content-Range") != fmt.Sprintf("bytes %d-%d/%d", start, end, total) ||
+		(resp.ContentLength >= 0 && resp.ContentLength != want) ||
+		(etag != "" && resp.Header.Get("ETag") != "" && resp.Header.Get("ETag") != etag) ||
+		(encoding != "" && !strings.EqualFold(encoding, "identity")) {
+		return 0, errInvalidRange
 	}
 	f, err := os.OpenFile(dest, os.O_WRONLY, 0o644)
 	if err != nil {
-		return err
+		return 0, err
 	}
-	defer f.Close()
 	if _, err := f.Seek(start, io.SeekStart); err != nil {
-		return err
+		f.Close()
+		return 0, err
 	}
-	if _, err := io.CopyN(f, io.TeeReader(resp.Body, cw), want); err != nil {
-		return err
+	n, copyErr := io.CopyN(f, io.TeeReader(resp.Body, cw), want)
+	closeErr := f.Close()
+	if copyErr != nil {
+		return n, copyErr
+	}
+	if closeErr != nil {
+		return n, closeErr
 	}
 	var extra [1]byte
 	if n, err := resp.Body.Read(extra[:]); n != 0 || err != io.EOF {
-		return fmt.Errorf("range response exceeds expected length")
+		return want, errInvalidRange
 	}
-	return f.Close()
+	return want, nil
 }
 
 // countingWriter 聚合下载字节数并按节流频率回报进度，既可作为 io.Writer（TeeReader），
@@ -295,7 +455,7 @@ type countingWriter struct {
 	progress ProgressFunc
 	mu       sync.Mutex
 	n        int64
-	lastPct  int
+	started  time.Time
 	last     time.Time
 }
 
@@ -309,16 +469,19 @@ func (c *countingWriter) add(n int64) {
 	defer c.mu.Unlock()
 	c.n += n
 	now := time.Now()
+	if c.started.IsZero() {
+		c.started = now
+	}
+	if now.Sub(c.last) < 250*time.Millisecond && (c.total <= 0 || c.n < c.total) {
+		return
+	}
+	c.last = now
+	speed := int64(float64(c.n) / max(now.Sub(c.started).Seconds(), 0.001))
 	if c.total > 0 {
-		pct := int(c.n * 100 / c.total)
-		if pct != c.lastPct && (now.Sub(c.last) > 200*time.Millisecond || pct >= 100) {
-			c.lastPct = pct
-			c.last = now
-			c.progress(fmt.Sprintf("%s %d%% (%s / %s)", c.label, pct, humanBytes(c.n), humanBytes(c.total)))
-		}
-	} else if now.Sub(c.last) > 500*time.Millisecond {
-		c.last = now
-		c.progress(fmt.Sprintf("%s %s", c.label, humanBytes(c.n)))
+		pct := min(100, int(c.n*100/c.total))
+		c.progress(fmt.Sprintf("%s %d%% (%s / %s) · %s/s", c.label, pct, humanBytes(c.n), humanBytes(c.total), humanBytes(speed)))
+	} else {
+		c.progress(fmt.Sprintf("%s %s · %s/s", c.label, humanBytes(c.n), humanBytes(speed)))
 	}
 }
 
@@ -378,7 +541,7 @@ func verifyChecksum(path, expected string) error {
 	}
 	got := hex.EncodeToString(h.Sum(nil))
 	if !strings.EqualFold(got, expected) {
-		return fmt.Errorf("sha256 校验失败：期望 %s，实际 %s", expected, got)
+		return fmt.Errorf("%w: sha256 校验失败：期望 %s，实际 %s", errDownloadIntegrity, expected, got)
 	}
 	return nil
 }

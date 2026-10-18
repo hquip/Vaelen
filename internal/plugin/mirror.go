@@ -10,7 +10,7 @@ import (
 	"vsm/internal/netcfg"
 )
 
-var mirrorSources = map[string]string{"go": "https://go.dev/dl/", "node": "https://nodejs.org/dist/", "npm": "https://registry.npmjs.org/", "github": "https://github.com/", "github-api": "https://api.github.com/"}
+var mirrorSources = map[string]string{"go": "https://go.dev/dl/", "node": "https://nodejs.org/dist/", "java": "https://github.com/adoptium/", "npm": "https://registry.npmjs.org/", "github": "https://github.com/", "github-api": "https://api.github.com/"}
 
 func mirrorConfigPath() string {
 	root := os.Getenv("VSM_HOME")
@@ -36,7 +36,7 @@ func CustomMirrors() (map[string]string, error) {
 }
 func ValidateMirror(source, raw string) error {
 	if _, ok := mirrorSources[source]; !ok {
-		return fmt.Errorf("未知镜像源 %q（支持 go/node/npm/github/github-api）", source)
+		return fmt.Errorf("未知镜像源 %q（支持 go/node/java/npm/github/github-api）", source)
 	}
 	if err := netcfg.ValidateURL(raw); err != nil {
 		return err
@@ -66,6 +66,7 @@ func NPMRegistry() string {
 //
 // - go.dev/dl/      → golang.google.cn/dl/      （官方中国镜像，元数据与二进制都覆盖）
 // - nodejs.org/dist → npmmirror.com/mirrors/node（index.json 与发行包都覆盖）
+// - Temurin JDK     → TUNA Adoptium 镜像（具体文件名由官方元数据固定）
 // - github.com/     → ghproxy 加速（deno/bun/python 等基于 GitHub Release 的下载）
 //
 // 注意：api.github.com、api.adoptium.net 等“API 端点”不在此重写（结构不一致），
@@ -102,10 +103,17 @@ func mirrorMode() string {
 // MirrorURL 按当前镜像设置重写下载 / 元数据 URL；未启用或无匹配规则时原样返回。
 func MirrorURL(url string) string {
 	mode := mirrorMode()
+	javaPath, javaURL := temurinMirrorPath(url)
 	// An explicit off (including VSM_MIRROR=off) overrides custom sources.
 	if mode != "off" {
 		if custom, err := CustomMirrors(); err == nil {
+			if base := custom["java"]; javaURL && base != "" && ValidateMirror("java", base) == nil {
+				return strings.TrimRight(base, "/") + "/" + javaPath
+			}
 			for source, base := range custom {
+				if source == "java" {
+					continue
+				}
 				prefix, ok := mirrorSources[source]
 				if ok && ValidateMirror(source, base) == nil && strings.HasPrefix(url, prefix) {
 					if source == "github" {
@@ -118,6 +126,9 @@ func MirrorURL(url string) string {
 	}
 	if mode == "" || mode == "off" {
 		return url
+	}
+	if javaURL && mode == "cn" {
+		return javaChinaMirror + javaPath
 	}
 	rules, ok := mirrorRules[mode]
 	if !ok {

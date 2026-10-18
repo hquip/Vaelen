@@ -188,7 +188,7 @@ func TestDownloadRefusesHTMLAndLeavesNoPartial(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("<html>not an archive</html>")) }))
 	defer srv.Close()
 	dir := t.TempDir()
-	if _, err := downloadOnce(srv.URL+"/payload.zip", dir, "test", func(string) {}); err == nil {
+	if _, err := downloadOnce(srv.URL+"/payload.zip", dir, "test", func(string) {}, downloadIntegrity{}); err == nil {
 		t.Fatal("HTML accepted as a tool archive")
 	}
 	entries, _ := os.ReadDir(dir)

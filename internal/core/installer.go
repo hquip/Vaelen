@@ -72,13 +72,25 @@ func (in Installer) Install(p plugin.Plugin, version, customDir string, progress
 		return err
 	}
 
-	url, err := p.DownloadURL(version, plugin.CurrentTarget())
-	if err != nil {
-		return err
-	}
-	sum, err := plugin.ChecksumFor(p, version, plugin.CurrentTarget(), url)
-	if err != nil {
-		return fmt.Errorf("获取官方完整性元数据失败（安装已停止）: %w", err)
+	var source string
+	var sum string
+	var size int64
+	if provider, ok := p.(plugin.ArtifactProvider); ok {
+		artifact, err := provider.Artifact(version, plugin.CurrentTarget())
+		if err != nil {
+			return fmt.Errorf("获取官方安装包元数据失败: %w", err)
+		}
+		source, sum, size = artifact.URL, artifact.SHA256, artifact.Size
+	} else {
+		var err error
+		source, err = p.DownloadURL(version, plugin.CurrentTarget())
+		if err != nil {
+			return err
+		}
+		sum, err = plugin.ChecksumFor(p, version, plugin.CurrentTarget(), source)
+		if err != nil {
+			return fmt.Errorf("获取官方完整性元数据失败（安装已停止）: %w", err)
+		}
 	}
 	if sum == "" && (in.RequireChecksum || os.Getenv("VSM_REQUIRE_CHECKSUM") == "1") {
 		return fmt.Errorf("publisher checksum unavailable; --require-checksum refuses installation")
@@ -92,20 +104,9 @@ func (in Installer) Install(p plugin.Plugin, version, customDir string, progress
 	if sum == "" {
 		progress("警告：发布方未提供 SHA256；仅检查传输长度、归档格式与解压边界。可用 --require-checksum 拒绝此类安装。")
 	}
-	url = plugin.MirrorURL(url)
-
-	progress("下载 " + url)
-	dlPath, err := downloadResolve(url, in.Paths.Downloads(), p.Name()+"-"+version, progress)
+	dlPath, err := downloadCandidates(plugin.DownloadURLs(source), in.Paths.Downloads(), p.Name()+"-"+version, progress, downloadIntegrity{SHA256: sum, Size: size})
 	if err != nil {
 		return err
-	}
-	if sum != "" {
-		progress("校验 sha256 …")
-		if err := verifyChecksum(dlPath, sum); err != nil {
-			os.Remove(dlPath)
-			return err
-		}
-		progress("校验通过")
 	}
 
 	tmp, err := os.MkdirTemp(in.Paths.Root, "extract-")

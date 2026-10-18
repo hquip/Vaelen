@@ -323,6 +323,19 @@ GUI 安装区提供「要求发布方 SHA256 校验」选项。Go、Node 从官�
 当下载/版本逻辑需要特殊处理（如重定向、解析 assets）时，实现 `internal/plugin.Plugin`
 接口并在 `init()` 中 `register`。参考 `golang.go` / `java.go` / `zig.go`。
 
+## JDK 下载加速
+
+Java 使用 Adoptium 官方元数据中的具体 Temurin 安装包、大小和 SHA256；开启国内镜像后直接下载清华 Adoptium 镜像，避免先经过 Adoptium 再跳转 GitHub：
+
+```bash
+vsm mirror cn
+vsm install java 21 --require-checksum
+```
+
+GUI 顶部选择「镜像：国内」后安装 JDK，行为相同。镜像缺包、返回错误或校验不符时，回退同一官方文件，始终使用原发布方 SHA256。需要自建镜像可用 `vsm mirror set java https://mirror.example/Adoptium/`，目录结构为 `<major>/jdk/<arch>/<os>/<filename>`；`vsm mirror off` 关闭镜像。
+
+大包在服务器支持 Range 且有稳定 ETag 或官方 SHA256 时使用 4 连接并行下载。HEAD 不可用时用 1 字节 Range 探测；断流仅续传失败分块的剩余字节，成功分块保留，进度包含速度。此续传发生在本次下载任务内，尚不支持关闭程序后继续。源站不支持 Range 时自动回退单连接。实际速度仍取决于网络和镜像限速。
+
 ## 本地运行日志
 
 CLI、GUI 和 MCP 统一记录操作、下载重试与失败原因，文件自动轮换（最多约 8 MiB）。
