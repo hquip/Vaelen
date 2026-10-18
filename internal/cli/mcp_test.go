@@ -188,7 +188,7 @@ func TestMCPManagesOnlyItsBoundProject(t *testing.T) {
 		t.Fatal(err)
 	}
 	list := request("tools/list", map[string]any{})
-	if len(list["tools"].([]any)) != 7 {
+	if len(list["tools"].([]any)) != 14 {
 		t.Fatalf("unexpected tools: %v", list)
 	}
 	call := func(name string, args map[string]any) map[string]any {

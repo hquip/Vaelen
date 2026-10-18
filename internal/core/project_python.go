@@ -38,6 +38,9 @@ func (a Activator) PrepareProject(ctx context.Context, dir string) error {
 	if err != nil || spec == "" {
 		return err
 	}
+	if pinned := a.Resolver.Pinned["python"]; pinned != "" {
+		spec = pinned
+	}
 	res := a.Resolver.match("python", spec, "项目环境")
 	if res.Error != "" {
 		return fmt.Errorf("%s", res.Error)

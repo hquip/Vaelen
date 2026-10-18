@@ -74,3 +74,32 @@ func TestInstallerPinsArtifactInOneMetadataRequest(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestInstallerHandlesVerifiedRawExecutable(t *testing.T) {
+	t.Setenv("VSM_MIRROR", "off")
+	data := []byte("MZverified-native-test-binary")
+	sum := sha256.Sum256(data)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Length", fmt.Sprint(len(data)))
+		if r.Method != "HEAD" {
+			_, _ = w.Write(data)
+		}
+	}))
+	defer server.Close()
+	p := &pinnedTestPlugin{artifact: plugin.Artifact{URL: server.URL + "/java-windows-amd64.exe", SHA256: hex.EncodeToString(sum[:]), Size: int64(len(data)), Format: "binary"}}
+	paths := Paths{Root: t.TempDir()}
+	if err := (Installer{Paths: paths, RequireChecksum: true}).Install(p, "21", "", nil); err != nil {
+		t.Fatal(err)
+	}
+	name := "java"
+	if runtime.GOOS == "windows" {
+		name += ".exe"
+	}
+	actual, err := os.ReadFile(filepath.Join(paths.InstallDir("java", "21"), "bin", name))
+	if err != nil || !bytes.Equal(actual, data) {
+		t.Fatal("raw executable was not installed under its command name")
+	}
+	if err := CheckInstalledArtifact(paths.InstallDir("java", "21"), p.artifact); err != nil {
+		t.Fatal(err)
+	}
+}

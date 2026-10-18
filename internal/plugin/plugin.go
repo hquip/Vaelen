@@ -35,9 +35,11 @@ type ArtifactProvider interface {
 }
 
 type Artifact struct {
-	URL    string
-	SHA256 string
-	Size   int64
+	Version string `json:"version,omitempty"`
+	URL     string `json:"url"`
+	SHA256  string `json:"sha256"`
+	Size    int64  `json:"size,omitempty"`
+	Format  string `json:"format,omitempty"`
 }
 
 // Target 描述目标平台，命名沿用 Go 的 GOOS/GOARCH。

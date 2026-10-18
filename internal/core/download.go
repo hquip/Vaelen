@@ -30,6 +30,7 @@ const (
 )
 
 type downloadIntegrity struct {
+	Format string
 	SHA256 string
 	Size   int64
 }
@@ -184,6 +185,13 @@ func downloadOnce(url, dir, base string, progress ProgressFunc, integrity downlo
 	}
 	// 用内容魔数纠正扩展名，确保 Extract 用对解压器。
 	sniff := sniffArchiveExt(dest)
+	if integrity.Format == "binary" && integrity.SHA256 != "" {
+		if !sniffNativeBinary(dest) {
+			return "", fmt.Errorf("download is not a native executable")
+		}
+		sniff = ".bin"
+	}
+
 	if sniff == "" {
 		return "", fmt.Errorf("download is not a supported archive (possible HTML/error response)")
 	}
@@ -214,6 +222,19 @@ func sniffArchiveExt(path string) string {
 		return ".tar.xz"
 	}
 	return ""
+}
+
+func sniffNativeBinary(path string) bool {
+	f, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	var b [4]byte
+	if _, err := io.ReadFull(f, b[:]); err != nil {
+		return false
+	}
+	return b[0] == 'M' && b[1] == 'Z' || b == [4]byte{0x7f, 'E', 'L', 'F'} || b == [4]byte{0xcf, 0xfa, 0xed, 0xfe} || b == [4]byte{0xfe, 0xed, 0xfa, 0xcf} || b == [4]byte{0xca, 0xfe, 0xba, 0xbe}
 }
 
 // Use a one-byte range when HEAD is missing or omits range support. Never

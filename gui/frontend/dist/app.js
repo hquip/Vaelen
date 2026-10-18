@@ -203,8 +203,8 @@ function renderMCPClient() {
   document.getElementById("projectMCPGenerate").textContent = "生成 " + client.format.toUpperCase() + " 配置";
   document.getElementById("projectMCPConfig").setAttribute("aria-label", client.name + " MCP 配置");
   document.getElementById("projectMCPToolsHint").textContent = document.getElementById("projectMCPReadOnly").checked
-    ? "只读连接提供 3 个查看工具。"
-    : "连接后提供 7 个工具，可读取要求、设置版本、安装工具和运行命令；安装与运行受项目隔离模式约束。";
+    ? "只读连接提供 7 个查看工具，包含任务图、锁文件状态和工具目录。"
+    : "连接后提供 14 个工具，支持锁定工具链、项目任务和安装；任务需用户先检查并信任，AI 无权授予信任。";
 }
 
 async function loadMCPClients() {

@@ -21,7 +21,7 @@ Windows 示例：
 }
 ```
 
-把生成的内容加入支持此配置格式的 AI 客户端。GUI 的「隔离环境 / MCP」也可以生成并复制配置。使用 `--read-only` 启动时仅提供三个只读工具。
+把生成的内容加入支持此配置格式的 AI 客户端。GUI 的「隔离环境 / MCP」也可以生成并复制配置。使用 `--read-only` 启动时仅提供七个只读工具。
 
 ## 多客户端接入
 
@@ -43,7 +43,7 @@ vsm mcp config --project /path/to/app --client codex
 vsm mcp config --project /path/to/app --client vscode --read-only
 ```
 
-将生成内容中的 `vsm` 项或 `[mcp_servers.vsm]` 段合并到现有配置，再重新连接客户端。已有同名项应更新，避免重复定义。默认提供 7 个工具；只读模式仅提供 `vsm_context`、`vsm_project_status` 和 `vsm_list`，不允许初始化、安装、切换版本或运行命令。
+将生成内容中的 `vsm` 项或 `[mcp_servers.vsm]` 段合并到现有配置，再重新连接客户端。已有同名项应更新，避免重复定义。默认提供 14 个工具；只读模式提供版本、项目、安装列表、工作台概况、任务图、锁文件状态和工具目录等 7 个查询工具，不允许初始化、安装、切换版本或运行命令。
 
 Codex 预设将工具调用超时设置为 600 秒，以覆盖安装和测试；VSM 自身的请求超时仍然生效。VS Code 新版也支持项目根目录 `.mcp.json` 的便携 `mcpServers` 格式，可使用 `generic` / `claude-code` 输出；`vscode` 预设保留专用格式以兼容已有配置。Windsurf/Cascade 的配置路径随版本变化，以客户端打开的实际文件为准。
 
@@ -62,6 +62,13 @@ Windows / Linux 用户需将对应平台的新版 CLI 重命名为 `vsm.exe` / `
 
 | 工具 | 行为 |
 | --- | --- |
+| `vsm_project_inspect` | 查看 vsm.json 工具、任务和环境变量名称；值脱敏 |
+| `vsm_tasks` | 查看任务与依赖，不执行 |
+| `vsm_lock_status` | 检查锁文件是否匹配项目要求 |
+| `vsm_catalog` | 查询工具目录，可传 query |
+| `vsm_lock` | 生成锁文件，可传 platforms、update 与 timeout_seconds |
+| `vsm_install_locked` | 按锁文件安装，要求 local 模式 |
+| `vsm_task_run` | 执行用户已信任任务，可传 task、args、jobs、locked、no_cache 和 timeout_seconds |
 | `vsm_context` | 读取项目要求、解析版本、激活记录、冲突和建议命令 |
 | `vsm_project_status` | 查看项目是否初始化、隔离模式和镜像 |
 | `vsm_list` | 查看当前项目作用域内已安装版本 |
@@ -86,7 +93,7 @@ Windows / Linux 用户需将对应平台的新版 CLI 重命名为 `vsm.exe` / `
 {"name":"vsm_run","arguments":{"command":"go","args":["test","./..."],"install_missing":true,"timeout_seconds":120}}
 ```
 
-工具结果同时提供文本和结构化数据，包含退出码、stdout、stderr、项目路径及截断标记。命令失败通过 `isError` 呈现；工具输出不会污染 MCP 协议。
+工具结果同时提供文本和结构化数据，包含退出码、stdout、stderr、项目路径及截断标记。命令失败通过 `isError` 呈现；工具输出不会污染 MCP 协议。`vsm_task_run` 返回任务报告，并在请求超时或取消时停止任务进程树。MCP 没有授予信任的入口；需用户先在 CLI 或 GUI 检查并信任配置。
 
 安装超时示例：
 
@@ -106,3 +113,19 @@ Windows / Linux 用户需将对应平台的新版 CLI 重命名为 `vsm.exe` / `
 - 这是 stdio 服务；未提供 HTTP 服务或远程认证接口。
 
 完整隔离方式见 [项目环境](project-environments.md)。
+
+## 锁定任务示例
+
+```json
+{"name":"vsm_lock","arguments":{"platforms":["windows/amd64","linux/amd64"]}}
+```
+
+```json
+{"name":"vsm_install_locked","arguments":{"timeout_seconds":600}}
+```
+
+```json
+{"name":"vsm_task_run","arguments":{"task":"test","locked":true,"jobs":4,"timeout_seconds":600}}
+```
+
+`vsm_run` 也接受 `locked: true`。执行命名任务需要当前 `vsm.json` 与引用环境文件已由用户信任；配置变更后信任失效。只读概况不会返回环境变量值。

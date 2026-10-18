@@ -4,25 +4,58 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
+	"vsm/internal/config"
+	"vsm/internal/mcpserver"
 	"vsm/internal/plugin"
 )
 
 // RunProject selects the complete project toolchain for one child process.
 // No shell command string is evaluated and the parent/project config is unchanged.
 func (a Activator) RunProject(dir, command string, args []string) error {
+	return a.RunProjectContext(context.Background(), dir, command, args, os.Stdin, os.Stdout, os.Stderr)
+}
+func (a Activator) RunProjectContext(ctx context.Context, dir, command string, args []string, stdin io.Reader, stdout, stderr io.Writer) error {
+	return a.runProjectEnvironment(ctx, dir, command, args, stdin, stdout, stderr, nil)
+}
+func (a Activator) RunProjectEnvironment(dir, command string, args []string, extra map[string]string) error {
+	return a.runProjectEnvironment(context.Background(), dir, command, args, os.Stdin, os.Stdout, os.Stderr, extra)
+}
+func (a Activator) runProjectEnvironment(ctx context.Context, dir, command string, args []string, stdin io.Reader, stdout, stderr io.Writer, extra map[string]string) error {
+	for k, v := range extra {
+		if !config.ValidUserEnv(k, v) {
+			return fmt.Errorf("unsafe run environment key %s", k)
+		}
+	}
+
 	project, err := FindProject(dir)
 	if err != nil {
 		return err
 	}
 	if project != nil && project.Mode == "docker" {
-		return project.RunDocker(context.Background(), dir, command, args)
+		vars := map[string]string{}
+		workspace, err := FindWorkspace(dir)
+		if err != nil {
+			return err
+		}
+		if workspace != nil {
+			vars, err = workspace.Environment()
+			if err != nil {
+				return err
+			}
+		}
+		for k, v := range extra {
+			vars[k] = v
+		}
+		return project.runDockerEnvironment(ctx, dir, command, args, vars, stdin, stdout, stderr)
 	}
-	if err := a.PrepareProject(context.Background(), dir); err != nil {
+	if err := a.PrepareProject(ctx, dir); err != nil {
 		return err
 	}
 	plan, err := a.PlanProjectEnvironment(dir)
@@ -90,15 +123,22 @@ func (a Activator) RunProject(dir, command string, args []string) error {
 		plan.Variables["VSM_"+strings.ToUpper(r.Tool)+"_VERSION"] = r.Version
 	}
 	plan.Variables["_VSM_ACTIVE_VERSIONS"] = plan.Label()
-	cmd, err := projectCommand(program, args)
+	for k, v := range extra {
+		plan.Variables[k] = v
+	}
+	cmd, err := projectCommandContext(ctx, program, args)
 	if err != nil {
 		return err
 	}
 	cmd.Dir = dir
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	cmd.Stdin = stdin
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
 	cmd.Env = buildEnv(plan.Paths, plan.Variables)
+	if ctx.Done() != nil {
+		mcpserver.ConfigureProcess(cmd)
+		cmd.WaitDelay = 2 * time.Second
+	}
 	if err := cmd.Run(); err != nil {
 		var ee *exec.ExitError
 		if errors.As(err, &ee) {

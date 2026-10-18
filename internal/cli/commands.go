@@ -16,6 +16,9 @@ import (
 )
 
 func (a *app) cmdInstall(args []string) error {
+	if len(args) == 1 && args[0] == "--locked" {
+		return a.useLock(true)
+	}
 	if a.paths.ProjectMode == "docker" {
 		return core.ErrDockerHostInstall
 	}
@@ -185,6 +188,17 @@ func (a *app) cmdUse(args []string) error {
 		}
 		target = a.paths.GlobalToolVersions()
 	} else {
+		workspace, err := core.FindWorkspace(a.cwd)
+		if err != nil {
+			return err
+		}
+		if workspace != nil && workspace.Root == a.cwd {
+			if err := core.SetProjectVersion(a.cwd, tool, version); err != nil {
+				return err
+			}
+			fmt.Printf("已设置 %s = %s（vsm.json）\n", tool, version)
+			return nil
+		}
 		target = filepath.Join(a.cwd, ".tool-versions")
 	}
 
@@ -746,18 +760,7 @@ func (a *app) cmdProxy(args []string) error {
 
 // resolveRemote 把版本要求（如 "20" / "latest"）解析为远端的具体版本号。
 func resolveRemote(p plugin.Plugin, spec string) (string, error) {
-	if spec == "latest" || spec == "" {
-		return p.LatestStable()
-	}
-	all, err := p.ListAll()
-	if err != nil {
-		return "", err
-	}
-	v := core.BestMatch(spec, all)
-	if v == "" {
-		return "", fmt.Errorf("找不到匹配 %q 的 %s 版本", spec, p.Name())
-	}
-	return v, nil
+	return core.ResolveToolVersion(p, spec)
 }
 
 func sortVersionsDesc(vs []string) {

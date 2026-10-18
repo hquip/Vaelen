@@ -15,6 +15,29 @@
 > 镜像切换、网络代理设置、安装进度条、当前目录 local 设置、一键写入用户级 PATH。
 > **macOS 版为 Universal 通用二进制**（Apple Silicon + Intel），隐藏式标题栏 + 原生菜单，内置 CLI，一个 `.app` 开箱即用。
 
+## v1.1.0 项目工作台（开发版本）
+
+新增可复现工具链与项目自动化，CLI、GUI、MCP 共用核心：
+
+- **工具链锁定**：`vsm.lock` 固定各平台的版本、安装定义与发布方摘要，`install --locked` / `run --locked` 拒绝静默使用不同构建。
+- **项目配置**：`vsm.json` 管理工具、dotenv、项目变量和命名任务；本机内容信任在配置变更后失效。
+- **任务执行**：依赖图、并行、超时/取消、退出码透传和输入/输出内容缓存。
+- **GUI 工作台**：编辑配置、锁定和安装、运行/停止任务、实时输出、工具目录与 GitHub 来源添加。
+- **安装来源**：通用 GitHub 发布包及原生可执行文件，唯一平台匹配与官方 SHA256；Temurin 精确构建、Zulu、Zig 官方摘要。
+- **AI**：14 个 MCP 工具，其中 7 个只读；支持锁定工具与受信任任务，不能自行授予信任。
+- **迁移与安装**：从 mise 版本 JSON 预览导入；Windows/Unix 安装脚本校验 SHA256 并保留旧程序。
+
+```bash
+vsm project init
+vsm project configure
+vsm lock
+vsm install --locked
+vsm project trust
+vsm tasks run test --locked
+```
+
+先检查生成的配置，再执行 trust。具体能力与边界见[项目工作台说明](docs/workspaces.md)。这些功能尚未包含在 v1.0.8 正式安装包中。
+
 ## 设计要点
 
 - **三大职责**：install（装版本）/ resolve（选版本）/ activate（让命令生效）。
@@ -120,7 +143,7 @@ sudo ln -sf /Applications/VSM.app/Contents/MacOS/vsm /usr/local/bin/vsm
 自行打包（需在 Mac 上，产出与 Release 相同的通用版 zip）：
 
 ```bash
-bash scripts/package-macos.sh 1.0.8 dist
+bash scripts/package-macos.sh 1.1.0 dist
 ```
 
 > 打 `v*` tag 即可由 GitHub Actions 在 Windows / macOS / Linux 三个 runner 上分别本地编译，

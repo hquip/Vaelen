@@ -135,6 +135,12 @@ func Run(args []string) (code int) {
 
 	var runErr error
 	switch cmd {
+	case "tools":
+		runErr = a.cmdTools(rest)
+	case "tasks":
+		runErr = a.cmdTasks(rest)
+	case "lock":
+		runErr = a.cmdLock(rest)
 	case "install", "i":
 		runErr = a.cmdInstall(rest)
 	case "uninstall", "rm":
@@ -251,6 +257,9 @@ const usageText = `vsm - 多语言版本管理器 (%s)
   version                      显示版本
   update [--check] [--gui]      从官方 GitHub 检查/校验并更新 VSM 自身
   logs [--tail N] [--level 级别] 查看日志；path / export <文件> / clear 管理日志
+  lock [--platform os/arch,...] [--update|--check] 锁定工具链；install/run 支持 --locked
+  tasks list|graph|run        项目任务、依赖、并行与内容缓存
+  tools list|search|add        工具目录与 GitHub 安装来源
   help [command [subcommand]]  查看总览或指定命令的用法、选项与示例
 
   list / list-all / current / detect / doctor / size / clean / context 支持 --json 结构化输出

@@ -64,3 +64,9 @@ fish 使用 `set -gx VSM_NOTIFY 1`。提示只在版本组合变化时写入 std
 3. 每次先计算完整方案，再生成脚本；任何要求无法满足时，`vsm env` 返回错误并输出完整的基础环境恢复脚本。
 4. 声明读取或安装索引读取失败时报告错误，不静默退回其它版本。
 5. 上下文查询不修改配置、下载文件或 shell 环境；建议命令始终需要调用方显式执行。
+
+## v1.1.0：锁文件与命名任务
+
+项目存在 vsm.lock 时，优先使用 `vsm run --locked -- <command>` 或 `vsm tasks run <task> --locked --json`，避免机器上其它已安装版本改变执行结果。安装使用 `vsm install --locked`。
+
+可读取 `vsm project inspect --json`、`vsm tasks graph --json`、`vsm lock --check --json`。任务与变量需先由用户检查并信任；Agent 不应绕过信任检查或自动执行 project trust。配置、dotenv 变更后信任失效。MCP 提供对应的只读查询和执行工具，不能自行授予信任。

@@ -101,18 +101,35 @@ func mcpTools(readOnly bool) []mcpserver.Tool {
 		makeTool("vsm_project_status", "Read project isolation mode, paths and Docker image.", map[string]any{}, nil, true),
 		makeTool("vsm_list", "List installed versions in this project's environment.", map[string]any{"tool": field("Optional registered tool name")}, nil, true),
 	}
+	tools = append(tools,
+		makeTool("vsm_project_inspect", "Inspect workspace tools, task graph and environment names; environment values are redacted.", map[string]any{}, nil, true),
+		makeTool("vsm_tasks", "Read named tasks and dependency graph without running them.", map[string]any{}, nil, true),
+		makeTool("vsm_lock_status", "Check whether vsm.lock matches the bound project requirements.", map[string]any{}, nil, true),
+		makeTool("vsm_catalog", "Search registered tools and available installation backends.", map[string]any{"query": field("Optional search term")}, nil, true),
+	)
 	if readOnly {
 		return tools
 	}
 	return append(tools,
+
+		makeTool("vsm_lock", "Create or refresh vsm.lock from official publisher metadata for selected platforms.", map[string]any{"platforms": map[string]any{"type": "array", "items": field("os/arch")}, "update": map[string]any{"type": "boolean"}, "timeout_seconds": installTimeoutField}, nil, false),
+		makeTool("vsm_install_locked", "Install exact verified lockfile artifacts into a local project environment.", map[string]any{"timeout_seconds": installTimeoutField}, nil, false),
+		makeTool("vsm_task_run", "Run a user-trusted named task and its dependencies. MCP cannot grant trust. Returns task results, bounded output and exit status.", map[string]any{"task": field("Task name"), "args": map[string]any{"type": "array", "items": field("Literal argument")}, "jobs": map[string]any{"type": "integer", "minimum": 1, "maximum": 16}, "locked": map[string]any{"type": "boolean"}, "no_cache": map[string]any{"type": "boolean"}, "timeout_seconds": timeoutField}, []string{"task"}, false),
 		makeTool("vsm_project_init", "Initialize one environment for the bound project. local is the default; docker needs an explicit image.", map[string]any{"mode": map[string]any{"type": "string", "enum": []string{"local", "versions", "docker"}}, "image": field("Docker image containing the required toolchains")}, nil, false),
 		makeTool("vsm_use", "Set a concrete version or numeric prefix in the bound project's .tool-versions. Does not change system settings.", map[string]any{"tool": field("Registered language/tool name"), "version": field("Concrete version, numeric prefix or latest")}, []string{"tool", "version"}, false),
 		makeTool("vsm_install", "Install a verified tool version in a local project environment. Publisher SHA256 is required. timeout_seconds: 1..600; default 600.", map[string]any{"tool": field("Registered tool name"), "version": field("Version or latest"), "timeout_seconds": installTimeoutField}, []string{"tool"}, false),
-		makeTool("vsm_run", "Execute a command using this project's toolchains. This runs project code and can modify project files. Local mode is an environment boundary, not an OS sandbox.", map[string]any{"command": field("Command name, e.g. go, node or python"), "args": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}, "install_missing": map[string]any{"type": "boolean"}, "timeout_seconds": timeoutField}, []string{"command"}, false),
+		makeTool("vsm_run", "Execute a command using this project's toolchains. This runs project code and can modify project files. Local mode is an environment boundary, not an OS sandbox.", map[string]any{"command": field("Command name, e.g. go, node or python"), "args": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}, "install_missing": map[string]any{"type": "boolean"}, "locked": map[string]any{"type": "boolean"}, "timeout_seconds": timeoutField}, []string{"command"}, false),
 	)
 }
 
 type mcpArguments struct {
+	Task           string   `json:"task"`
+	Query          string   `json:"query"`
+	Jobs           int      `json:"jobs"`
+	Locked         bool     `json:"locked"`
+	NoCache        bool     `json:"no_cache"`
+	Update         bool     `json:"update"`
+	Platforms      []string `json:"platforms"`
 	Tool           string   `json:"tool"`
 	Version        string   `json:"version"`
 	Mode           string   `json:"mode"`
@@ -149,7 +166,7 @@ func mcpCall(ctx context.Context, executable, root, name string, raw json.RawMes
 		return mcpserver.Result{}, fmt.Errorf("arguments must be an object")
 	}
 	timeout := 120
-	if name == "vsm_install" {
+	if name == "vsm_install" || name == "vsm_install_locked" || name == "vsm_lock" {
 		timeout = 600
 	}
 	if _, explicit := supplied["timeout_seconds"]; explicit {
@@ -163,7 +180,7 @@ func mcpCall(ctx context.Context, executable, root, name string, raw json.RawMes
 			return mcpserver.Result{}, unsupported(params.Tool)
 		}
 	}
-	if params.Version != "" && !regexp.MustCompile(`^(latest|[0-9][0-9A-Za-z._+-]*)$`).MatchString(params.Version) {
+	if params.Version != "" && !regexp.MustCompile(`^(latest|(?:temurin-|zulu-)?[0-9][0-9A-Za-z._+-]*)$`).MatchString(params.Version) {
 		return mcpserver.Result{}, fmt.Errorf("version must be a concrete version, numeric prefix or latest")
 	}
 	project, err := core.FindProject(root)
@@ -175,6 +192,68 @@ func mcpCall(ctx context.Context, executable, root, name string, raw json.RawMes
 	}
 	var args []string
 	switch name {
+	case "vsm_project_inspect":
+		args = []string{"project", "inspect", "--json"}
+	case "vsm_tasks":
+		args = []string{"tasks", "list", "--json"}
+	case "vsm_lock_status":
+		args = []string{"lock", "--check", "--json"}
+	case "vsm_catalog":
+		args = []string{"tools", "search", "--json"}
+		if params.Query != "" {
+			if strings.HasPrefix(params.Query, "-") {
+				return mcpserver.Result{}, fmt.Errorf("invalid query")
+			}
+			args = append(args, params.Query)
+		}
+	case "vsm_lock":
+		if project == nil || project.Mode == "docker" {
+			return mcpserver.Result{}, fmt.Errorf("initialize local/versions project before locking")
+		}
+		args = []string{"lock", "--json"}
+		if params.Update {
+			args = append(args, "--update")
+		}
+		if len(params.Platforms) > 6 {
+			return mcpserver.Result{}, fmt.Errorf("too many platforms")
+		}
+		for _, platform := range params.Platforms {
+			if _, err := core.ParseTarget(platform); err != nil {
+				return mcpserver.Result{}, err
+			}
+		}
+		if len(params.Platforms) > 0 {
+			args = append(args, "--platform", strings.Join(params.Platforms, ","))
+		}
+	case "vsm_install_locked":
+		if project == nil || project.Mode != "local" {
+			return mcpserver.Result{}, fmt.Errorf("locked MCP installation requires local mode")
+		}
+		args = []string{"install", "--locked"}
+	case "vsm_task_run":
+		if project == nil {
+			return mcpserver.Result{}, fmt.Errorf("initialize a project before running tasks")
+		}
+		if params.Task == "" || strings.HasPrefix(params.Task, "-") {
+			return mcpserver.Result{}, fmt.Errorf("task is required")
+		}
+		if _, explicit := supplied["jobs"]; explicit && (params.Jobs < 1 || params.Jobs > 16) {
+			return mcpserver.Result{}, fmt.Errorf("jobs must be 1..16")
+		}
+		args = []string{"tasks", "run", params.Task, "--json"}
+		if params.Jobs > 0 {
+			args = append(args, "--jobs", fmt.Sprint(params.Jobs))
+		}
+		if params.Locked {
+			args = append(args, "--locked")
+		}
+		if params.NoCache {
+			args = append(args, "--no-cache")
+		}
+		if len(params.Args) > 0 {
+			args = append(args, "--")
+			args = append(args, params.Args...)
+		}
 	case "vsm_context":
 		args = []string{"context", "--json"}
 	case "vsm_project_status":
@@ -219,6 +298,9 @@ func mcpCall(ctx context.Context, executable, root, name string, raw json.RawMes
 			return mcpserver.Result{}, fmt.Errorf("MCP will not install into the shared global environment; use local mode")
 		}
 		args = []string{"run"}
+		if params.Locked {
+			args = append(args, "--locked")
+		}
 		if params.InstallMissing {
 			args = append(args, "--install-missing")
 		}
@@ -229,6 +311,27 @@ func mcpCall(ctx context.Context, executable, root, name string, raw json.RawMes
 	}
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
 	defer cancel()
+	if name == "vsm_task_run" {
+		requestID := rand.Text()
+		report, runErr := core.RunTasks(ctx, root, executable, []string{params.Task}, core.TaskOptions{Jobs: params.Jobs, Locked: params.Locked, NoCache: params.NoCache, Args: params.Args, RequestID: requestID})
+		if ctx.Err() != nil && project != nil && project.Mode == "docker" {
+			cleanupMCPContainers(requestID)
+		}
+		budget := 1 << 20
+		for i := range report.Tasks {
+			if len(report.Tasks[i].Output) > budget {
+				report.Tasks[i].Output = strings.ToValidUTF8(report.Tasks[i].Output[:budget], "�")
+				report.Tasks[i].Truncated = true
+			}
+			budget -= len(report.Tasks[i].Output)
+		}
+		data := map[string]any{"project": root, "report": report}
+		if runErr != nil {
+			data["error"] = runErr.Error()
+		}
+		return mcpserver.ToolResult(data, runErr != nil), nil
+	}
+
 	cmd := exec.CommandContext(ctx, executable, args...)
 	cmd.Dir = root
 	// Subprocesses get a fixed boundary. Tool arguments cannot change cwd or enable

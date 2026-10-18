@@ -1,20 +1,29 @@
 package plugin
 
-import "sort"
+import (
+	"sort"
+	"sync"
+)
+
+var registryMu sync.RWMutex
 
 // builtins 保存所有内置插件，由各插件文件的 init() 注册。
 var builtins = map[string]Plugin{}
 
-func register(p Plugin) { builtins[p.Name()] = p }
+func register(p Plugin) { registryMu.Lock(); defer registryMu.Unlock(); builtins[p.Name()] = p }
 
 // Get 按名字取插件。
 func Get(name string) (Plugin, bool) {
+	registryMu.RLock()
+	defer registryMu.RUnlock()
 	p, ok := builtins[name]
 	return p, ok
 }
 
 // Names 返回所有已注册插件名（已排序）。
 func Names() []string {
+	registryMu.RLock()
+	defer registryMu.RUnlock()
 	names := make([]string, 0, len(builtins))
 	for n := range builtins {
 		names = append(names, n)
@@ -30,6 +39,10 @@ func DetectCommands() map[string][]string {
 	commands := map[string][]string{}
 	for _, name := range Names() {
 		commands[name] = []string{name}
+		raw, _ := Get(name)
+		if p, ok := raw.(manifestPlugin); ok && len(p.m.Commands) > 0 {
+			commands[name] = append([]string{}, p.m.Commands...)
+		}
 	}
 	for tool, names := range map[string][]string{
 		"python":  {"python", "python3"},

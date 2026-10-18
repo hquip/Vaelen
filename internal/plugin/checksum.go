@@ -13,6 +13,8 @@ import (
 	"vsm/internal/netcfg"
 )
 
+var officialHTTPClient = netcfg.Client(2 * time.Minute)
+
 // ChecksumFor obtains integrity metadata from the original publisher, never a mirror.
 func ChecksumFor(p Plugin, version string, target Target, downloadURL string) (string, error) {
 	if m, ok := p.(manifestPlugin); ok {
@@ -50,7 +52,7 @@ func fetchOfficial(raw string) ([]byte, error) {
 		return nil, err
 	}
 	req.Header.Set("User-Agent", "vsm")
-	resp, err := netcfg.Client(2 * time.Minute).Do(req)
+	resp, err := officialHTTPClient.Do(req)
 	if err != nil {
 		return nil, err
 	}

@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -42,6 +43,7 @@ func (j *javaPlugin) ListAll() ([]string, error) {
 	out := make([]string, 0, len(majors))
 	for _, v := range majors {
 		out = append(out, fmt.Sprintf("%d", v))
+		out = append(out, fmt.Sprintf("temurin-%d", v), fmt.Sprintf("zulu-%d", v))
 	}
 	return out, nil
 }
@@ -66,8 +68,14 @@ func (j *javaPlugin) Checksum(version string, t Target) (string, error) {
 	return a.SHA256, err
 }
 func (j *javaPlugin) Artifact(version string, t Target) (Artifact, error) {
-	major, err := strconv.Atoi(version)
-	if err != nil || major <= 0 || major > 9999 || strconv.Itoa(major) != version {
+	if strings.HasPrefix(version, "zulu-") {
+		return zuluArtifact(strings.TrimPrefix(version, "zulu-"), t)
+	}
+	originalVersion := version
+	version = strings.TrimPrefix(version, "temurin-")
+	majorText := strings.SplitN(version, ".", 2)[0]
+	major, err := strconv.Atoi(majorText)
+	if err != nil || major <= 0 || major > 9999 || strconv.Itoa(major) != majorText || !regexp.MustCompile(`^[0-9]+(?:\.[0-9]+)*(?:\+[0-9]+(?:\.[0-9]+)*)?$`).MatchString(version) {
 		return Artifact{}, fmt.Errorf("Java 安装版本需要大版本号，如 17 或 21")
 	}
 	osName := map[string]string{"windows": "windows", "linux": "linux", "darwin": "mac"}[t.OS]
@@ -79,10 +87,17 @@ func (j *javaPlugin) Artifact(version string, t Target) (Artifact, error) {
 		return Artifact{}, fmt.Errorf("java 不支持的架构: %s", t.Arch)
 	}
 	query := url.Values{"architecture": {archName}, "heap_size": {"normal"}, "jvm_impl": {"hotspot"}, "image_type": {"jdk"}, "os": {osName}, "project": {"jdk"}, "vendor": {"eclipse"}, "page": {"0"}, "page_size": {"1"}, "sort_order": {"DESC"}}
-	raw := fmt.Sprintf("https://api.adoptium.net/v3/assets/feature_releases/%d/ga?%s", major, query.Encode())
+	raw := ""
+	if version != majorText {
+		query.Set("page_size", "20")
+	}
 	var releases []struct {
 		ReleaseType string `json:"release_type"`
-		Binaries    []struct {
+		ReleaseName string `json:"release_name"`
+		VersionData struct {
+			Semver string `json:"semver"`
+		} `json:"version_data"`
+		Binaries []struct {
 			Architecture string `json:"architecture"`
 			OS           string `json:"os"`
 			ImageType    string `json:"image_type"`
@@ -97,12 +112,33 @@ func (j *javaPlugin) Artifact(version string, t Target) (Artifact, error) {
 		} `json:"binaries"`
 	}
 	// Integrity metadata always comes from the original Adoptium API.
-	if err := fetchJSONWithClient(httpClient, raw, &releases); err != nil {
-		return Artifact{}, err
+	for page := 0; page < 10; page++ {
+		query.Set("page", strconv.Itoa(page))
+		raw = fmt.Sprintf("https://api.adoptium.net/v3/assets/feature_releases/%d/ga?%s", major, query.Encode())
+		if err := fetchJSONWithClient(httpClient, raw, &releases); err != nil {
+			return Artifact{}, err
+		}
+		if version == majorText {
+			break
+		}
+		found := false
+		for _, release := range releases {
+			if javaReleaseIdentity(release.ReleaseName, release.VersionData.Semver) == version {
+				found = true
+				break
+			}
+		}
+		if found || len(releases) < 20 {
+			break
+		}
 	}
+
 	var selected Artifact
 	for _, release := range releases {
 		if release.ReleaseType != "ga" {
+			continue
+		}
+		if version != majorText && javaReleaseIdentity(release.ReleaseName, release.VersionData.Semver) != version {
 			continue
 		}
 		for _, b := range release.Binaries {
@@ -120,6 +156,19 @@ func (j *javaPlugin) Artifact(version string, t Target) (Artifact, error) {
 				return Artifact{}, fmt.Errorf("官方 Java 元数据缺少有效 SHA256 或包大小")
 			}
 			a := Artifact{URL: p.Link, SHA256: strings.ToLower(p.Checksum), Size: p.Size}
+			resolved := javaReleaseIdentity(release.ReleaseName, release.VersionData.Semver)
+			if resolved != "" {
+				if !regexp.MustCompile(`^[0-9]+(?:\.[0-9]+)*(?:\+[0-9]+(?:\.[0-9]+)*)?$`).MatchString(resolved) {
+					return Artifact{}, fmt.Errorf("invalid Java release identity")
+				}
+				a.Version = resolved
+				if strings.HasPrefix(originalVersion, "temurin-") {
+					a.Version = "temurin-" + resolved
+				}
+			}
+			if version != majorText && resolved != version {
+				return Artifact{}, fmt.Errorf("Java returned a different build for %s", originalVersion)
+			}
 			if selected.URL != "" && selected != a {
 				return Artifact{}, fmt.Errorf("官方 Java 元数据包含多个不一致的安装包")
 			}
@@ -142,4 +191,19 @@ func (j *javaPlugin) ExecEnv(installDir string) map[string]string {
 		return map[string]string{"JAVA_HOME": home}
 	}
 	return map[string]string{"JAVA_HOME": installDir}
+}
+
+func javaReleaseIdentity(name, semver string) string {
+	canonical := strings.TrimPrefix(name, "jdk-")
+	if regexp.MustCompile(`^[0-9]+(?:\.[0-9]+)*(?:\+[0-9]+(?:\.[0-9]+)*)?$`).MatchString(canonical) {
+		return canonical
+	}
+	if strings.HasPrefix(name, "jdk8u") {
+		m := regexp.MustCompile(`^jdk8u([0-9]+)-b([0-9]+)$`).FindStringSubmatch(name)
+		if len(m) > 0 {
+			build, _ := strconv.Atoi(m[2])
+			return "8.0." + m[1] + "+" + strconv.Itoa(build)
+		}
+	}
+	return semver
 }

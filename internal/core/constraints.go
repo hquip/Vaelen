@@ -12,6 +12,11 @@ var constraintPart = regexp.MustCompile(`(>=|<=|>|<|=|\^|~)?\s*(v?\d+(?:\.(?:\d+
 // dotted prefixes. Unsupported syntax never silently becomes a numeric prefix.
 func versionMatches(spec, candidate string) bool {
 	spec = strings.TrimSpace(spec)
+	for _, vendor := range []string{"temurin-", "zulu-"} {
+		if strings.HasPrefix(spec, vendor) {
+			return strings.HasPrefix(candidate, vendor) && versionMatches(strings.TrimPrefix(spec, vendor), strings.TrimPrefix(candidate, vendor))
+		}
+	}
 	release, prerelease := splitVersion(candidate)
 	if spec == "" || spec == "latest" || spec == "*" {
 		return len(prerelease) == 0

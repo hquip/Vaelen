@@ -19,6 +19,8 @@ var manifestFS embed.FS
 // 怎么下载、装到哪、需要哪些环境变量。内置一批，也可放到 ~/.vsm/plugins/*.json
 // （或 $VSM_HOME/plugins）由用户/社区扩展——这正是支持数十种语言而无需改代码的关键。
 type Manifest struct {
+	Commands  []string          `json:"commands,omitempty"`
+	Match     string            `json:"match,omitempty"`
 	Name      string            `json:"name"`
 	Source    ManifestSource    `json:"source"`
 	URL       string            `json:"url"`                 // 下载 URL 模板，占位 {version} {os} {arch} {asset}
@@ -41,6 +43,9 @@ type manifestPlugin struct{ m Manifest }
 func (p manifestPlugin) Name() string { return p.m.Name }
 
 func (p manifestPlugin) ListAll() ([]string, error) {
+	if p.m.Source.Type == "github-auto" {
+		return p.autoVersions()
+	}
 	owner, repo := splitRepo(p.m.Source.Repo)
 	var tags []string
 	var err error
@@ -76,6 +81,10 @@ func (p manifestPlugin) LatestStable() (string, error) {
 }
 
 func (p manifestPlugin) DownloadURL(version string, t Target) (string, error) {
+	if p.m.Source.Type == "github-auto" {
+		a, err := githubArtifact(p.m, version, t)
+		return a.URL, err
+	}
 	if len(p.m.Assets) == 0 {
 		return "", fmt.Errorf("%s: 暂未配置下载源（可被识别/切换；如需安装，请在 manifest 的 assets 中补充下载模板）", p.m.Name)
 	}
@@ -160,6 +169,15 @@ func loadManifests() {
 	}
 }
 
+// ReloadExternalTools is safe while the desktop frontend reads the registry.
+func ReloadExternalTools() {
+	for _, file := range externalManifestFiles() {
+		if data, err := os.ReadFile(file); err == nil {
+			registerManifestData(data)
+		}
+	}
+}
+
 // externalManifestFiles 返回用户自定义 manifest 目录下的所有 *.json。
 func externalManifestFiles() []string {
 	var dir string
@@ -201,6 +219,18 @@ func registerManifestData(data []byte) {
 }
 
 func validateManifest(m Manifest) error {
+	if len(m.Commands) > 16 || len(m.Match) > 256 || strings.ContainsAny(m.Match, "\x00\r\n") {
+		return fmt.Errorf("invalid manifest command/match")
+	}
+	for _, command := range m.Commands {
+		if !regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._+-]*$`).MatchString(command) {
+			return fmt.Errorf("unsafe command name")
+		}
+	}
+	if m.Source.Type == "github-auto" && !regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`).MatchString(m.Source.Repo) {
+		return fmt.Errorf("invalid GitHub repository")
+	}
+
 	if !regexp.MustCompile(`^[a-z][a-z0-9_+-]*$`).MatchString(m.Name) {
 		return fmt.Errorf("invalid manifest name %q", m.Name)
 	}
