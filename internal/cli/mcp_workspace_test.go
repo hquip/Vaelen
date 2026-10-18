@@ -15,7 +15,10 @@ import (
 func TestMCPWorkspaceToolsRespectTrustAndProjectBoundary(t *testing.T) {
 	bin := buildVsm(t)
 	t.Setenv("VSM_HOME", t.TempDir())
-	root := t.TempDir()
+	root, err := core.ProjectDirectory(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	if _, err := core.InitProject(root, "versions", ""); err != nil {
 		t.Fatal(err)
 	}
