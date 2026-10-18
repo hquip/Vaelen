@@ -15,7 +15,7 @@
 > 镜像切换、网络代理设置、安装进度条、当前目录 local 设置、一键写入用户级 PATH。
 > **macOS 版为 Universal 通用二进制**（Apple Silicon + Intel），隐藏式标题栏 + 原生菜单，内置 CLI，一个 `.app` 开箱即用。
 
-## v1.1.0 项目工作台（开发版本）
+## v1.1.0 项目工作台
 
 新增可复现工具链与项目自动化，CLI、GUI、MCP 共用核心：
 
@@ -36,7 +36,7 @@ vsm project trust
 vsm tasks run test --locked
 ```
 
-先检查生成的配置，再执行 trust。具体能力与边界见[项目工作台说明](docs/workspaces.md)。这些功能尚未包含在 v1.0.8 正式安装包中。
+先检查生成的配置，再执行 trust。具体能力与边界见[项目工作台说明](docs/workspaces.md)。下载 [v1.1.0 正式版](https://github.com/hquip/Vaelen/releases/tag/v1.1.0)；已有版本可运行 `vsm update --gui` 同步更新 CLI 和 GUI。
 
 ## 设计要点
 
