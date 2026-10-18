@@ -109,7 +109,7 @@ var commandHelpTopics = map[string]commandHelp{
 	"update": {
 		Summary: "从官方 GitHub 更新 VSM 自身", Usage: []string{"vsm update [--check] [--version <版本>] [--gui] [--json]"},
 		Options:  []string{"--check  仅检查可用版本，不修改程序", "--version <版本>  指定稳定版；不会降级", "--gui  同时更新相邻 GUI（macOS 应用内自动整体更新）", "--json  输出结构化结果"},
-		Notes:    []string{"校验官方 SHA256 后替换，失败恢复旧程序；不修改语言安装、项目配置或 AI 设置。", "Windows 使用中的旧文件可能保留备份，退出旧程序后可删除；目录需要可写。"},
+		Notes:    []string{"校验官方 SHA256 后替换，失败恢复旧程序；不修改语言安装、项目配置或 AI 设置。", "更新时在 stderr 显示下载进度、速度和校验阶段；--json 保持纯结构化输出。", "Windows 使用中的旧文件可能保留备份，退出旧程序后可删除；目录需要可写。"},
 		Examples: []string{"vsm update --check", "vsm update", "vsm update --gui"},
 	},
 	"install": {

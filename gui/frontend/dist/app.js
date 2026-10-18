@@ -81,11 +81,56 @@ let projectEnvBusy = false;
 let projectEnvFailed = false;
 let updateBusy=false;
 let updateApplied=false;
+let updateRunning=false;
+let lastUpdateProgress = null;
+let updateProgressAt = 0;
+let updateProgressTimer = null;
+function updateBytes(bytes) {
+  const value = Math.max(0, Number(bytes) || 0);
+  if (value < 1024) return Math.round(value) + " B";
+  if (value < 1024 * 1024) return (value / 1024).toFixed(1) + " KiB";
+  return (value / (1024 * 1024)).toFixed(1) + " MiB";
+}
+function renderUpdateProgress(progress, received = true) {
+  if (!progress || !updateBusy || updateApplied) return;
+  if (received) {
+    if (!lastUpdateProgress || progress.stage !== lastUpdateProgress.stage ||
+        progress.downloaded !== lastUpdateProgress.downloaded || progress.attempt !== lastUpdateProgress.attempt) updateProgressAt = Date.now();
+    // Failure events carry no partial-body buffer; keep the last byte count.
+    if (progress.stage === "failed" && lastUpdateProgress) progress = {...lastUpdateProgress, stage: "failed"};
+    lastUpdateProgress = progress;
+  }
+  const labels = {checking:"检查发布版本",downloading:"下载更新包",verifying:"校验 SHA256",extracting:"解压应用",validating:"验证程序与签名",replacing:"备份并替换程序",done:"更新完成",failed:"更新失败"};
+  document.getElementById("updateProgress").classList.remove("hidden");
+  document.getElementById("updateStage").textContent = labels[progress.stage] || "正在更新";
+  const bar = document.getElementById("updateProgressBar");
+  const total = Number(progress.overall_total || progress.total || 0);
+  const downloaded = Number(progress.overall_downloaded || progress.downloaded || 0);
+  if (progress.stage !== "done" && (progress.stage === "checking" || !total)) {
+    bar.removeAttribute("value");
+    document.getElementById("updatePercent").textContent = "";
+  } else {
+    const percent = progress.stage === "done" ? 100 : Math.min(100, Math.max(0, 100 * downloaded / total));
+    bar.value = percent;
+    document.getElementById("updatePercent").textContent = percent.toFixed(1) + "%";
+  }
+  let detail = progress.asset || "正在连接官方 GitHub…";
+  if (progress.file_count) detail = "文件 " + progress.file_index + "/" + progress.file_count + " · " + detail;
+  if (progress.stage === "downloading") {
+    const idle = Math.floor((Date.now() - updateProgressAt) / 1000);
+    detail += "\n" + updateBytes(downloaded) + " / " + updateBytes(total);
+    detail += idle >= 3 ? " · 等待网络数据 " + idle + " 秒" : " · " + updateBytes(progress.bytes_per_second) + "/s";
+    if (progress.attempt > 1) detail += " · 第 " + progress.attempt + "/3 次尝试";
+  }
+  document.getElementById("updateProgressDetails").textContent = detail;
+}
+
 async function checkVSMUpdate(){
   if(updateBusy||updateApplied)return;
   updateBusy=true;
   const status=document.getElementById("updateStatus"),error=document.getElementById("updateError");
   error.classList.add("hidden");document.getElementById("updateApply").disabled=true;document.getElementById("updateCheck").disabled=true;
+  document.getElementById("updateProgress").classList.add("hidden");
   status.textContent="正在检查官方 GitHub Release…";
   try{const info=await call("CheckUpdate");status.textContent="当前 "+info.current+" · 最新 "+info.latest+(info.available?" · 可以更新":" · 已是最新版本");document.getElementById("updateNotes").textContent=info.notes||"暂无发布说明";document.getElementById("updateApply").disabled=!info.available;}
   catch(e){error.textContent=errMsg(e);error.classList.remove("hidden");status.textContent="检查失败，可配置代理后重试";}
@@ -96,10 +141,15 @@ document.getElementById("updateCheck").addEventListener("click",checkVSMUpdate);
 document.getElementById("updateClose").addEventListener("click",()=>document.getElementById("updateModal").classList.add("hidden"));
 document.getElementById("updateApply").addEventListener("click",async()=>{
   if(updateBusy)return;updateBusy=true;document.getElementById("updateApply").disabled=true;document.getElementById("updateCheck").disabled=true;
-  const status=document.getElementById("updateStatus"),error=document.getElementById("updateError");error.classList.add("hidden");status.textContent="正在下载、校验并替换程序，请稍候…";
-  try{const result=await call("ApplyUpdate");updateApplied=true;status.textContent="已更新到 "+result.version+"，请关闭并重新启动 VSM。";if(result.backups&&result.backups.length)document.getElementById("updateNotes").textContent+="\n\n旧程序备份（重启后可删除）：\n"+result.backups.join("\n");}
-  catch(e){error.textContent=errMsg(e);error.classList.remove("hidden");status.textContent="更新失败，请检查原因后重试";document.getElementById("updateApply").disabled=false;}
-  finally{updateBusy=false;document.getElementById("updateCheck").disabled=updateApplied;}
+  const status=document.getElementById("updateStatus"),error=document.getElementById("updateError");error.classList.add("hidden");status.textContent="正在更新，下载完成后会校验并替换程序…";
+  updateRunning = true;
+  lastUpdateProgress = null;
+  renderUpdateProgress({stage:"checking"});
+  clearInterval(updateProgressTimer);
+  updateProgressTimer = setInterval(() => { if (lastUpdateProgress) renderUpdateProgress(lastUpdateProgress, false); }, 1000);
+  try{const result=await call("ApplyUpdate");renderUpdateProgress({...lastUpdateProgress,stage:"done"});updateApplied=true;status.textContent="已更新到 "+result.version+"，请关闭并重新启动 VSM。";if(result.backups&&result.backups.length)document.getElementById("updateNotes").textContent+="\n\n旧程序备份（重启后可删除）：\n"+result.backups.join("\n");}
+  catch(e){renderUpdateProgress({...lastUpdateProgress,stage:"failed"});error.textContent=errMsg(e);error.classList.remove("hidden");status.textContent="更新失败，请检查原因后重试";document.getElementById("updateApply").disabled=false;}
+  finally{clearInterval(updateProgressTimer);updateProgressTimer=null;updateRunning=false;updateBusy=false;document.getElementById("updateCheck").disabled=updateApplied;}
 });
 let mcpClients = [];
 
@@ -842,6 +892,7 @@ async function onVerAction(tool, act, ver) {
 
 function bindEvents() {
   if (window.runtime && typeof window.runtime.EventsOn === "function") {
+    window.runtime.EventsOn("update:progress", progress => { if (updateRunning) renderUpdateProgress(progress); });
     window.runtime.EventsOn("install:progress", (msg) => {
       const log = document.getElementById("installLog");
       if (log) {

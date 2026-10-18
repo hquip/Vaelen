@@ -50,15 +50,20 @@ type Result struct {
 	RestartRequired bool     `json:"restart_required"`
 }
 type Client struct {
-	http *http.Client
-	api  string
+	http                                    *http.Client
+	api                                     string
+	progress                                func(Progress)
+	fileIndex, fileCount                    int
+	currentAsset                            string
+	currentSize, totalBytes, completedBytes int64
 }
 
 func New() Client {
-	return Client{netcfg.Client(10 * time.Minute), "https://api.github.com/repos/hquip/Vaelen/releases"}
+	return Client{http: netcfg.Client(10 * time.Minute), api: "https://api.github.com/repos/hquip/Vaelen/releases"}
 }
 
 func (c Client) Check(ctx context.Context, current, version string) (info Info, err error) {
+	c.report(Progress{Stage: "checking"})
 	finish := logging.Start("updater", "check", logging.Fields{"current": current, "requested": version})
 	defer func() { finish(err) }()
 	endpoint := c.api + "/latest"
@@ -96,10 +101,18 @@ func (c Client) Check(ctx context.Context, current, version string) (info Info, 
 }
 
 func (c Client) get(ctx context.Context, raw string, limit int64) ([]byte, error) {
+	return c.getWithProgress(ctx, raw, limit, "")
+}
+
+func (c Client) getWithProgress(ctx context.Context, raw string, limit int64, asset string) ([]byte, error) {
 	var last error
 	for attempt := 0; attempt < 3; attempt++ {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
+		}
+		started := time.Now()
+		if asset != "" {
+			c.report(Progress{Stage: "downloading", Asset: asset, Total: limit, Attempt: attempt + 1})
 		}
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, raw, nil)
 		if err != nil {
@@ -113,8 +126,22 @@ func (c Client) get(ctx context.Context, raw string, limit int64) ([]byte, error
 				resp.Body.Close()
 				return nil, fmt.Errorf("GitHub 请求失败: HTTP %d（检查代理、网络或 API 限流）", resp.StatusCode)
 			}
-			data, readErr := io.ReadAll(io.LimitReader(resp.Body, limit+1))
+			var reader io.Reader = resp.Body
+			var progress *progressReader
+			if asset != "" {
+				progress = &progressReader{reader: resp.Body, started: started, lastEmit: started, update: func(received int64, speed float64) {
+					c.report(Progress{Stage: "downloading", Asset: asset, Downloaded: received, Total: limit, BytesPerSecond: speed, Attempt: attempt + 1})
+				}}
+				reader = progress
+			}
+			data, readErr := io.ReadAll(io.LimitReader(reader, limit+1))
 			resp.Body.Close()
+			if progress != nil {
+				progress.emit()
+			}
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
 			if int64(len(data)) > limit {
 				return nil, fmt.Errorf("更新资源超过大小上限")
 			}
@@ -211,13 +238,14 @@ func (c Client) download(ctx context.Context, info Info, name, dest string) erro
 			return fmt.Errorf("发布方未提供 %s 的 SHA256；停止更新", name)
 		}
 	}
-	data, err := c.get(ctx, a.URL, a.Size)
+	data, err := c.getWithProgress(ctx, a.URL, a.Size, name)
 	if err != nil {
 		return err
 	}
 	if int64(len(data)) != a.Size {
 		return fmt.Errorf("更新包长度不一致")
 	}
+	c.report(Progress{Stage: "verifying", Asset: name, Downloaded: a.Size, Total: a.Size})
 	hash := sha256.Sum256(data)
 	if hex.EncodeToString(hash[:]) != sum {
 		return fmt.Errorf("%s SHA256 校验失败，旧程序未更改", name)
@@ -253,7 +281,14 @@ func guiAsset() (string, error) {
 // Windows may retain a running executable backup until the process exits.
 func (c Client) Apply(ctx context.Context, info Info, executable string, withGUI bool) (result Result, err error) {
 	finish := logging.Start("updater", "apply", logging.Fields{"version": info.Latest, "gui": withGUI})
-	defer func() { finish(err) }()
+	defer func() {
+		finish(err)
+		stage := "done"
+		if err != nil {
+			stage = "failed"
+		}
+		c.report(Progress{Stage: stage})
+	}()
 	result = Result{Version: info.Latest}
 	if !stableVersion.MatchString(info.Latest) || core.CompareVersions(info.Latest, info.Current) <= 0 {
 		return result, fmt.Errorf("目标版本不比当前版本新，拒绝降级或重复替换")
@@ -268,6 +303,11 @@ func (c Client) Apply(ctx context.Context, info Info, executable string, withGUI
 	}
 	if runtime.GOOS == "darwin" {
 		if bundle := macBundle(exe); bundle != "" {
+			c.fileIndex, c.fileCount = 1, 1
+			c.currentAsset = "vsm-gui-macos-universal.zip"
+			if a, e := info.asset(c.currentAsset); e == nil {
+				c.currentSize, c.totalBytes = a.Size, a.Size
+			}
 			return c.applyBundle(ctx, info, bundle)
 		}
 		if withGUI {
@@ -315,8 +355,19 @@ func (c Client) Apply(ctx context.Context, info Info, executable string, withGUI
 			items = append(items, replacement{Target: adjacentGUI(parent, guiName, asset), Asset: asset, Main: "vsm/gui"})
 		}
 	}
+	c.fileCount = len(items)
+	for _, item := range items {
+		a, err := info.asset(item.Asset)
+		if err != nil {
+			return result, err
+		}
+		c.totalBytes += a.Size
+	}
 	for n := range items {
 		item := &items[n]
+		c.fileIndex, c.currentAsset = n+1, item.Asset
+		a, _ := info.asset(item.Asset)
+		c.currentSize = a.Size
 		item.Staged = filepath.Join(stage, fmt.Sprintf("new-%d", n))
 		if runtime.GOOS == "windows" {
 			item.Staged += ".exe"
@@ -324,13 +375,16 @@ func (c Client) Apply(ctx context.Context, info Info, executable string, withGUI
 		if err := c.download(ctx, info, item.Asset, item.Staged); err != nil {
 			return result, err
 		}
+		c.report(Progress{Stage: "validating", Downloaded: c.currentSize})
 		if err := validateBinary(ctx, item.Staged, item.Main, info.Latest); err != nil {
 			return result, err
 		}
+		c.completedBytes += c.currentSize
 	}
 	if ctx.Err() != nil {
 		return result, ctx.Err()
 	}
+	c.report(Progress{Stage: "replacing"})
 	return replaceFiles(info.Latest, stage, items)
 }
 
@@ -466,11 +520,14 @@ func (c Client) applyBundle(ctx context.Context, info Info, bundle string) (Resu
 	if err := c.download(ctx, info, "vsm-gui-macos-universal.zip", archive); err != nil {
 		return result, err
 	}
+	c.completedBytes = c.totalBytes
+	c.report(Progress{Stage: "extracting"})
 	extracted := filepath.Join(stage, "extracted")
 	if err := core.ExtractWithLimits(archive, extracted, core.ArchiveLimits{MaxFiles: 2000, MaxFileBytes: 256 << 20, MaxTotalBytes: 512 << 20}); err != nil {
 		return result, err
 	}
 	app := filepath.Join(extracted, "VSM.app")
+	c.report(Progress{Stage: "validating"})
 	cmd := exec.CommandContext(ctx, "/usr/bin/codesign", "--verify", "--deep", "--strict", app)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return result, fmt.Errorf("macOS 应用签名验证失败: %v %.2000s", err, out)
@@ -486,6 +543,7 @@ func (c Client) applyBundle(ctx context.Context, info Info, bundle string) (Resu
 	if ctx.Err() != nil {
 		return result, ctx.Err()
 	}
+	c.report(Progress{Stage: "replacing"})
 	if err := os.Rename(bundle, backup); err != nil {
 		return result, fmt.Errorf("备份应用失败: %w", err)
 	}

@@ -110,6 +110,11 @@
     <div class="modal-card project-env-card">
       <h3 id="updateTitle" class="modal-title">从 GitHub 更新 VSM</h3>
       <p id="updateStatus" class="modal-sub" role="status">正在检查官方发布…</p>
+      <div id="updateProgress" class="update-progress hidden" aria-live="polite">
+        <div class="update-progress-row"><span id="updateStage">准备更新</span><span id="updatePercent"></span></div>
+        <progress id="updateProgressBar" max="100" value="0" aria-label="更新下载进度"></progress>
+        <p id="updateProgressDetails" class="project-hint"></p>
+      </div>
       <div class="project-env-body"><pre id="updateNotes" class="project-commands"></pre></div>
       <p id="updateError" class="project-error hidden" role="alert"></p>
       <p class="project-hint">更新 GUI 与配套 CLI，验证 SHA256。项目环境和已安装语言保持原样，更新后请重新启动 VSM。</p>

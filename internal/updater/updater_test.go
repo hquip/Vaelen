@@ -49,7 +49,7 @@ func releaseFixtureAsset(t *testing.T, data []byte, name string) (Client, Info) 
 	t.Cleanup(server.Close)
 	httpClient := server.Client()
 	httpClient.Transport = redirectTransport{httpClient.Transport, strings.TrimPrefix(server.URL, "http://")}
-	client := Client{httpClient, "https://api.github.com/repos/hquip/Vaelen/releases"}
+	client := Client{http: httpClient, api: "https://api.github.com/repos/hquip/Vaelen/releases"}
 	info, err := client.Check(context.Background(), "v1.0.4", "")
 	if err != nil {
 		t.Fatal(err)

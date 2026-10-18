@@ -9,6 +9,8 @@
 # 本地测试 / 数据目录
 /.vsmtest/
 /.vsm/
+/.vsm-update.lock
+/.vsm-update-*/
 
 # 编辑器 / 插件本地文件（含绝对路径、token、对话历史，勿提交）
 .specstory/
