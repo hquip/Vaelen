@@ -99,6 +99,9 @@ func (p manifestPlugin) DownloadURL(version string, t Target) (string, error) {
 }
 
 func (p manifestPlugin) BinPaths(installDir string) []string {
+	if p.m.Name == "maven" {
+		return mavenBinPaths(installDir)
+	}
 	if p.m.Bin == "" {
 		return []string{installDir}
 	}
@@ -106,6 +109,16 @@ func (p manifestPlugin) BinPaths(installDir string) []string {
 }
 
 func (p manifestPlugin) ExecEnv(installDir string) map[string]string {
+	if p.m.Name == "maven" {
+		root := installDir
+		// Older VSM releases adopted Maven's bin directory as the install root.
+		if real, err := filepath.EvalSymlinks(installDir); err == nil && strings.EqualFold(filepath.Base(real), "bin") {
+			if info, err := os.Stat(filepath.Join(filepath.Dir(real), "lib")); err == nil && info.IsDir() {
+				root = filepath.Dir(real)
+			}
+		}
+		return map[string]string{"MAVEN_HOME": root, "M2_HOME": root}
+	}
 	if len(p.m.Env) == 0 {
 		return nil
 	}

@@ -211,10 +211,21 @@ func (a *app) cmdUse(args []string) error {
 			target, len(warns), strings.Join(warns, ", "))
 	}
 	tv.Set(tool, version)
-	if err := tv.Save(target); err != nil {
-		return err
+	var saveErr error
+	if global {
+		saveErr = a.act.SetGlobalVersion(tool, version)
+	} else {
+		saveErr = tv.Save(target)
+	}
+	if saveErr != nil {
+		return saveErr
 	}
 	fmt.Printf("已设置 %s = %s （%s）\n", tool, version, target)
+	if global {
+		for _, warning := range a.act.ActivationStatus(tool, a.cwd).Warnings {
+			fmt.Println("提示:", warning)
+		}
+	}
 	if a.res.Resolve(tool, a.cwd).Version == "" {
 		fmt.Printf("提示: 未找到已安装且匹配 %q 的版本，运行 `vsm install %s %s`\n", version, tool, version)
 	}
@@ -429,10 +440,16 @@ func (a *app) cmdEnv(args []string) error {
 }
 
 // cmdPathInit 让新开的终端自动启用 vsm：
-//   - Windows：把 shims 写入用户级 PATH 并广播；
+//   - Windows：把 shims 写入用户级 PATH 并配置 PowerShell 启动钩子；
 //   - macOS / Linux：把 `eval "$(vsm activate <shell>)"` 写入 shell 配置文件
 //     （此前这里直接报错，macOS 用户只能手动改 ~/.zshrc）。
 func (a *app) cmdPathInit(args []string) error {
+	if len(args) > 1 {
+		return fmt.Errorf("用法: vsm path-init [shell]")
+	}
+	if runtime.GOOS == "windows" && len(args) == 1 && args[0] != "powershell" && args[0] != "pwsh" && args[0] != "cmd" {
+		return fmt.Errorf("Windows 自动配置支持 powershell / pwsh / cmd；其它终端请使用 vsm activate <shell>")
+	}
 	if a.paths.ProjectMode == "local" || a.paths.ProjectMode == "docker" {
 		return fmt.Errorf("隔离项目使用 vsm run 或现有 shell hook，不把项目目录持久写入系统 PATH")
 	}
@@ -447,12 +464,21 @@ func (a *app) cmdPathInit(args []string) error {
 		if err != nil {
 			return err
 		}
-		if res == "added" {
-			fmt.Println("已把 shims 目录写入用户级 PATH 并广播：", a.paths.Shims())
-			fmt.Println("新开终端即可直接使用 go/node 等（按目录 .tool-versions 自动切换）。")
-		} else {
-			fmt.Println("shims 目录已在用户 PATH 中：", a.paths.Shims())
+		fmt.Println("用户 PATH（"+res+"）:", a.paths.Shims())
+		if len(args) == 0 || args[0] != "cmd" {
+			profiles, err := core.PersistPowerShellHooks(a.act.VsmExe)
+			if err != nil {
+				return fmt.Errorf("用户 PATH 已写入，但 PowerShell 激活配置失败: %w", err)
+			}
+			for _, path := range profiles.Paths {
+				fmt.Println("已配置 PowerShell 启动钩子:", path)
+			}
+			for _, warning := range profiles.Warnings {
+				fmt.Println("提示:", warning)
+			}
+			fmt.Println("请新开 PowerShell；已有终端执行:", core.PowerShellActivationCommand(a.act.VsmExe))
 		}
+		fmt.Println("用户 PATH 不会覆盖系统 PATH 中的同名命令。cmd 可执行 vsm exec <tool> -- <命令>，或将 shims 前置到当前 PATH。")
 		return nil
 	}
 	shell := core.DefaultShell()
@@ -497,6 +523,9 @@ func (a *app) cmdDetect(args []string) error {
 			ver = "?"
 		}
 		fmt.Printf("  %-8s %-14s %s\n", s.Tool, ver, s.Path)
+		if s.ManagedVersion != "" {
+			fmt.Printf("    %s；管理标识: %s\n", s.Environment, s.ManagedVersion)
+		}
 		if s.VersionError != "" {
 			fmt.Printf("    版本读取失败: %s\n", s.VersionError)
 		}
@@ -517,6 +546,9 @@ func (a *app) cmdDetect(args []string) error {
 
 func (a *app) cmdAdopt(args []string) error {
 	if len(args) >= 1 && (args[0] == "--all" || args[0] == "-a") {
+		if len(args) != 1 {
+			return fmt.Errorf("用法: vsm adopt --all")
+		}
 		return a.adoptAll()
 	}
 	if len(args) < 1 {
@@ -526,6 +558,38 @@ func (a *app) cmdAdopt(args []string) error {
 	p, ok := plugin.Get(tool)
 	if !ok {
 		return unsupported(tool)
+	}
+	if len(args) > 1 && strings.HasPrefix(args[1], "--") {
+		path, alias := "", ""
+		for i := 1; i < len(args); i++ {
+			if i+1 >= len(args) {
+				return fmt.Errorf("用法: vsm adopt <tool> --path <目录或可执行文件> [--name <标识>]")
+			}
+			switch args[i] {
+			case "--path":
+				path = args[i+1]
+			case "--name":
+				alias = args[i+1]
+			default:
+				return fmt.Errorf("未知选项: %s", args[i])
+			}
+			i++
+		}
+		if path == "" {
+			return fmt.Errorf("缺少 --path")
+		}
+		s, err := a.inst.AdoptPath(tool, path, alias)
+		if err != nil {
+			return err
+		}
+		if err := a.act.GenerateShims(); err != nil {
+			return fmt.Errorf("已纳管，但重建 shim 失败: %w", err)
+		}
+		fmt.Printf("已纳管 %s %s（版本 %s）\n  -> %s\n", tool, s.RegistryVersion(), s.Version, s.Path)
+		return nil
+	}
+	if len(args) > 3 {
+		return fmt.Errorf("用法: vsm adopt <tool> [version] [可执行路径]")
 	}
 	var version, execPath string
 	if len(args) >= 2 {
@@ -546,7 +610,7 @@ func (a *app) cmdAdopt(args []string) error {
 		switch {
 		case version != "":
 			for _, s := range sys {
-				if s.Version == version {
+				if s.RegistryVersion() == version {
 					execPath = s.Path
 				}
 			}
@@ -554,12 +618,12 @@ func (a *app) cmdAdopt(args []string) error {
 				return fmt.Errorf("系统检测中没有 %s %s", tool, version)
 			}
 		case len(sys) == 1:
-			version, execPath = sys[0].Version, sys[0].Path
+			version, execPath = sys[0].RegistryVersion(), sys[0].Path
 		default:
 			var b strings.Builder
 			fmt.Fprintf(&b, "检测到多个 %s 版本，请指定其一：vsm adopt %s <version>\n", tool, tool)
 			for _, s := range sys {
-				fmt.Fprintf(&b, "  %-12s %s\n", s.Version, s.Path)
+				fmt.Fprintf(&b, "  %-12s %s %s\n", s.RegistryVersion(), s.Environment, s.Path)
 			}
 			return fmt.Errorf("%s", strings.TrimRight(b.String(), "\n"))
 		}
@@ -578,18 +642,19 @@ func (a *app) adoptAll() error {
 	sys := core.DetectSystem(plugin.DetectCommands(), a.paths.Shims())
 	n := 0
 	for _, s := range sys {
+		version := s.RegistryVersion()
 		p, ok := plugin.Get(s.Tool)
 		if !ok || s.Version == "" {
 			continue
 		}
-		if a.reg.IsInstalled(s.Tool, s.Version) {
+		if a.reg.IsInstalled(s.Tool, version) {
 			continue
 		}
-		if err := a.inst.Adopt(p, s.Version, s.Path); err != nil {
-			fmt.Printf("  跳过 %s %s：%v\n", s.Tool, s.Version, err)
+		if err := a.inst.Adopt(p, version, s.Path); err != nil {
+			fmt.Printf("  跳过 %s %s：%v\n", s.Tool, version, err)
 			continue
 		}
-		fmt.Printf("  纳管 %s %s\n", s.Tool, s.Version)
+		fmt.Printf("  纳管 %s %s\n", s.Tool, version)
 		n++
 	}
 	if err := a.act.GenerateShims(); err != nil {

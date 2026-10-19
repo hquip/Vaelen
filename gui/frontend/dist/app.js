@@ -31,11 +31,20 @@ async function refreshLogs() {
   document.getElementById("logsLocation").textContent = snapshot.directory;
   const bytes = (snapshot.files || []).reduce((sum, file) => sum + file.bytes, 0);
   document.getElementById("logsStatus").textContent = "记录级别: " + snapshot.level + " · " +
-    (bytes / 1024).toFixed(1) + " KiB · " + snapshot.entries.length + " 条记录（最新在前）";
+    (bytes / 1024).toFixed(1) + " KiB · " + snapshot.entries.length + " 条记录（最新在前） · 本地时间（" + Intl.DateTimeFormat().resolvedOptions().timeZone + "）；导出保留 UTC";
   document.getElementById("logsText").textContent = snapshot.entries.length
-    ? [...snapshot.entries].reverse().map(entry => entry.time + " [" + entry.level.toUpperCase() + "] " +
+    ? [...snapshot.entries].reverse().map(entry => localLogTime(entry.time) + " [" + entry.level.toUpperCase() + "] " +
       entry.component + " · " + entry.event + "\n" + JSON.stringify(entry.fields || {})).join("\n\n")
     : "暂无符合条件的日志。完成操作后点击刷新；调试记录需在启动 VSM 前设置 VSM_LOG_LEVEL=debug。";
+}
+function localLogTime(value) {
+  const time = new Date(value);
+  if (!Number.isFinite(time.getTime())) return value;
+  const pad = (n, width = 2) => String(n).padStart(width, "0");
+  const offset = -time.getTimezoneOffset();
+  return time.getFullYear() + "-" + pad(time.getMonth() + 1) + "-" + pad(time.getDate()) + " " +
+    pad(time.getHours()) + ":" + pad(time.getMinutes()) + ":" + pad(time.getSeconds()) + "." + pad(time.getMilliseconds(), 3) + " " +
+    (offset >= 0 ? "+" : "-") + pad(Math.floor(Math.abs(offset) / 60)) + ":" + pad(Math.abs(offset) % 60);
 }
 async function logsAction(action) {
   if (logsBusy) return;
@@ -73,6 +82,31 @@ document.addEventListener("keydown", event => { if (event.key === "Escape") clos
 let state = [];
 let selected = null;
 let sysCache = {};
+let systemScan = null;
+let detectionEpoch = 0;
+let detectionRequests = {};
+function clearDetectionCache() {
+  sysCache = {}; systemScan = null; detectionEpoch++; detectionRequests = {};
+}
+async function detectedVersions(tool) {
+  if (tool && Object.prototype.hasOwnProperty.call(sysCache, tool)) return sysCache[tool];
+  if (systemScan !== null) return tool ? systemScan.filter(v => v.tool === tool) : systemScan;
+  const key = tool || "*";
+  if (tool && detectionRequests["*"]) return (await detectionRequests["*"]).filter(v => v.tool === tool);
+  if (detectionRequests[key]) return detectionRequests[key];
+  const epoch = detectionEpoch;
+  const pending = call(tool ? "DetectTool" : "DetectSystem", ...(tool ? [tool] : [])).then(items => {
+    const result = (items || []).filter(v => !tool || v.tool === tool);
+    if (epoch === detectionEpoch) {
+      if (tool) sysCache[tool] = result;
+      else { systemScan = result; for (const s of state) sysCache[s.tool] = result.filter(v => v.tool === s.tool); }
+    }
+    return result;
+  }).finally(() => { if (detectionRequests[key] === pending) delete detectionRequests[key]; });
+  detectionRequests[key] = pending;
+  return pending;
+}
+function runtimeID(runtime) { return runtime.managed_version || runtime.version; }
 let curDir = "";
 let installDir = "";
 let projectMode = "";
@@ -509,12 +543,12 @@ function renderDetail(tool) {
   const isActive = !!s.current;
   const installedCount = (s.installed && s.installed.length) || 0;
   const headBadge = projectMode === "docker" ? `<span class="head-badge on">Docker 容器</span>` : isActive
-    ? `<span class="head-badge on">● ${escapeHtml(s.current)} 生效中</span>`
+    ? `<span class="head-badge on">● VSM 选择 ${escapeHtml(s.current)}</span>`
     : `<span class="head-badge off">未启用</span>`;
   const cards = `
     <div class="stat-cards">
       <div class="stat-card">
-        <div class="sc-label">当前版本</div>
+        <div class="sc-label">VSM 选择版本</div>
         <div class="sc-value ${isActive ? "green" : "muted"}">${projectMode === "docker" ? "运行时校验镜像版本" : isActive ? escapeHtml(s.current) : "未设置"}</div>
       </div>
       <div class="stat-card">
@@ -538,7 +572,7 @@ function renderDetail(tool) {
   const hint = projectMode === "local" || projectMode === "docker"
     ? `<p class="act-hint">项目隔离模式：在项目目录使用 <code>vsm run -- &lt;命令&gt;</code>，不会修改系统 PATH。可在「隔离环境 / MCP」生成 AI 客户端配置。</p>`
     : installedCount
-    ? `<p class="act-hint">💡 终端里让 <code>${escapeHtml(tool)}</code> 用 vsm 选的版本需先激活：点顶部「⚡ 激活PATH」，或终端运行 <code>vsm activate &lt;shell&gt;</code>。快速验证：<code>vsm exec ${escapeHtml(tool)} -- ${escapeHtml(tool)} --version</code></p>`
+    ? `<p class="act-hint">终端需执行激活脚本：PowerShell 用 <code>vsm activate powershell | Out-String | Invoke-Expression</code>；bash/zsh 用 <code>eval &quot;$(vsm activate bash)&quot;</code>（zsh 替换 shell 名）。点击「激活 PATH」配置后续终端；已打开的终端需重新激活。全局默认不会覆盖项目或环境变量。</p>`
     : "";
 
   let versHtml;
@@ -567,6 +601,7 @@ function renderDetail(tool) {
     <div class="detail-head">${langIcon(tool, 42)}<h2>${escapeHtml(displayName(tool))}</h2>${headBadge}</div>
     ${cards}
     ${hint}
+    ${s.activation ? `<div class="act-hint"><strong>全局默认：</strong>${escapeHtml(s.activation.global || "未设置")}<br /><strong>VSM 选择的程序：</strong><code>${escapeHtml(s.activation.executable || "未找到")}</code><br /><strong>GUI 进程 PATH 命中：</strong><code>${escapeHtml(s.activation.command || "未找到")}</code>${(s.activation.warnings || []).map(w => `<p>${escapeHtml(w)}</p>`).join("")}</div>` : ""}
 
     ${projectMode === "docker" ? `
     <div class="section">
@@ -584,7 +619,7 @@ function renderDetail(tool) {
     </div>
 
     <div class="section">
-      <p class="section-title">系统检测到的版本 <span class="muted-tag">非 vsm 管理</span><button id="adoptToolAllBtn" class="mini" style="margin-left:10px;vertical-align:middle">全部纳管</button></p>
+      <p class="section-title">系统检测到的版本 <span class="muted-tag">非 vsm 管理</span><button id="adoptToolAllBtn" class="mini" style="margin-left:10px;vertical-align:middle">全部纳管</button><button id="addToolPathBtn" class="mini">添加路径</button><button id="rescanToolBtn" class="mini">重新检测</button></p>
       <div id="sysVers"><div class="empty-hint">检测中…</div></div>
     </div>
 
@@ -611,6 +646,10 @@ function renderDetail(tool) {
   });
   const ata = document.getElementById("adoptToolAllBtn");
   if (ata) ata.addEventListener("click", () => onAdoptToolAll(tool));
+  const addPath = document.getElementById("addToolPathBtn");
+  if (addPath) addPath.addEventListener("click", () => openManualRuntime(tool));
+  const rescan = document.getElementById("rescanToolBtn");
+  if (rescan) rescan.addEventListener("click", () => { clearDetectionCache(); loadSysVers(tool); });
   const pdc = document.getElementById("projDirCard");
   if (pdc) pdc.addEventListener("click", () => pickProjectDir(tool));
   const verInput = document.getElementById("versionInput");
@@ -664,13 +703,13 @@ function isInstalledVersion(tool, ver) {
 }
 
 function sysRow(tool, v) {
-  const versionLabel = v.version || "版本读取失败";
+  const versionLabel = (v.version || "版本读取失败") + (v.environment ? " · " + v.environment : "");
   const versionHint = v.version_error || (v.version ? "" : "已找到可执行文件，但未能读取版本；请检查安装后重新检测。");
   const action = !v.version
     ? ""
-    : isInstalledVersion(tool, v.version)
+    : isInstalledVersion(tool, runtimeID(v))
       ? `<span class="sys-tag">已纳管</span>`
-      : `<button class="mini" data-tool="${escapeHtml(tool)}" data-adopt="${escapeHtml(v.version)}" data-path="${escapeHtml(v.path)}">纳管</button>`;
+      : `<button class="mini" data-tool="${escapeHtml(tool)}" data-adopt="${escapeHtml(runtimeID(v))}" data-path="${escapeHtml(v.path)}">纳管</button>`;
   return `
       <li class="ver">
         <span class="vname" title="${escapeHtml(versionHint)}">${escapeHtml(versionLabel)}</span>
@@ -700,9 +739,9 @@ async function onAdopt(tool, version, path) {
   try {
     await call("AdoptTool", tool, version, path);
     toast(`已纳管 ${tool} ${version}`);
+    const view = selected;
     await load();
-    if (selected === tool) renderDetail(tool);
-    else showDetectOverview();
+    if (view === null && selected === null) showDetectOverview();
   } catch (e) {
     toast("纳管失败: " + e.message, true);
   }
@@ -710,27 +749,24 @@ async function onAdopt(tool, version, path) {
 
 async function onAdoptToolAll(tool) {
   try {
-    const n = await call("AdoptToolAll", tool);
+    const n = await call("AdoptDetected", await detectedVersions(tool));
     toast(`已纳管 ${tool} ${n} 个版本`);
   } catch (e) {
     // 部分成功时后端也会返回错误（列出失败项），这里照样刷新界面
     toast(errMsg(e), true);
   }
-  sysCache = {};
   await load();
-  if (selected === tool) renderDetail(tool);
 }
 
 async function onAdoptAll() {
   try {
-    const n = await call("AdoptAll");
+    const n = await call("AdoptDetected", await detectedVersions());
     toast(`已纳管 ${n} 个系统版本`);
   } catch (e) {
     toast(errMsg(e), true);
   }
-  sysCache = {};
   await load();
-  showDetectOverview();
+  if (selected === null) showDetectOverview();
 }
 
 // Wails 把 Go 的 error 以字符串或 Error 对象形式抛给前端，这里统一取文本。
@@ -741,6 +777,7 @@ function errMsg(e) {
 }
 
 async function loadSysVers(tool) {
+  const epoch = detectionEpoch;
   let box = document.getElementById("sysVers");
   if (!box) return;
   if (sysCache[tool]) {
@@ -750,39 +787,41 @@ async function loadSysVers(tool) {
   box.innerHTML = `<div class="empty-hint">检测中…</div>`;
   let list;
   try {
-    list = await call("DetectTool", tool);
+    list = await detectedVersions(tool);
   } catch (e) {
     box = document.getElementById("sysVers");
-    if (box && selected === tool) {
+    if (box && selected === tool && epoch === detectionEpoch) {
       box.innerHTML = `<div class="empty-hint">检测失败：${escapeHtml(e.message)}</div>`;
     }
     return;
   }
-  sysCache[tool] = list || [];
   box = document.getElementById("sysVers");
-  if (box && selected === tool) renderSysVers(tool, box, sysCache[tool]);
+  if (box && selected === tool && epoch === detectionEpoch) renderSysVers(tool, box, list);
 }
 
 async function showDetectOverview() {
+  const epoch = detectionEpoch;
   selected = null;
   renderSidebar();
   const detail = document.getElementById("detail");
   detail.innerHTML = `
-    <div class="detail-head"><h2>系统检测</h2><span class="head-badge off">非 vsm 管理</span><button id="adoptAllBtn" class="mini" style="margin-left:auto">全部纳管</button></div>
-    <p class="overview-sub">扫描系统 PATH，列出所有非 vsm 安装的语言运行时（含多版本）。点「纳管」加入单个，或「全部纳管」一次纳入全部。</p>
+    <div class="detail-head"><h2>系统检测</h2><span class="head-badge off">外部运行时</span><button id="manualRuntimeBtn" class="mini" style="margin-left:auto">手动添加路径</button><button id="rescanAllBtn" class="mini">重新检测</button><button id="adoptAllBtn" class="mini">全部纳管</button></div>
+    <p class="overview-sub">扫描 PATH、语言环境变量和已有 Conda Python 环境。纳管后复用本次结果；新增或删除外部安装后点击「重新检测」。扫描不到的安装可手动添加路径。</p>
     <div id="detectAll"><div class="empty-hint">检测中…</div></div>`;
   const aab = document.getElementById("adoptAllBtn");
   if (aab) aab.addEventListener("click", onAdoptAll);
+  document.getElementById("manualRuntimeBtn").addEventListener("click", () => openManualRuntime());
+  document.getElementById("rescanAllBtn").addEventListener("click", () => { clearDetectionCache(); showDetectOverview(); });
   let list;
   try {
-    list = await call("DetectSystem");
+    list = await detectedVersions();
   } catch (e) {
     const b = document.getElementById("detectAll");
-    if (b) b.innerHTML = `<div class="empty-hint">检测失败：${escapeHtml(e.message)}</div>`;
+    if (b && epoch === detectionEpoch) b.innerHTML = `<div class="empty-hint">检测失败：${escapeHtml(e.message)}</div>`;
     return;
   }
   const box = document.getElementById("detectAll");
-  if (!box) return;
+  if (!box || epoch !== detectionEpoch) return;
   if (!list || !list.length) {
     box.innerHTML = `<div class="empty-hint">系统 PATH 未检测到任何运行时</div>`;
     return;
@@ -803,6 +842,60 @@ async function showDetectOverview() {
     .join("");
   bindAdopt(box);
 }
+
+let manualRuntimeBusy = false;
+function resetManualRuntimePreview() {
+  document.getElementById("manualRuntimePreview").classList.add("hidden");
+  document.getElementById("manualRuntimeAdopt").disabled = true;
+  document.getElementById("manualRuntimeError").classList.add("hidden");
+}
+function openManualRuntime(tool) {
+  if (projectMode === "local" || projectMode === "docker") { toast("隔离项目请独立安装工具；纳管已有运行时请使用 versions 模式", true); return; }
+  const select = document.getElementById("manualRuntimeTool");
+  select.innerHTML = state.map(s => `<option value="${escapeHtml(s.tool)}">${escapeHtml(displayName(s.tool))}</option>`).join("");
+  select.value = tool || (state.some(s => s.tool === "python") ? "python" : state[0]?.tool || "");
+  document.getElementById("manualRuntimePath").value = "";
+  document.getElementById("manualRuntimeAlias").value = "";
+  resetManualRuntimePreview();
+  document.getElementById("manualRuntimeModal").classList.remove("hidden");
+}
+async function manualRuntimeAction(adopt) {
+  if (manualRuntimeBusy) return;
+  manualRuntimeBusy = true;
+  const ids = ["Tool","Path","Alias","Pick","Inspect","Adopt","Close"];
+  const controls = ids.map(id => document.getElementById("manualRuntime" + id));
+  controls.forEach(c => c.disabled = true);
+  const tool = document.getElementById("manualRuntimeTool").value;
+  const path = document.getElementById("manualRuntimePath").value.trim();
+  const alias = document.getElementById("manualRuntimeAlias").value.trim();
+  const error = document.getElementById("manualRuntimeError");
+  error.classList.add("hidden");
+  let inspected = false;
+  try {
+    const runtime = await (adopt ? call("AdoptCustomTool", tool, path, alias) : call("InspectToolPath", tool, path));
+    inspected = true;
+    const preview = document.getElementById("manualRuntimePreview");
+    preview.textContent = "检测版本：" + runtime.version + (runtime.environment ? "\n环境：" + runtime.environment : "") + "\n管理标识：" + (alias || runtimeID(runtime)) + "\n主命令：" + runtime.path;
+    preview.classList.remove("hidden");
+    if (adopt) {
+      if (systemScan !== null) systemScan.push(runtime);
+      if (sysCache[tool]) sysCache[tool].push(runtime);
+      document.getElementById("manualRuntimeModal").classList.add("hidden");
+      toast("已纳管 " + tool + " " + runtimeID(runtime));
+      await load();
+      if (selected === null) showDetectOverview();
+    }
+  } catch (e) { error.textContent = errMsg(e); error.classList.remove("hidden"); }
+  finally { manualRuntimeBusy = false; controls.forEach(c => c.disabled = false); document.getElementById("manualRuntimeAdopt").disabled = !inspected; }
+}
+for (const id of ["manualRuntimeTool","manualRuntimePath","manualRuntimeAlias"]) document.getElementById(id).addEventListener("input", resetManualRuntimePreview);
+document.getElementById("manualRuntimePick").addEventListener("click", async () => {
+  try { const path = await call("PickDirectory", "选择已有运行时或 Conda 环境目录"); if (path) { document.getElementById("manualRuntimePath").value = path; resetManualRuntimePreview(); } }
+  catch (e) { document.getElementById("manualRuntimeError").textContent = errMsg(e); document.getElementById("manualRuntimeError").classList.remove("hidden"); }
+});
+document.getElementById("manualRuntimeInspect").addEventListener("click", () => manualRuntimeAction(false));
+document.getElementById("manualRuntimeAdopt").addEventListener("click", () => manualRuntimeAction(true));
+document.getElementById("manualRuntimeClose").addEventListener("click", () => document.getElementById("manualRuntimeModal").classList.add("hidden"));
 
 async function loadRemote(tool, input, dlist) {
   const ph = input.placeholder;
@@ -878,7 +971,7 @@ async function onVerAction(tool, act, ver) {
       toast(`已设 ${tool} = ${ver}（${curDir}）`);
     } else if (act === "global") {
       await call("SetGlobal", tool, ver);
-      toast(`已设 ${tool} 全局 = ${ver}`);
+      toast(`已保存 ${tool} 全局默认 = ${ver}；终端需激活，项目配置仍优先`);
     } else if (act === "uninstall") {
       await call("Uninstall", tool, ver);
       toast(`已卸载 ${tool} ${ver}`);
@@ -926,7 +1019,7 @@ function escapeHtml(s) {
 }
 
 document.getElementById("filter").addEventListener("input", renderSidebar);
-document.getElementById("refreshBtn").addEventListener("click", load);
+document.getElementById("refreshBtn").addEventListener("click", async () => { clearDetectionCache(); await load(); if (selected === null && document.getElementById("detectAll")) showDetectOverview(); });
 document.getElementById("detectBtn").addEventListener("click", showDetectOverview);
 document.getElementById("mirrorSel").addEventListener("change", async (e) => {
   try {
@@ -986,14 +1079,42 @@ document.getElementById("proxyInput").addEventListener("keydown", (e) => {
   else if (e.key === "Escape") closeProxyModal();
 });
 document.getElementById("pathBtn").addEventListener("click", async () => {
+  const modal = document.getElementById("activationModal");
+  const message = document.getElementById("activationMessage");
+  const error = document.getElementById("activationError");
+  const button = document.getElementById("pathBtn");
+  button.disabled = true;
+  modal.classList.remove("hidden");
+  message.textContent = "正在配置终端激活…";
+  error.textContent = "";
+  error.classList.add("hidden");
+  document.getElementById("activationTarget").textContent = "";
+  document.getElementById("activationCommandWrap").classList.add("hidden");
+  document.getElementById("activationCopy").disabled = true;
   try {
     const res = (await call("PathInit")) || {};
-    toast(res.status === "added"
+    message.textContent = res.message || (res.status === "added"
       ? `已写入 ${res.target}，新开终端生效`
       : `${res.target || "PATH"} 中已配置 vsm`);
+    document.getElementById("activationTarget").textContent = res.target ? "配置位置：" + res.target : "";
+    document.getElementById("activationCommand").value = res.command || "";
+    document.getElementById("activationCommandWrap").classList.toggle("hidden", !res.command);
+    document.getElementById("activationCopy").disabled = !res.command;
   } catch (e) {
-    toast("激活 PATH 失败: " + errMsg(e), true);
+    message.textContent = "激活未完成，请按下面的原因处理后重试。";
+    error.textContent = errMsg(e);
+    error.classList.remove("hidden");
+  } finally {
+    button.disabled = false;
   }
+});
+document.getElementById("activationClose").addEventListener("click", () => {
+  document.getElementById("activationModal").classList.add("hidden");
+});
+document.getElementById("activationCopy").addEventListener("click", async () => {
+  const input = document.getElementById("activationCommand");
+  try { await navigator.clipboard.writeText(input.value); toast("激活命令已复制，请在 PowerShell 中执行"); }
+  catch (_) { input.focus(); input.select(); toast("请按 Ctrl+C（macOS 用 ⌘C）复制激活命令"); }
 });
 document.getElementById("setRootBtn").addEventListener("click", async (e) => {
   e.stopPropagation();

@@ -231,11 +231,12 @@ func (a *App) shutdown(ctx context.Context) {
 
 // ToolStatus 是前端展示一个工具所需的数据。
 type ToolStatus struct {
-	Tool      string   `json:"tool"`
-	Current   string   `json:"current"`
-	Source    string   `json:"source"`
-	Spec      string   `json:"spec"`
-	Installed []string `json:"installed"`
+	Tool       string                 `json:"tool"`
+	Current    string                 `json:"current"`
+	Source     string                 `json:"source"`
+	Spec       string                 `json:"spec"`
+	Installed  []string               `json:"installed"`
+	Activation *core.ActivationStatus `json:"activation,omitempty"`
 }
 
 // Tools 返回所有支持的工具名。
@@ -289,12 +290,18 @@ func (a *App) Status() (status []ToolStatus, err error) {
 		if r.Error != "" {
 			return nil, fmt.Errorf("%s: %s", name, r.Error)
 		}
+		var activation *core.ActivationStatus
+		if c.paths.ProjectMode != "local" && r.Version != "" {
+			checked := c.act.ActivationStatus(name, dir)
+			activation = &checked
+		}
 		out = append(out, ToolStatus{
-			Tool:      name,
-			Current:   r.Version,
-			Source:    r.Source,
-			Spec:      r.Spec,
-			Installed: installed,
+			Tool:       name,
+			Current:    r.Version,
+			Source:     r.Source,
+			Spec:       r.Spec,
+			Installed:  installed,
+			Activation: activation,
 		})
 	}
 	return out, nil
@@ -416,17 +423,23 @@ func (a *App) SetInstallRoot(dir string) (err error) {
 // SetGlobal 设全局默认版本（写 ~/.vsm/.tool-versions）。
 func (a *App) SetGlobal(tool, version string) (err error) {
 	defer logGUI("version.global", logging.Fields{"tool": tool, "version": version}, &err)()
-	if a.c().paths.ProjectMode == "local" {
-		return fmt.Errorf("本地隔离环境请使用「设为本目录」")
-	}
-	if _, ok := plugin.Get(tool); !ok {
-		return fmt.Errorf("不支持的工具: %s", tool)
-	}
-	c := a.c()
-	if err := c.paths.EnsureDirs(); err != nil {
+	done, err := a.begin()
+	if err != nil {
 		return err
 	}
-	return config.SetIn(c.paths.GlobalToolVersions(), tool, version)
+	defer done()
+	c := a.c()
+	if err := checkActivationCLI(c.act.VsmExe); err != nil {
+		return err
+	}
+	if err := c.act.SetGlobalVersion(tool, version); err != nil {
+		return err
+	}
+	status := c.act.ActivationStatus(tool, a.resolveDir())
+	for _, warning := range status.Warnings {
+		logging.Record("warn", "gui", "version.global.activation", logging.Fields{"tool": tool, "version": version, "warning": warning})
+	}
+	return nil
 }
 
 // Uninstall 卸载某版本。
@@ -456,6 +469,39 @@ func (a *App) DetectSystem() []core.SystemVersion {
 // DetectTool 仅探测某个工具的系统版本，供详情页按需调用，避免全量扫描的耗时。
 func (a *App) DetectTool(tool string) []core.SystemVersion {
 	return core.DetectSystem(map[string][]string{tool: detectNames(tool)}, a.c().paths.Shims())
+}
+
+func (a *App) InspectToolPath(tool, path string) (core.SystemVersion, error) {
+	return core.InspectToolPath(tool, path)
+}
+
+func (a *App) AdoptCustomTool(tool, path, alias string) (result core.SystemVersion, err error) {
+	defer logGUI("adopt.custom", logging.Fields{"tool": tool}, &err)()
+	done, err := a.begin()
+	if err != nil {
+		return result, err
+	}
+	defer done()
+	c := a.c()
+	result, err = c.inst.AdoptPath(tool, path, alias)
+	if err != nil {
+		return result, err
+	}
+	return result, c.act.GenerateShims()
+}
+
+// AdoptDetected reuses the explicit scan snapshot; adoption does not scan again.
+func (a *App) AdoptDetected(items []core.SystemVersion) (count int, err error) {
+	defer logGUI("adopt.detected", logging.Fields{"count": len(items)}, &err)()
+	if len(items) > 1024 {
+		return 0, fmt.Errorf("一次最多纳管 1024 项")
+	}
+	done, err := a.begin()
+	if err != nil {
+		return 0, err
+	}
+	defer done()
+	return a.adoptList(items)
 }
 
 func detectNames(tool string) []string {
@@ -700,12 +746,30 @@ func (a *App) SetProxy(input string) (err error) {
 
 // PathInitResult 描述「激活 PATH」的结果。
 type PathInitResult struct {
-	Status string `json:"status"` // added | exists
-	Target string `json:"target"` // 写入位置：Windows 为「用户级 PATH」，其它平台为 shell 配置文件路径
+	Status  string `json:"status"` // added | exists
+	Target  string `json:"target"` // 写入位置：Windows 为「用户级 PATH」，其它平台为 shell 配置文件路径
+	Message string `json:"message"`
+	Command string `json:"command,omitempty"`
+}
+
+func checkActivationCLI(path string) error {
+	if path == "" {
+		return fmt.Errorf("未找到配套 CLI，请将新版 vsm 与 GUI 放在同一目录")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, path, "version")
+	mcpserver.ConfigureProcess(cmd)
+	cmd.WaitDelay = time.Second
+	out, err := cmd.Output()
+	if err != nil || strings.TrimSpace(string(out)) != "vsm "+buildinfo.DisplayVersion() {
+		return fmt.Errorf("CLI 与 GUI 版本不一致或无法读取：%s；请同时更新 CLI 和 GUI（GUI %s），并放在同一目录", path, buildinfo.DisplayVersion())
+	}
+	return nil
 }
 
 // PathInit 让新开的终端自动启用 vsm：
-//   - Windows：把 shims 写入用户级 PATH 并广播；
+//   - Windows：把 shims 写入用户级 PATH 并配置 PowerShell 启动钩子；
 //   - macOS / Linux：把激活语句写进 ~/.zshrc 等 shell 配置文件（此前这里直接报错）。
 func (a *App) PathInit() (result PathInitResult, err error) {
 	defer logGUI("path.init", logging.Fields{}, &err)()
@@ -721,16 +785,26 @@ func (a *App) PathInit() (result PathInitResult, err error) {
 	if err := c.paths.EnsureDirs(); err != nil {
 		return PathInitResult{}, err
 	}
-	if runtime.GOOS != "windows" && c.act.VsmExe == "" {
-		// 写入裸 `vsm` 会让每次开终端都报 command not found，宁可明确报错
-		return PathInitResult{}, fmt.Errorf("未找到 vsm 命令行程序：请把 vsm 放到 PATH，或与 VSM.app 放在同一目录")
+	if err := checkActivationCLI(c.act.VsmExe); err != nil {
+		return PathInitResult{}, err
 	}
 	if err := c.act.GenerateShims(); err != nil {
 		return PathInitResult{}, err
 	}
 	if runtime.GOOS == "windows" {
 		st, err := core.PersistShimsPath(c.paths.Shims())
-		return PathInitResult{Status: st, Target: "用户级 PATH"}, err
+		if err != nil {
+			return PathInitResult{}, err
+		}
+		profiles, err := core.PersistPowerShellHooks(c.act.VsmExe)
+		if err != nil {
+			return PathInitResult{}, fmt.Errorf("用户 PATH 已写入，但 PowerShell 激活配置失败: %w", err)
+		}
+		message := "已配置用户 PATH 和 PowerShell 启动钩子。请新开 PowerShell；已有终端执行 vsm activate powershell | Out-String | Invoke-Expression。cmd 使用 vsm exec <tool> -- <命令>，或将 shims 前置到当前 cmd 的 PATH。"
+		if len(profiles.Warnings) > 0 {
+			message += "\n" + strings.Join(profiles.Warnings, "\n")
+		}
+		return PathInitResult{Status: st, Target: "用户级 PATH、" + strings.Join(profiles.Paths, "、"), Message: message, Command: core.PowerShellActivationCommand(c.act.VsmExe)}, nil
 	}
 	rc, st, err := core.PersistShellHook(core.DefaultShell(), core.VsmCommand(c.act.VsmExe))
 	return PathInitResult{Status: st, Target: rc}, err
@@ -764,12 +838,13 @@ func (a *App) adoptList(sys []core.SystemVersion) (int, error) {
 	n := 0
 	var failed []string
 	for _, s := range sys {
+		version := s.RegistryVersion()
 		p, ok := plugin.Get(s.Tool)
-		if !ok || s.Version == "" || c.reg.IsInstalled(s.Tool, s.Version) {
+		if !ok || s.Version == "" || c.reg.IsInstalled(s.Tool, version) {
 			continue
 		}
-		if err := c.inst.Adopt(p, s.Version, s.Path); err != nil {
-			failed = append(failed, fmt.Sprintf("%s %s（%v）", s.Tool, s.Version, err))
+		if err := c.inst.Adopt(p, version, s.Path); err != nil {
+			failed = append(failed, fmt.Sprintf("%s %s（%v）", s.Tool, version, err))
 			continue
 		}
 		n++

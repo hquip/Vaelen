@@ -76,7 +76,7 @@ func runLogs(args []string) error {
 	if asJSON {
 		return printJSON(snapshot)
 	}
-	fmt.Printf("日志目录: %s\n记录级别: %s\n", snapshot.Directory, snapshot.Level)
+	fmt.Printf("日志目录: %s\n记录级别: %s\n时间: 本地时区（JSON/导出保留 UTC）\n", snapshot.Directory, snapshot.Level)
 	if len(snapshot.Entries) == 0 {
 		fmt.Println("暂无符合条件的日志")
 		return nil
@@ -86,7 +86,7 @@ func runLogs(args []string) error {
 		if err != nil {
 			return err
 		}
-		fmt.Printf("%s %-5s %s %s %s\n", entry.Time, strings.ToUpper(entry.Level), entry.Component, entry.Event, fields)
+		fmt.Printf("%s %-5s %s %s %s\n", logging.LocalTime(entry.Time), strings.ToUpper(entry.Level), entry.Component, entry.Event, fields)
 	}
 	return nil
 }

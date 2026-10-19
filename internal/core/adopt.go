@@ -11,6 +11,27 @@ import (
 	"vsm/internal/plugin"
 )
 
+func (in Installer) AdoptPath(tool, path, alias string) (SystemVersion, error) {
+	if in.Paths.ProjectMode == "docker" {
+		return SystemVersion{}, ErrDockerHostInstall
+	}
+	if in.Paths.ProjectMode == "local" {
+		return SystemVersion{}, fmt.Errorf("本地隔离模式不链接共享工具，请使用 versions 模式")
+	}
+	s, err := InspectToolPath(tool, path)
+	if err != nil {
+		return SystemVersion{}, err
+	}
+	if alias != "" {
+		if err := validateInstall(tool, alias); err != nil {
+			return SystemVersion{}, err
+		}
+		s.ManagedVersion = alias
+	}
+	p, _ := plugin.Get(tool)
+	return s, in.Adopt(p, s.RegistryVersion(), s.Path)
+}
+
 // Adopt 把系统中已存在的某语言运行时“纳管”进 vsm：在 installs/<tool>/<version>
 // 处创建一个指向其真实安装根目录的链接（Windows 用 junction，其它平台用符号链接），
 // 之后即可像 vsm 自己安装的版本一样 use / exec / 卸载。卸载只删除链接本身，
@@ -73,8 +94,26 @@ func inferInstallRoot(p plugin.Plugin, execPath string) (string, error) {
 	if execPath == "" {
 		return "", fmt.Errorf("缺少可执行文件路径")
 	}
+	// System package managers often link /usr/bin/java or mvn to another root.
+	// Python venv launchers are the exception: their surrounding environment is
+	// significant even when the executable links to a shared base interpreter.
+	keepPythonPrefix := false
+	if p.Name() == "python" {
+		root := filepath.Dir(execPath)
+		if strings.EqualFold(filepath.Base(root), "bin") || strings.EqualFold(filepath.Base(root), "Scripts") {
+			root = filepath.Dir(root)
+		}
+		keepPythonPrefix = plugin.CondaPrefix(root) != "" || fileExists(filepath.Join(root, "pyvenv.cfg"))
+	}
+	if !keepPythonPrefix {
+		execPath = realPath(execPath)
+	}
 	binDir := filepath.Dir(execPath)
-	for _, cand := range []string{binDir, filepath.Dir(binDir)} {
+	candidates := []string{binDir, filepath.Dir(binDir)}
+	if strings.EqualFold(filepath.Base(binDir), "bin") || strings.EqualFold(filepath.Base(binDir), "Scripts") {
+		candidates = []string{filepath.Dir(binDir), binDir}
+	}
+	for _, cand := range candidates {
 		for _, bp := range p.BinPaths(cand) {
 			if sameDir(bp, binDir) {
 				return cand, nil

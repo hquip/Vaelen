@@ -3,10 +3,14 @@ package main
 import (
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
+
+	"vsm/internal/core"
 )
 
 func newTestApp(t *testing.T) *App {
@@ -70,9 +74,106 @@ func TestBusyOperationsFailFast(t *testing.T) {
 	if err := a.SetInstallRoot(t.TempDir()); !errors.Is(err, errBusy) {
 		t.Fatalf("应返回 errBusy，实际 %v", err)
 	}
+	if err := a.SetGlobal("java", "21"); !errors.Is(err, errBusy) {
+		t.Fatalf("global switch must share write lock: %v", err)
+	}
+	if _, err := a.AdoptDetected(nil); !errors.Is(err, errBusy) {
+		t.Fatalf("snapshot adoption must share write lock: %v", err)
+	}
+	if _, err := a.AdoptCustomTool("maven", "does-not-exist", ""); !errors.Is(err, errBusy) {
+		t.Fatalf("manual adoption must share write lock: %v", err)
+	}
 	done()
 	if _, err := a.begin(); err != nil {
 		t.Fatalf("释放后应可再次获取: %v", err)
+	}
+}
+
+func TestAdoptDetectedReusesExplicitSnapshot(t *testing.T) {
+	a := newTestApp(t)
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "bin"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	name := "mvn"
+	if runtime.GOOS == "windows" {
+		name += ".cmd"
+	}
+	path := filepath.Join(root, "bin", name)
+	if err := os.WriteFile(path, []byte("not executable; snapshot must not probe again"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	items := []core.SystemVersion{{Tool: "maven", Version: "3.9.6", Path: path}}
+	if n, err := a.AdoptDetected(items); err != nil || n != 1 {
+		t.Fatalf("snapshot not adopted: %d %v", n, err)
+	}
+	if n, err := a.AdoptDetected(items); err != nil || n != 0 {
+		t.Fatalf("repeat adoption: %d %v", n, err)
+	}
+}
+
+func TestSetGlobalRequiresMatchingCLIAndRefreshesShim(t *testing.T) {
+	a := newTestApp(t)
+	if err := a.SetProjectDir(""); err != nil {
+		t.Fatal(err)
+	}
+	c := *a.c()
+	c.act.VsmExe = ""
+	a.st.Store(&c)
+	if err := a.SetGlobal("java", "21"); err == nil || !strings.Contains(err.Error(), "CLI") {
+		t.Fatalf("missing CLI accepted: %v", err)
+	}
+	if _, err := os.Stat(c.paths.GlobalToolVersions()); !os.IsNotExist(err) {
+		t.Fatalf("failed switch wrote config: %v", err)
+	}
+	bin := filepath.Join(t.TempDir(), "vsm")
+	if runtime.GOOS == "windows" {
+		bin += ".exe"
+	}
+	// A real paired CLI establishes the version protocol used by both activation operations.
+	cmd := exec.Command("go", "build", "-o", bin, "vsm")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("build CLI: %v %s", err, out)
+	}
+	c.act.VsmExe = bin
+	if err := checkActivationCLI(bin); err != nil {
+		t.Fatal(err)
+	}
+	toolDir := filepath.Join(c.paths.InstallDir("java", "21"), "bin")
+	if err := os.MkdirAll(toolDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.paths.EnsureDirs(); err != nil {
+		t.Fatal(err)
+	}
+	name := "java"
+	if runtime.GOOS == "windows" {
+		name += ".cmd"
+	}
+	shim := filepath.Join(c.paths.Shims(), name)
+	if err := os.WriteFile(shim, []byte("old-vsm exec java"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.SetGlobal("java", "21"); err != nil {
+		t.Fatal(err)
+	}
+	data, _ := os.ReadFile(shim)
+	if strings.Contains(string(data), "old-vsm") || !strings.Contains(string(data), bin) {
+		t.Fatalf("stale shim: %s", data)
+	}
+	// The same helper must refuse a previous build before changing activation state.
+	old := filepath.Join(t.TempDir(), filepath.Base(bin))
+	cmd = exec.Command("go", "build", "-ldflags", "-X vsm/internal/buildinfo.Version=0.1.0", "-o", old, "vsm")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("build legacy CLI: %v %s", err, out)
+	}
+	c.act.VsmExe = old
+	if err := a.SetGlobal("java", "17"); err == nil || !strings.Contains(err.Error(), "版本不一致") {
+		t.Fatalf("legacy CLI accepted: %v", err)
+	}
+	data, _ = os.ReadFile(c.paths.GlobalToolVersions())
+	if !strings.Contains(string(data), "java 21") {
+		t.Fatalf("failed switch changed default: %s", data)
 	}
 }
 

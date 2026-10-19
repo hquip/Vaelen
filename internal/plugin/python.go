@@ -3,6 +3,7 @@ package plugin
 import (
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -156,9 +157,31 @@ func (p *pythonPlugin) DownloadURL(version string, t Target) (string, error) {
 func (p *pythonPlugin) BinPaths(installDir string) []string {
 	// install_only 解压后顶层目录 python/，剥层后：Windows 下 python.exe 在根，Unix 在 bin/。
 	if runtime.GOOS == "windows" {
-		return []string{installDir}
+		paths := []string{installDir, filepath.Join(installDir, "Scripts")}
+		if CondaPrefix(installDir) != "" {
+			for _, sub := range []string{"Library/mingw-w64/bin", "Library/usr/bin", "Library/bin", "bin"} {
+				paths = append(paths, filepath.Join(installDir, filepath.FromSlash(sub)))
+			}
+		}
+		return paths
 	}
 	return []string{filepath.Join(installDir, "bin")}
 }
 
-func (p *pythonPlugin) ExecEnv(installDir string) map[string]string { return nil }
+func (p *pythonPlugin) ExecEnv(installDir string) map[string]string {
+	if prefix := CondaPrefix(installDir); prefix != "" {
+		return map[string]string{"CONDA_PREFIX": prefix, "CONDA_DEFAULT_ENV": filepath.Base(prefix), "CONDA_SHLVL": "1", "PYTHONHOME": "", "VIRTUAL_ENV": ""}
+	}
+	return nil
+}
+
+// CondaPrefix follows VSM's adopted link so packages keep their original prefix.
+func CondaPrefix(dir string) string {
+	if info, err := os.Stat(filepath.Join(dir, "conda-meta")); err != nil || !info.IsDir() {
+		return ""
+	}
+	if real, err := filepath.EvalSymlinks(dir); err == nil {
+		return real
+	}
+	return dir
+}

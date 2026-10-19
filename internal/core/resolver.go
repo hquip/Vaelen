@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"vsm/internal/config"
+	"vsm/internal/plugin"
 )
 
 // Resolver 按优先级解析某工具当前应使用的版本。
@@ -72,6 +73,17 @@ func (r Resolver) match(tool, spec, source string) Resolution {
 	installed, err := r.Registry.Installed(tool)
 	if err != nil {
 		return Resolution{Tool: tool, Spec: spec, Source: source, Error: err.Error()}
+	}
+	if tool == "python" {
+		// An existing Conda environment carries its own dependencies; numeric
+		// requirements must not silently select it by interpreter version.
+		filtered := make([]string, 0, len(installed))
+		for _, v := range installed {
+			if v == spec || plugin.CondaPrefix(r.Paths.InstallDir(tool, v)) == "" {
+				filtered = append(filtered, v)
+			}
+		}
+		installed = filtered
 	}
 	return Resolution{
 		Tool:    tool,
