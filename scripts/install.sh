@@ -2,7 +2,7 @@
 # Install the official VSM CLI into a user-owned directory after SHA256 checking.
 set -euo pipefail
 if [[ "${1:-}" == --help ]]; then
-  echo 'Usage: VSM_VERSION=v1.1.0 VSM_INSTALL_DIR="$HOME/.local/bin" bash install.sh'
+  echo 'Usage: VSM_VERSION=v1.1.1 VSM_INSTALL_DIR="$HOME/.local/bin" bash install.sh'
   echo 'Without VSM_VERSION, installs the latest stable official GitHub release.'
   exit 0
 fi
@@ -15,7 +15,7 @@ if [[ -z "$vsm_version" ]]; then
   vsm_version="${vsm_latest##*/}"
 fi
 [[ "$vsm_version" == v* ]] || vsm_version="v$vsm_version"
-[[ "$vsm_version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo 'Expected a stable version such as v1.1.0.' >&2; exit 1; }
+[[ "$vsm_version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo 'Expected a stable version such as v1.1.1.' >&2; exit 1; }
 vsm_directory="${VSM_INSTALL_DIR:-$HOME/.local/bin}"
 mkdir -p "$vsm_directory"
 vsm_directory="$(cd "$vsm_directory" && pwd)"

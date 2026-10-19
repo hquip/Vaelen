@@ -15,6 +15,25 @@
 > 镜像切换、网络代理设置、安装进度条、当前目录 local 设置、一键写入用户级 PATH。
 > **macOS 版为 Universal 通用二进制**（Apple Silicon + Intel），隐藏式标题栏 + 原生菜单，内置 CLI，一个 `.app` 开箱即用。
 
+## v1.1.1 数据库实例与已有环境修复
+
+- **数据库版本切换**：PostgreSQL、MySQL、MariaDB、Redis、Valkey，支持 Docker 官方镜像和已安装原生程序；GUI 左侧新增「数据库版本 / 实例」。
+- **独立数据**：每个实例、版本独立保存数据，支持启动、停止、切换、日志、连接信息和客户端执行；切换失败尝试恢复旧版本。
+- **全局切换**：修复旧 shim 和终端 PATH 优先级导致的无效切换，显示全局设置、项目覆盖和实际命令来源，补齐终端激活指引。
+- **已有环境**：按工具准确扫描，支持手动添加路径，识别已有 Conda 环境及 Maven 完整安装，保留环境内原有依赖。
+- **日志时间**：CLI 和 GUI 按本地时区显示，JSON 与导出保留 UTC。
+
+```bash
+vsm db use postgres 17-alpine --name dev --port 15432
+vsm db start dev
+vsm db switch dev 18-alpine
+vsm db list --json
+```
+
+数据库切换会短暂重启服务，新版本使用独立数据；跨版本数据迁移需要另行备份、导入。原生方式需要完整的服务端与客户端程序；Docker 方式需要已启动的 Docker。详见[数据库说明](docs/databases.md)和[发布说明](docs/releases/v1.1.1.md)。
+
+下载 [v1.1.1 正式版](https://github.com/hquip/Vaelen/releases/tag/v1.1.1)；已有版本可运行 `vsm update --gui` 同步更新 CLI 和 GUI。
+
 ## v1.1.0 项目工作台
 
 新增可复现工具链与项目自动化，CLI、GUI、MCP 共用核心：
@@ -36,7 +55,7 @@ vsm project trust
 vsm tasks run test --locked
 ```
 
-先检查生成的配置，再执行 trust。具体能力与边界见[项目工作台说明](docs/workspaces.md)。下载 [v1.1.0 正式版](https://github.com/hquip/Vaelen/releases/tag/v1.1.0)；已有版本可运行 `vsm update --gui` 同步更新 CLI 和 GUI。
+先检查生成的配置，再执行 trust。具体能力与边界见[项目工作台说明](docs/workspaces.md)。
 
 ## 设计要点
 
@@ -143,7 +162,7 @@ sudo ln -sf /Applications/VSM.app/Contents/MacOS/vsm /usr/local/bin/vsm
 自行打包（需在 Mac 上，产出与 Release 相同的通用版 zip）：
 
 ```bash
-bash scripts/package-macos.sh 1.1.0 dist
+bash scripts/package-macos.sh 1.1.1 dist
 ```
 
 > 打 `v*` tag 即可由 GitHub Actions 在 Windows / macOS / Linux 三个 runner 上分别本地编译，
