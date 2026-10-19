@@ -365,6 +365,7 @@ button { cursor: pointer; font-family: inherit; border: none; border-radius: 8px
 .project-error { color: var(--red); border: 1px solid var(--red); border-radius: 6px; padding: 10px; margin-top: 12px; font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; user-select: text; -webkit-user-select: text; }
 .project-env-card select { font-family: inherit; }
 .project-env-card button:disabled { opacity: .5; cursor: default; }
+#databaseOutput { max-height: 180px; overflow: auto; }
 #projectMCPConfig { resize: vertical; min-height: 140px; }
 .project-readonly { display: flex; align-items: center; gap: 7px; font-size: 12px; margin-top: 10px; }
 #projectMCPLocation { user-select: text; -webkit-user-select: text; }

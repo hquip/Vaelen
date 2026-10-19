@@ -96,6 +96,45 @@ jobs:
             test ! -e should-not-run
           )
 
+  database-docker:
+    name: database Docker (${{ matrix.engine }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        engine: [postgres, mysql, mariadb, redis, valkey]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Switch real database versions and verify both datasets survive
+        env:
+          VSM_TEST_DATABASE_DOCKER: '1'
+          VSM_TEST_DATABASE_ENGINE: ${{ matrix.engine }}
+        run: go test ./internal/database -run '^TestDatabaseDockerIntegration$' -v -count=1 -timeout 12m
+
+  database-native:
+    name: database native (${{ matrix.engine }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        engine: [postgres, mysql, mariadb, redis, valkey]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Prepare native server binaries
+        env:
+          VSM_TEST_DATABASE_ENGINE: ${{ matrix.engine }}
+        run: bash scripts/test-database-native.sh
+
   build-cli:
     name: build CLI (zero-CGO cross-compile)
     runs-on: ubuntu-latest
