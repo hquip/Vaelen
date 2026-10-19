@@ -21,6 +21,13 @@ func TestGlobalSwitchInRealPowerShell(t *testing.T) {
 		t.Skip("PowerShell unavailable")
 	}
 	bin, home, project := buildVsm(t), t.TempDir(), t.TempDir()
+	// MCP supplies a canonical boundary. macOS exposes temporary directories as
+	// both /var/... and /private/var/...; match the child process's physical cwd.
+	var err error
+	project, err = filepath.EvalSymlinks(project)
+	if err != nil {
+		t.Fatal(err)
+	}
 	quote := func(s string) string { return "'" + strings.ReplaceAll(s, "'", "''") + "'" }
 	for _, version := range []string{"17.0.12", "21.0.1"} {
 		dir := filepath.Join(home, "installs", "java", version, "bin")
