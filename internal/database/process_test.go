@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"vsm/internal/config"
+	"vsm/internal/logging"
 )
 
 func TestDatabaseProcessHelper(t *testing.T) {
@@ -91,5 +92,9 @@ func TestQueryOutputExcludesWarningsAndErrorRedactsCredentials(t *testing.T) {
 	_, err = m.run(ctx, os.Args[0], []string{"-test.run=^TestDatabaseProcessHelper$"}, map[string]string{"VSM_DATABASE_TEST_HELPER": "error", "PGPASSWORD": c.Password})
 	if err == nil || strings.Contains(err.Error(), c.Password) || !strings.Contains(err.Error(), "[REDACTED]") {
 		t.Fatalf("credential error not redacted: %v", err)
+	}
+	wrapped := fmt.Errorf("database operation failed: %w", err)
+	if strings.Contains(logging.ErrorMessage(wrapped), "rejected password") || strings.Contains(logging.ErrorMessage(wrapped), "[REDACTED]") {
+		t.Fatal("persistent diagnostic retained database child output")
 	}
 }

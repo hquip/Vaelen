@@ -331,6 +331,13 @@ func (d nativeDriver) start(ctx context.Context, i *Instance) (err error) {
 	}
 	d.m.progress("等待数据库就绪")
 	err = waitReady(ctx, func() error {
+		alive, identityErr := d.trackedProcess(i)
+		if identityErr != nil {
+			return identityErr
+		}
+		if !alive {
+			return fmt.Errorf("数据库服务进程已退出，请查看实例日志")
+		}
 		probe, cancel := context.WithTimeout(ctx, 4*time.Second)
 		defer cancel()
 		args := readyArgs(i.Engine)
@@ -388,7 +395,10 @@ func (d nativeDriver) stop(ctx context.Context, i *Instance) error {
 			return err
 		}
 		_, err = d.call(ctx, i, []string{"pg_ctl"}, []string{"-D", d.m.versionPath(i, "data"), "-m", "fast", "-w", "-t", "30", "stop"}, nil)
-		return err
+		if err != nil {
+			return err
+		}
+		return d.waitStopped(ctx, i)
 	}
 	running, err := d.running(ctx, i)
 	if err != nil || !running {
@@ -403,22 +413,24 @@ func (d nativeDriver) stop(ctx context.Context, i *Instance) error {
 		if err != nil {
 			return err
 		}
-		return waitPortClosed(ctx, i.Port)
+		return d.waitStopped(ctx, i)
 	}
 	_, err = d.exec(ctx, i, []string{"SHUTDOWN", "SAVE"})
 	if err != nil {
 		return err
 	}
-	return waitPortClosed(ctx, i.Port)
+	return d.waitStopped(ctx, i)
 }
-func waitPortClosed(ctx context.Context, port int) error {
+func (d nativeDriver) waitStopped(ctx context.Context, i *Instance) error {
 	return waitReady(ctx, func() error {
-		c, err := net.DialTimeout("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)), 200*time.Millisecond)
+		alive, err := d.trackedProcess(i)
 		if err != nil {
+			return err
+		}
+		if !alive {
 			return nil
 		}
-		c.Close()
-		return fmt.Errorf("等待数据库释放端口 %d", port)
+		return fmt.Errorf("等待受管数据库进程退出")
 	})
 }
 func (d nativeDriver) logs(ctx context.Context, i *Instance) (string, error) {

@@ -100,7 +100,7 @@ func Run(args []string) (code int) {
 				event = "command.failed"
 			}
 			if logErr != nil {
-				fields["error"] = logErr.Error()
+				fields["error"] = logging.ErrorMessage(logErr)
 			}
 			logging.Record(level, "cli", event, fields)
 		}()

@@ -20,6 +20,28 @@ func Get(name string) (Plugin, bool) {
 	return p, ok
 }
 
+func IsServiceTool(name string) bool {
+	p, ok := Get(name)
+	if !ok {
+		return false
+	}
+	manifest, ok := p.(manifestPlugin)
+	return ok && manifest.m.Service
+}
+
+// ProbeCommands excludes service administration/bootstrap utilities from scans,
+// while DetectCommands retains all executable aliases for project execution.
+func ProbeCommands() map[string][]string {
+	commands := DetectCommands()
+	for tool := range commands {
+		raw, _ := Get(tool)
+		if p, ok := raw.(manifestPlugin); ok && len(p.m.DetectCommands) > 0 {
+			commands[tool] = append([]string{}, p.m.DetectCommands...)
+		}
+	}
+	return commands
+}
+
 // Names 返回所有已注册插件名（已排序）。
 func Names() []string {
 	registryMu.RLock()

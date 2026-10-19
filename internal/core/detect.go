@@ -46,6 +46,7 @@ var versionRe = regexp.MustCompile(`\d+(\.\d+)+`)
 //
 // commands 是“工具名 → 候选主命令名列表”的映射；excludeDir 排除 vsm 自己的 shim 目录。
 func DetectSystem(commands map[string][]string, excludeDir string) []SystemVersion {
+	probeCommands := plugin.ProbeCommands()
 	exclude := normDir(excludeDir)
 	dirs := filepath.SplitList(os.Getenv("PATH"))
 	exts := executableExts()
@@ -56,6 +57,9 @@ func DetectSystem(commands map[string][]string, excludeDir string) []SystemVersi
 
 	// 路 1：PATH 扫描
 	for tool, names := range commands {
+		if plugin.IsServiceTool(tool) {
+			names = probeCommands[tool]
+		}
 		for _, dir := range dirs {
 			if dir == "" {
 				continue
@@ -255,10 +259,17 @@ func probeVersion(tool, bin string) (version string, err error) {
 	if tool == "java" {
 		flags = []string{"-version", "--version"}
 	}
+	if tool == "postgres" || tool == "mysql" || tool == "mariadb" || tool == "redis" || tool == "valkey" {
+		flags = []string{"--version"}
+	}
 	var lastErr error
 	for _, flag := range flags {
 		ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
-		c := exec.CommandContext(ctx, bin, flag)
+		probeArgs := []string{flag}
+		if tool == "mysql" || tool == "mariadb" {
+			probeArgs = []string{"--no-defaults", flag}
+		}
+		c := exec.CommandContext(ctx, bin, probeArgs...)
 		mcpserver.ConfigureProcess(c)
 		c.WaitDelay = 250 * time.Millisecond
 		if err := configureVersionProbe(c, bin, flag); err != nil {

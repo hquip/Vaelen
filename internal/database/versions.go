@@ -39,7 +39,11 @@ func (d nativeDriver) verify(ctx context.Context, i *Instance) error {
 			return err
 		}
 	}
-	output, err := d.call(ctx, i, names, []string{"--version"}, nil)
+	args := []string{"--version"}
+	if i.Engine == "mysql" || i.Engine == "mariadb" {
+		args = []string{"--no-defaults", "--version"}
+	}
+	output, err := d.call(ctx, i, names, args, nil)
 	if err != nil {
 		return err
 	}

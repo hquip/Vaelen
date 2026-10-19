@@ -78,13 +78,25 @@ func (m *Manager) run(ctx context.Context, program string, args []string, env ma
 	c.Stderr = &stderr
 	err := c.Run()
 	if err != nil {
-		return []byte(out.text), fmt.Errorf("%s: %w；%s", filepath.Base(program), err, m.redact(strings.TrimSpace(out.text+stderr.text)))
+		return []byte(out.text), commandError{program: filepath.Base(program), cause: err, diagnostic: m.redact(strings.TrimSpace(out.text + stderr.text))}
 	}
 	if len(args) > 0 && args[0] == "logs" {
 		return []byte(out.text + stderr.text), nil
 	}
 	return []byte(out.text), nil
 }
+
+type commandError struct {
+	program    string
+	cause      error
+	diagnostic string
+}
+
+func (e commandError) Error() string {
+	return fmt.Sprintf("%s: %v；%s", e.program, e.cause, e.diagnostic)
+}
+func (e commandError) Unwrap() error      { return e.cause }
+func (e commandError) LogMessage() string { return e.program + ": " + e.cause.Error() }
 func commandEnvironment(inherited []string, overrides map[string]string) []string {
 	result := make([]string, 0, len(inherited))
 	_, postgres := overrides["PGPASSWORD"]

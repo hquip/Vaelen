@@ -126,6 +126,12 @@ func (a Activator) GenerateShims() error {
 	}
 	owners := map[string]string{}
 	for _, tool := range tools {
+		if plugin.IsServiceTool(tool) {
+			if err := a.removeServiceShims(tool); err != nil {
+				return err
+			}
+			continue
+		}
 		if _, ok := plugin.Get(tool); !ok {
 			continue
 		}
@@ -204,6 +210,31 @@ func (a Activator) writeShim(tool string) error {
 	return a.saveShim(tool, content, 0o755)
 }
 
+// Services are started explicitly through db; registering their programs must
+// not place an unconfigured proxy ahead of an existing system database client.
+func (a Activator) removeServiceShims(tool string) error {
+	names := append([]string{tool}, plugin.DetectCommands()[tool]...)
+	for _, name := range names {
+		if runtime.GOOS == "windows" {
+			name += ".cmd"
+		}
+		path := filepath.Join(a.Paths.Shims(), name)
+		data, err := config.ReadBounded(path, 64<<10)
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		text := string(data)
+		if (strings.HasPrefix(text, "@echo off") || strings.HasPrefix(text, "#!/bin/sh")) && strings.Contains(text, " exec "+tool+" ") {
+			if err := os.Remove(path); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
 func (a Activator) writeCommandShim(tool, command string) error {
 	if err := validateComponent(command); err != nil {
 		return err
