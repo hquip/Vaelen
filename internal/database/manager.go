@@ -54,12 +54,13 @@ func (m *Manager) run(ctx context.Context, program string, args []string, env ma
 	mcpserver.ConfigureProcess(c)
 	c.WaitDelay = 2 * time.Second
 	if env != nil {
-		c.Env = os.Environ()
+		c.Env = commandEnvironment(os.Environ(), env)
 		for k, v := range env {
 			c.Env = append(c.Env, k+"="+v)
 		}
 	}
 	var out boundedOutput
+	var stderr boundedOutput
 	if len(args) > 0 && args[0] == "pull" {
 		out.notify = func(chunk string) {
 			if len(chunk) > 4096 {
@@ -71,14 +72,31 @@ func (m *Manager) run(ctx context.Context, program string, args []string, env ma
 				}
 			}
 		}
+		stderr.notify = out.notify
 	}
 	c.Stdout = &out
-	c.Stderr = &out
+	c.Stderr = &stderr
 	err := c.Run()
 	if err != nil {
-		return []byte(out.text), fmt.Errorf("%s: %w；%s", filepath.Base(program), err, m.redact(strings.TrimSpace(out.text)))
+		return []byte(out.text), fmt.Errorf("%s: %w；%s", filepath.Base(program), err, m.redact(strings.TrimSpace(out.text+stderr.text)))
+	}
+	if len(args) > 0 && args[0] == "logs" {
+		return []byte(out.text + stderr.text), nil
 	}
 	return []byte(out.text), nil
+}
+func commandEnvironment(inherited []string, overrides map[string]string) []string {
+	result := make([]string, 0, len(inherited))
+	_, postgres := overrides["PGPASSWORD"]
+	for _, entry := range inherited {
+		key, _, _ := strings.Cut(entry, "=")
+		upper := strings.ToUpper(key)
+		if postgres && (upper == "PGSERVICE" || upper == "PGSERVICEFILE" || upper == "PGOPTIONS") {
+			continue
+		}
+		result = append(result, entry)
+	}
+	return result
 }
 
 type boundedOutput struct {

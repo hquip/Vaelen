@@ -2,6 +2,7 @@ package database
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -67,11 +68,20 @@ func (d nativeDriver) running(ctx context.Context, i *Instance) (bool, error) {
 		return false, nil
 	}
 	if i.Engine == "postgres" {
+		if _, err := os.Stat(filepath.Join(d.m.versionPath(i, "data"), "PG_VERSION")); os.IsNotExist(err) {
+			return false, nil
+		} else if err != nil {
+			return false, err
+		}
 		probe, cancel := context.WithTimeout(ctx, 4*time.Second)
 		defer cancel()
 		_, err := d.call(probe, i, []string{"pg_ctl"}, []string{"-D", d.m.versionPath(i, "data"), "status"}, nil)
 		if err != nil {
-			return false, nil
+			var exit *exec.ExitError
+			if errors.As(err, &exit) && exit.ExitCode() == 3 {
+				return false, nil
+			}
+			return false, err
 		}
 		return true, nil
 	}

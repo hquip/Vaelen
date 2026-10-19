@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/signal"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"vsm/internal/core"
@@ -27,7 +29,9 @@ func runDatabase(args []string) error {
 		return err
 	}
 	manager := database.New(paths)
-	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Minute)
+	interrupt, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	ctx, cancel := context.WithTimeout(interrupt, 8*time.Minute)
 	defer cancel()
 	rest, asJSON := jsonFlag(args[1:])
 	manager.Progress = func(text string) {

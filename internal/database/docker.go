@@ -233,12 +233,12 @@ func (d dockerDriver) logs(ctx context.Context, i *Instance) (string, error) {
 }
 func clientSettings(i *Instance, c credential, port int) ([]string, map[string]string) {
 	if i.Engine == "postgres" {
-		return []string{"-h", "127.0.0.1", "-p", strconv.Itoa(port), "-U", "vsm", "-d", "app", "-v", "ON_ERROR_STOP=1"}, map[string]string{"PGPASSWORD": c.Password, "PGCONNECT_TIMEOUT": "3", "PGSSLMODE": "disable", "PGSERVICE": ""}
+		return []string{"-h", "127.0.0.1", "-p", strconv.Itoa(port), "-U", "vsm", "-d", "app", "-v", "ON_ERROR_STOP=1"}, map[string]string{"PGPASSWORD": c.Password, "PGCONNECT_TIMEOUT": "3", "PGSSLMODE": "disable"}
 	}
 	if i.Engine == "mysql" || i.Engine == "mariadb" {
 		return []string{"--no-defaults", "--protocol=tcp", "-h", "127.0.0.1", "-P", strconv.Itoa(port), "-u", "root", "--connect-timeout=3", "-D", "app"}, map[string]string{"MYSQL_PWD": c.Password}
 	}
-	return []string{"--no-auth-warning", "-h", "127.0.0.1", "-p", strconv.Itoa(port)}, map[string]string{"REDISCLI_AUTH": c.Password, "VALKEYCLI_AUTH": c.Password}
+	return []string{"-e", "--no-auth-warning", "-h", "127.0.0.1", "-p", strconv.Itoa(port)}, map[string]string{"REDISCLI_AUTH": c.Password, "VALKEYCLI_AUTH": c.Password}
 }
 func readyArgs(engine string) []string {
 	if engine == "postgres" {

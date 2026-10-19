@@ -193,15 +193,15 @@ func testDatabaseLifecycle(t *testing.T, m *Manager, name, backend string, versi
 	}
 	// The new version owns a fresh dataset; creating the same primary key succeeds.
 	write("second-version")
-	if read() != "second-version" {
-		t.Fatal("new data not readable")
+	if got := read(); got != "second-version" {
+		t.Fatalf("new data not readable: got %q", got)
 	}
 	state, err = m.Switch(ctx, instance, versions[0])
 	if err != nil {
 		t.Fatal(err)
 	}
-	if read() != "first-version" {
-		t.Fatal("old version's data was not restored")
+	if got := read(); got != "first-version" {
+		t.Fatalf("old version's data was not restored: got %q", got)
 	}
 	if _, err = m.Switch(ctx, instance, versions[1]); err != nil {
 		t.Fatal(err)

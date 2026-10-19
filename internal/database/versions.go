@@ -28,6 +28,20 @@ func (d nativeDriver) verify(ctx context.Context, i *Instance) error {
 	if i.Engine == "mariadb" {
 		names = append(names, "mysqld")
 	}
+	required := [][]string{{e.Client}}
+	switch i.Engine {
+	case "postgres":
+		required = append(required, []string{"pg_ctl"}, []string{"initdb"})
+	case "mysql":
+		required = append(required, []string{"mysqladmin"})
+	case "mariadb":
+		required = [][]string{{"mariadb", "mysql"}, {"mariadb-admin", "mysqladmin"}, {"mariadb-install-db", "mysql_install_db"}}
+	}
+	for _, alternatives := range required {
+		if _, err := d.program(i, alternatives...); err != nil {
+			return err
+		}
+	}
 	output, err := d.call(ctx, i, names, []string{"--version"}, nil)
 	if err != nil {
 		return err

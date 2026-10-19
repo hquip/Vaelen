@@ -2,9 +2,11 @@ let databaseBusy = false;
 let databaseCancelable = false;
 let databaseInstances = [];
 let databaseEngines = [];
+let databasePreferredEngine = "";
+function openDatabaseManager(engine) { databasePreferredEngine=engine||"";db("Btn").click(); }
 const db = id => document.getElementById("database" + id);
-function databaseError(error) { db("Error").textContent = error ? errMsg(error) : ""; db("Error").classList.toggle("hidden", !error); }
-function databaseOutput(text) { const out=db("Output");out.textContent=(out.textContent+String(text)+"\n").slice(-120000);out.classList.remove("hidden");out.scrollTop=out.scrollHeight; }
+function databaseError(error) { db("Error").textContent = error ? errMsg(error) : ""; db("Error").classList.toggle("hidden", !error);if(error)db("Error").scrollIntoView({block:"nearest"}); }
+function databaseOutput(text) { const out=db("Output"),wasHidden=out.classList.contains("hidden");out.textContent=(out.textContent+String(text)+"\n").slice(-120000);out.classList.remove("hidden");out.scrollTop=out.scrollHeight;if(wasHidden)out.scrollIntoView({block:"nearest"}); }
 function clearDatabaseConnection() { db("Connection").value="";db("ConnectionWrap").classList.add("hidden"); }
 function databaseControls() {
   const selected=databaseInstances.find(i=>i.name===db("Instance").value);
@@ -60,11 +62,13 @@ async function databaseAction(action,cancelable=false) {
   try{await action();}catch(error){if(cancelable){try{await refreshDatabases();}catch(_){}}databaseError(error);}finally{databaseBusy=false;databaseCancelable=false;databaseControls();}
 }
 db("Btn").addEventListener("click",()=>{
+  const preferredEngine=databasePreferredEngine;databasePreferredEngine="";
   db("Modal").classList.remove("hidden");clearDatabaseConnection();db("Output").textContent="";db("Output").classList.add("hidden");
   databaseAction(async()=>{
     databaseEngines=await call("DatabaseEngines");
     db("Engine").replaceChildren(...databaseEngines.map(profile=>{const option=document.createElement("option");option.value=profile.name;option.textContent=profile.name;return option;}));
-    await refreshDatabases();
+    if(preferredEngine)db("Engine").value=preferredEngine;
+    await refreshDatabases(preferredEngine?"":undefined);
   });
 });
 db("Instance").addEventListener("change",()=>databaseAction(selectDatabaseInstance));
