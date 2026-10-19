@@ -523,6 +523,9 @@ func (a *app) cmdDetect(args []string) error {
 			ver = "?"
 		}
 		fmt.Printf("  %-8s %-14s %s\n", s.Tool, ver, s.Path)
+		if s.ManagedVersion != "" {
+			fmt.Printf("    %s；管理标识: %s\n", s.Environment, s.ManagedVersion)
+		}
 		if s.VersionError != "" {
 			fmt.Printf("    版本读取失败: %s\n", s.VersionError)
 		}
@@ -543,6 +546,9 @@ func (a *app) cmdDetect(args []string) error {
 
 func (a *app) cmdAdopt(args []string) error {
 	if len(args) >= 1 && (args[0] == "--all" || args[0] == "-a") {
+		if len(args) != 1 {
+			return fmt.Errorf("用法: vsm adopt --all")
+		}
 		return a.adoptAll()
 	}
 	if len(args) < 1 {
@@ -552,6 +558,38 @@ func (a *app) cmdAdopt(args []string) error {
 	p, ok := plugin.Get(tool)
 	if !ok {
 		return unsupported(tool)
+	}
+	if len(args) > 1 && strings.HasPrefix(args[1], "--") {
+		path, alias := "", ""
+		for i := 1; i < len(args); i++ {
+			if i+1 >= len(args) {
+				return fmt.Errorf("用法: vsm adopt <tool> --path <目录或可执行文件> [--name <标识>]")
+			}
+			switch args[i] {
+			case "--path":
+				path = args[i+1]
+			case "--name":
+				alias = args[i+1]
+			default:
+				return fmt.Errorf("未知选项: %s", args[i])
+			}
+			i++
+		}
+		if path == "" {
+			return fmt.Errorf("缺少 --path")
+		}
+		s, err := a.inst.AdoptPath(tool, path, alias)
+		if err != nil {
+			return err
+		}
+		if err := a.act.GenerateShims(); err != nil {
+			return fmt.Errorf("已纳管，但重建 shim 失败: %w", err)
+		}
+		fmt.Printf("已纳管 %s %s（版本 %s）\n  -> %s\n", tool, s.RegistryVersion(), s.Version, s.Path)
+		return nil
+	}
+	if len(args) > 3 {
+		return fmt.Errorf("用法: vsm adopt <tool> [version] [可执行路径]")
 	}
 	var version, execPath string
 	if len(args) >= 2 {
@@ -572,7 +610,7 @@ func (a *app) cmdAdopt(args []string) error {
 		switch {
 		case version != "":
 			for _, s := range sys {
-				if s.Version == version {
+				if s.RegistryVersion() == version {
 					execPath = s.Path
 				}
 			}
@@ -580,12 +618,12 @@ func (a *app) cmdAdopt(args []string) error {
 				return fmt.Errorf("系统检测中没有 %s %s", tool, version)
 			}
 		case len(sys) == 1:
-			version, execPath = sys[0].Version, sys[0].Path
+			version, execPath = sys[0].RegistryVersion(), sys[0].Path
 		default:
 			var b strings.Builder
 			fmt.Fprintf(&b, "检测到多个 %s 版本，请指定其一：vsm adopt %s <version>\n", tool, tool)
 			for _, s := range sys {
-				fmt.Fprintf(&b, "  %-12s %s\n", s.Version, s.Path)
+				fmt.Fprintf(&b, "  %-12s %s %s\n", s.RegistryVersion(), s.Environment, s.Path)
 			}
 			return fmt.Errorf("%s", strings.TrimRight(b.String(), "\n"))
 		}
@@ -604,18 +642,19 @@ func (a *app) adoptAll() error {
 	sys := core.DetectSystem(plugin.DetectCommands(), a.paths.Shims())
 	n := 0
 	for _, s := range sys {
+		version := s.RegistryVersion()
 		p, ok := plugin.Get(s.Tool)
 		if !ok || s.Version == "" {
 			continue
 		}
-		if a.reg.IsInstalled(s.Tool, s.Version) {
+		if a.reg.IsInstalled(s.Tool, version) {
 			continue
 		}
-		if err := a.inst.Adopt(p, s.Version, s.Path); err != nil {
-			fmt.Printf("  跳过 %s %s：%v\n", s.Tool, s.Version, err)
+		if err := a.inst.Adopt(p, version, s.Path); err != nil {
+			fmt.Printf("  跳过 %s %s：%v\n", s.Tool, version, err)
 			continue
 		}
-		fmt.Printf("  纳管 %s %s\n", s.Tool, s.Version)
+		fmt.Printf("  纳管 %s %s\n", s.Tool, version)
 		n++
 	}
 	if err := a.act.GenerateShims(); err != nil {

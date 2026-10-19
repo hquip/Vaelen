@@ -281,6 +281,8 @@ Windows 的系统 PATH 排在用户 PATH 前面；只把 shims 加到用户 PATH
 
 ## Agent / AI 与切换提示
 
+系统检测支持已有 Conda Python 环境和手动添加安装路径；纳管后复用扫描结果，单语言详情不会混入其他工具。详见[已有运行时与 Conda](docs/system-runtimes.md)。
+
 新增 MCP 与三种项目环境：见 [MCP 接入](docs/mcp.md) 和 [项目隔离](docs/project-environments.md)。GUI 的「隔离环境 / MCP」可初始化环境并生成配置。
 
 ```bash

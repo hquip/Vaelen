@@ -249,9 +249,9 @@ body { display: flex; flex-direction: column; height: 100vh; }
   border: 1px solid var(--border); border-radius: 9px;
 }
 .ver.active { border-color: var(--accent); }
-.ver .vname { font-family: Consolas, monospace; }
+.ver .vname { font-family: Consolas, monospace; overflow-wrap: anywhere; min-width: 0; }
 .ver.active .vname::after { content: " ● 已选择"; color: var(--green); font-size: 11px; }
-.vactions { display: flex; gap: 7px; }
+.vactions { display: flex; gap: 7px; flex-shrink: 0; }
 .empty-hint { color: var(--muted); font-style: italic; padding: 4px 0; }
 
 /* 系统检测 */

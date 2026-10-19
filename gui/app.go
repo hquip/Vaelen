@@ -471,6 +471,39 @@ func (a *App) DetectTool(tool string) []core.SystemVersion {
 	return core.DetectSystem(map[string][]string{tool: detectNames(tool)}, a.c().paths.Shims())
 }
 
+func (a *App) InspectToolPath(tool, path string) (core.SystemVersion, error) {
+	return core.InspectToolPath(tool, path)
+}
+
+func (a *App) AdoptCustomTool(tool, path, alias string) (result core.SystemVersion, err error) {
+	defer logGUI("adopt.custom", logging.Fields{"tool": tool}, &err)()
+	done, err := a.begin()
+	if err != nil {
+		return result, err
+	}
+	defer done()
+	c := a.c()
+	result, err = c.inst.AdoptPath(tool, path, alias)
+	if err != nil {
+		return result, err
+	}
+	return result, c.act.GenerateShims()
+}
+
+// AdoptDetected reuses the explicit scan snapshot; adoption does not scan again.
+func (a *App) AdoptDetected(items []core.SystemVersion) (count int, err error) {
+	defer logGUI("adopt.detected", logging.Fields{"count": len(items)}, &err)()
+	if len(items) > 1024 {
+		return 0, fmt.Errorf("一次最多纳管 1024 项")
+	}
+	done, err := a.begin()
+	if err != nil {
+		return 0, err
+	}
+	defer done()
+	return a.adoptList(items)
+}
+
 func detectNames(tool string) []string {
 	if names, ok := plugin.DetectCommands()[tool]; ok {
 		return names
@@ -805,12 +838,13 @@ func (a *App) adoptList(sys []core.SystemVersion) (int, error) {
 	n := 0
 	var failed []string
 	for _, s := range sys {
+		version := s.RegistryVersion()
 		p, ok := plugin.Get(s.Tool)
-		if !ok || s.Version == "" || c.reg.IsInstalled(s.Tool, s.Version) {
+		if !ok || s.Version == "" || c.reg.IsInstalled(s.Tool, version) {
 			continue
 		}
-		if err := c.inst.Adopt(p, s.Version, s.Path); err != nil {
-			failed = append(failed, fmt.Sprintf("%s %s（%v）", s.Tool, s.Version, err))
+		if err := c.inst.Adopt(p, version, s.Path); err != nil {
+			failed = append(failed, fmt.Sprintf("%s %s（%v）", s.Tool, version, err))
 			continue
 		}
 		n++

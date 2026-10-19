@@ -244,10 +244,10 @@ var commandHelpTopics = map[string]commandHelp{
 		Examples: []string{"vsm detect", "vsm detect --json"},
 	},
 	"adopt": {
-		Summary: "将系统已有运行时链接到 VSM 管理", Usage: []string{"vsm adopt <tool> [version] [可执行路径]", "vsm adopt --all"},
-		Options:  []string{"--all, -a  纳管全部检测到且可用的版本"},
-		Notes:    []string{"创建链接，保留原始安装；local / docker 隔离模式拒绝纳管宿主机运行时。"},
-		Examples: []string{"vsm adopt go", "vsm adopt go 1.25.11 /opt/go/bin/go", "vsm adopt --all"},
+		Summary: "将系统已有运行时链接到 VSM 管理", Usage: []string{"vsm adopt <tool> [version] [可执行路径]", "vsm adopt <tool> --path <目录或可执行文件> [--name <标识>]", "vsm adopt --all"},
+		Options:  []string{"--all, -a  纳管全部检测到且可用的版本", "--path <路径>  检查并纳管 PATH 之外的安装目录或主命令", "--name <标识>  为安装或 Conda 环境指定独立管理标识"},
+		Notes:    []string{"创建链接，保留原始安装；local / docker 隔离模式拒绝纳管宿主机运行时。", "Conda Python 环境分别保留依赖，使用其完整管理标识选择；普通版本范围不会自动选中 Conda 环境。"},
+		Examples: []string{"vsm adopt go", "vsm adopt go 1.25.11 /opt/go/bin/go", "vsm adopt python --path /opt/miniconda3/envs/science --name conda-science", "vsm adopt maven --path /opt/maven", "vsm adopt --all"},
 	},
 	"mirror": {
 		Summary: "查看或设置下载镜像", Usage: []string{"vsm mirror [cn|off|custom]", "vsm mirror set <go|node|java|npm|github|github-api> <URL>", "vsm mirror unset <源>", "vsm mirror list [--json]"},

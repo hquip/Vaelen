@@ -9,6 +9,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"vsm/internal/core"
 )
 
 func newTestApp(t *testing.T) *App {
@@ -75,9 +77,38 @@ func TestBusyOperationsFailFast(t *testing.T) {
 	if err := a.SetGlobal("java", "21"); !errors.Is(err, errBusy) {
 		t.Fatalf("global switch must share write lock: %v", err)
 	}
+	if _, err := a.AdoptDetected(nil); !errors.Is(err, errBusy) {
+		t.Fatalf("snapshot adoption must share write lock: %v", err)
+	}
+	if _, err := a.AdoptCustomTool("maven", "does-not-exist", ""); !errors.Is(err, errBusy) {
+		t.Fatalf("manual adoption must share write lock: %v", err)
+	}
 	done()
 	if _, err := a.begin(); err != nil {
 		t.Fatalf("释放后应可再次获取: %v", err)
+	}
+}
+
+func TestAdoptDetectedReusesExplicitSnapshot(t *testing.T) {
+	a := newTestApp(t)
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "bin"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	name := "mvn"
+	if runtime.GOOS == "windows" {
+		name += ".cmd"
+	}
+	path := filepath.Join(root, "bin", name)
+	if err := os.WriteFile(path, []byte("not executable; snapshot must not probe again"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	items := []core.SystemVersion{{Tool: "maven", Version: "3.9.6", Path: path}}
+	if n, err := a.AdoptDetected(items); err != nil || n != 1 {
+		t.Fatalf("snapshot not adopted: %d %v", n, err)
+	}
+	if n, err := a.AdoptDetected(items); err != nil || n != 0 {
+		t.Fatalf("repeat adoption: %d %v", n, err)
 	}
 }
 

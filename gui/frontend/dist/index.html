@@ -80,6 +80,25 @@
 
   <div id="toast" class="toast hidden"></div>
 
+  <div id="manualRuntimeModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="manualRuntimeTitle">
+    <div class="modal-card project-env-card">
+      <h3 id="manualRuntimeTitle" class="modal-title">添加已有运行时</h3>
+      <div class="project-env-body">
+        <p class="project-hint">选择语言，再指定安装目录或主命令文件。可添加不在 PATH 的版本，也可选择 Conda 环境目录；纳管只创建链接，保留原安装与依赖。</p>
+        <label class="project-field-label" for="manualRuntimeTool">语言 / 工具</label>
+        <select id="manualRuntimeTool" class="modal-input"></select>
+        <label class="project-field-label" for="manualRuntimePath">安装目录或主命令路径</label>
+        <div class="project-dir-row"><input id="manualRuntimePath" class="modal-input project-dir" placeholder="例如 D:\miniconda3\envs\science 或 /opt/maven/bin/mvn" /><button id="manualRuntimePick" class="ghost-btn">选择目录</button></div>
+        <label class="project-field-label" for="manualRuntimeAlias">管理标识（可选）</label>
+        <input id="manualRuntimeAlias" class="modal-input" placeholder="留空自动生成；相同版本的不同安装可分别命名" />
+        <p class="project-hint">标识可用于「设为本目录 / 全局」。Conda 环境默认使用独立标识，避免同版本的不同依赖环境混在一起。</p>
+        <pre id="manualRuntimePreview" class="project-commands hidden"></pre>
+        <p id="manualRuntimeError" class="project-error hidden" role="alert"></p>
+      </div>
+      <div class="modal-actions"><button id="manualRuntimeInspect" class="ghost-btn">检测路径</button><button id="manualRuntimeAdopt" class="primary-btn" disabled>确认纳管</button><span class="modal-spacer"></span><button id="manualRuntimeClose" class="ghost-btn">关闭</button></div>
+    </div>
+  </div>
+
   <div id="activationModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="activationTitle">
     <div class="modal-card project-env-card">
       <h3 id="activationTitle" class="modal-title">终端激活</h3>
