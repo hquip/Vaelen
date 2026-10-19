@@ -203,6 +203,11 @@ func (d nativeDriver) initialize(ctx context.Context, i *Instance, c credential)
 	return nil
 }
 func (d nativeDriver) start(ctx context.Context, i *Instance) (err error) {
+	unlock, err := d.m.programLock(i.Engine, i.Version)
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	if err := d.verify(ctx, i); err != nil {
 		return err
 	}

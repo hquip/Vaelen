@@ -20,6 +20,7 @@ import (
 	"vsm/internal/buildinfo"
 	"vsm/internal/config"
 	"vsm/internal/core"
+	"vsm/internal/database"
 	"vsm/internal/logging"
 	"vsm/internal/mcpconfig"
 	"vsm/internal/mcpserver"
@@ -453,6 +454,11 @@ func (a *App) Uninstall(tool, version string) (err error) {
 	}
 	defer done()
 	c := a.c()
+	unlock, err := database.GuardUninstall(c.paths, tool, version)
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	if err := c.inst.Uninstall(tool, version); err != nil {
 		return err
 	}

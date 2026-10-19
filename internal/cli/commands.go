@@ -11,6 +11,7 @@ import (
 
 	"vsm/internal/config"
 	"vsm/internal/core"
+	"vsm/internal/database"
 	"vsm/internal/netcfg"
 	"vsm/internal/plugin"
 )
@@ -132,6 +133,11 @@ func (a *app) cmdUninstall(args []string) error {
 		return fmt.Errorf("参数过多: %s（用法: vsm uninstall <tool> <version>）", strings.Join(args[2:], " "))
 	}
 	tool, version := args[0], args[1]
+	unlock, err := database.GuardUninstall(a.paths, tool, version)
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	if err := a.inst.Uninstall(tool, version); err != nil {
 		return err
 	}

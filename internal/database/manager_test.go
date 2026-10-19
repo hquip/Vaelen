@@ -217,3 +217,31 @@ func TestMissingNativeDataIsNeverReinitialized(t *testing.T) {
 		t.Fatal("created replacement data directory")
 	}
 }
+
+func TestRunningNativeVersionCannotBeUninstalled(t *testing.T) {
+	m, f := fakeManager(t)
+	configureTest(t, m)
+	i, _ := m.load("dev")
+	i.Backend = "native"
+	if err := m.save(i); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.Start(context.Background(), "dev"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.guardUninstall(context.Background(), "postgres", "17"); err == nil || !strings.Contains(err.Error(), "正在使用") {
+		t.Fatalf("running program uninstall accepted: %v", err)
+	}
+	f.active = ""
+	release, err := m.guardUninstall(context.Background(), "postgres", "17")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer release()
+	if _, err := m.Start(context.Background(), "dev"); err == nil {
+		t.Fatal("instance started during uninstall")
+	}
+	if err := (nativeDriver{m}).start(context.Background(), i); err == nil || !strings.Contains(err.Error(), "正在操作") {
+		t.Fatalf("native startup did not respect the version lock: %v", err)
+	}
+}
