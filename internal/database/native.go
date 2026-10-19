@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -67,6 +68,13 @@ func (d nativeDriver) running(ctx context.Context, i *Instance) (bool, error) {
 	if !i.Versions[i.Version].Allocated {
 		return false, nil
 	}
+	tracked, err := d.trackedProcess(i)
+	if err != nil {
+		return false, err
+	}
+	if !tracked {
+		return false, nil
+	}
 	if i.Engine == "postgres" {
 		if _, err := os.Stat(filepath.Join(d.m.versionPath(i, "data"), "PG_VERSION")); os.IsNotExist(err) {
 			return false, nil
@@ -89,13 +97,9 @@ func (d nativeDriver) running(ctx context.Context, i *Instance) (bool, error) {
 	defer cancel()
 	if _, err := d.exec(probe, i, readyArgs(i.Engine)); err == nil {
 		return true, nil
+	} else {
+		return false, fmt.Errorf("受管进程仍在运行，但连接验证失败，请查看日志: %w", err)
 	}
-	connection, err := net.DialTimeout("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(i.Port)), 300*time.Millisecond)
-	if err == nil {
-		connection.Close()
-		return false, fmt.Errorf("端口 %d 有服务，但实例身份验证未通过；拒绝启动或停止其他服务", i.Port)
-	}
-	return false, nil
 }
 func (d nativeDriver) prepareData(i *Instance) error {
 	if err := d.m.prepareVersion(i); err != nil {
@@ -110,6 +114,9 @@ func (d nativeDriver) prepareData(i *Instance) error {
 	} else if !os.IsNotExist(err) {
 		return err
 	} else {
+		if i.Versions[i.Version].Allocated {
+			return fmt.Errorf("数据库数据所有权标记丢失，请恢复 %s", stamp)
+		}
 		entries, readErr := os.ReadDir(d.m.versionPath(i, "data"))
 		if readErr != nil && !os.IsNotExist(readErr) {
 			return readErr
@@ -119,6 +126,15 @@ func (d nativeDriver) prepareData(i *Instance) error {
 		}
 		if err := config.WriteFileAtomic(stamp, []byte(i.Owner+":"+i.Engine+":"+i.Version+"\n"), 0600); err != nil {
 			return err
+		}
+	}
+	if i.Versions[i.Version].Allocated {
+		entries, err := os.ReadDir(d.m.versionPath(i, "data"))
+		if err != nil {
+			return fmt.Errorf("已有数据库数据目录丢失，拒绝重新初始化: %w", err)
+		}
+		if i.Versions[i.Version].Initialized && len(entries) == 0 {
+			return fmt.Errorf("已有数据库数据目录为空，拒绝创建空库替代")
 		}
 	}
 	if err := d.m.ensure("instances", i.Name, "versions", i.Backend+"-"+i.Version, "data"); err != nil {
@@ -175,7 +191,9 @@ func (d nativeDriver) initialize(ctx context.Context, i *Instance, c credential)
 			return err
 		}
 		if runtime.GOOS == "windows" {
-			_, err = d.call(ctx, i, []string{"mariadb-install-db", "mysql_install_db"}, append(args, "--password="+c.Password), nil)
+			// The Windows utility does not accept Unix --basedir/--no-defaults.
+			// Its bootstrap leaves root local; the managed init-file sets the password.
+			_, err = d.call(ctx, i, []string{"mariadb-install-db", "mysql_install_db"}, []string{"--datadir=" + data}, nil)
 			return err
 		}
 		args = append(args, "--auth-root-authentication-method=normal", "--skip-test-db")
@@ -194,7 +212,7 @@ func (d nativeDriver) start(ctx context.Context, i *Instance) (err error) {
 		return nil
 	}
 	e, _ := engine(i.Engine)
-	if _, err := d.program(i, e.Server); err != nil {
+	if _, err := d.program(i, serverNames(i.Engine)...); err != nil {
 		return err
 	}
 	listener, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(i.Port)))
@@ -246,7 +264,27 @@ func (d nativeDriver) start(ctx context.Context, i *Instance) (err error) {
 				return err
 			}
 		}
+		cleanup = func() {
+			stop, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+			defer cancel()
+			_, _ = d.call(stop, i, []string{"pg_ctl"}, []string{"-D", data, "-m", "fast", "-w", "-t", "15", "stop"}, nil)
+		}
 		if _, err := d.call(ctx, i, []string{"pg_ctl"}, []string{"-D", data, "-l", logPath, "-w", "-t", "45", "start"}, nil); err != nil {
+			return err
+		}
+		pidData, err := config.ReadBounded(filepath.Join(data, "postmaster.pid"), 4096)
+		if err != nil {
+			return err
+		}
+		lines := strings.Fields(string(pidData))
+		if len(lines) == 0 {
+			return fmt.Errorf("PostgreSQL 未写入进程 ID")
+		}
+		pid, err := strconv.Atoi(lines[0])
+		if err != nil {
+			return err
+		}
+		if err := d.recordProcess(i, pid); err != nil {
 			return err
 		}
 	case "mysql", "mariadb":
@@ -269,8 +307,8 @@ func (d nativeDriver) start(ctx context.Context, i *Instance) (err error) {
 		if err := config.WriteFileAtomic(file, []byte(settings), 0600); err != nil {
 			return err
 		}
-		program, _ := d.program(i, e.Server)
-		cleanup, err = d.launch(program, []string{"--defaults-file=" + file}, logPath)
+		program, _ := d.program(i, serverNames(i.Engine)...)
+		cleanup, err = d.launch(i, program, []string{"--defaults-file=" + file}, logPath)
 		if err != nil {
 			return err
 		}
@@ -281,7 +319,7 @@ func (d nativeDriver) start(ctx context.Context, i *Instance) (err error) {
 			return err
 		}
 		program, _ := d.program(i, e.Server)
-		cleanup, err = d.launch(program, []string{file}, logPath)
+		cleanup, err = d.launch(i, program, []string{file}, logPath)
 		if err != nil {
 			return err
 		}
@@ -314,7 +352,7 @@ func (d nativeDriver) start(ctx context.Context, i *Instance) (err error) {
 	i.Versions[i.Version].Initialized = true
 	return d.m.saveVersion(i)
 }
-func (d nativeDriver) launch(program string, args []string, logPath string) (func(), error) {
+func (d nativeDriver) launch(i *Instance, program string, args []string, logPath string) (func(), error) {
 	log, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
 	if err != nil {
 		return nil, err
@@ -325,6 +363,11 @@ func (d nativeDriver) launch(program string, args []string, logPath string) (fun
 	cmd.Stdout = log
 	cmd.Stderr = log
 	if err := cmd.Start(); err != nil {
+		return nil, err
+	}
+	if err := d.recordProcess(i, cmd.Process.Pid); err != nil {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
 		return nil, err
 	}
 	go func() { _ = cmd.Wait() }()
@@ -421,7 +464,7 @@ func (d nativeDriver) exec(ctx context.Context, i *Instance, args []string) (str
 
 // NativeVersions lists registered server installations; clients alone are insufficient.
 func (m *Manager) NativeVersions(name string) ([]string, error) {
-	e, err := engine(name)
+	_, err := engine(name)
 	if err != nil {
 		return nil, err
 	}
@@ -432,9 +475,10 @@ func (m *Manager) NativeVersions(name string) ([]string, error) {
 	out := []string{}
 	for _, v := range versions {
 		i := &Instance{Engine: name, Version: v}
-		if _, err := (nativeDriver{m}).program(i, e.Server); err == nil {
+		if _, err := (nativeDriver{m}).program(i, serverNames(i.Engine)...); err == nil {
 			out = append(out, v)
 		}
 	}
+	sort.SliceStable(out, func(a, b int) bool { return core.CompareVersions(out[a], out[b]) < 0 })
 	return out, nil
 }

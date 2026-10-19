@@ -199,3 +199,21 @@ func TestReportedVersionMustMatchRequestedVersion(t *testing.T) {
 		}
 	}
 }
+
+func TestMissingNativeDataIsNeverReinitialized(t *testing.T) {
+	m, _ := fakeManager(t)
+	configureTest(t, m)
+	i, _ := m.load("dev")
+	i.Backend = "native"
+	i.Versions[i.Version].Allocated = true
+	i.Versions[i.Version].Initialized = true
+	if err := m.save(i); err != nil {
+		t.Fatal(err)
+	}
+	if err := (nativeDriver{m}).prepareData(i); err == nil {
+		t.Fatal("missing native data was recreated")
+	}
+	if _, err := os.Stat(m.versionPath(i, "data")); !os.IsNotExist(err) {
+		t.Fatal("created replacement data directory")
+	}
+}

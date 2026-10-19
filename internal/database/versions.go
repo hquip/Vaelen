@@ -24,10 +24,7 @@ func checkReportedVersion(wanted string, output []byte) (string, error) {
 }
 func (d nativeDriver) verify(ctx context.Context, i *Instance) error {
 	e, _ := engine(i.Engine)
-	names := []string{e.Server}
-	if i.Engine == "mariadb" {
-		names = append(names, "mysqld")
-	}
+	names := serverNames(i.Engine)
 	required := [][]string{{e.Client}}
 	switch i.Engine {
 	case "postgres":
@@ -45,6 +42,12 @@ func (d nativeDriver) verify(ctx context.Context, i *Instance) error {
 	output, err := d.call(ctx, i, names, []string{"--version"}, nil)
 	if err != nil {
 		return err
+	}
+	if i.Engine == "mariadb" && !strings.Contains(strings.ToLower(string(output)), "mariadb") {
+		return fmt.Errorf("所选程序不是 MariaDB 服务端")
+	}
+	if i.Engine == "mysql" && strings.Contains(strings.ToLower(string(output)), "mariadb") {
+		return fmt.Errorf("所选程序是 MariaDB，请选择 mariadb 数据库类型")
 	}
 	actual, err := checkReportedVersion(i.Version, output)
 	if err != nil {

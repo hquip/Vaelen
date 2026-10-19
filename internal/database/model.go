@@ -34,6 +34,13 @@ func engine(name string) (Engine, error) {
 	}
 	return Engine{}, fmt.Errorf("不支持的数据库 %q（postgres/mysql/mariadb/redis/valkey）", name)
 }
+func serverNames(name string) []string {
+	e, _ := engine(name)
+	if name == "mariadb" {
+		return []string{e.Server, "mysqld"}
+	}
+	return []string{e.Server}
+}
 
 type Request struct {
 	Name    string `json:"name"`

@@ -4,7 +4,7 @@
 等多语言运行环境的安装、版本切换与激活。设计对标 asdf / mise / vfox，核心追求 **全链路零 CGO 的 Go 单体**：
 一键交叉编译全平台、单二进制分发、内置版本切换。
 
-> CLI 为纯标准库实现、**零外部依赖**，内置 **73 种语言/工具**：其中 17 种可直接安装
+> CLI 为纯标准库实现、**零外部依赖**，内置 **78 种语言/工具**：其中 17 种可直接安装
 > （`go` `node` `java` `python` `zig` `deno` `bun` `gleam` `vlang` `kotlin` `tinygo` `nushell` `cmake` `ninja` `typst` `just` `uv`），
 > 其余 50+ 种支持 **识别与版本切换**（涵盖 rust/dart/php/dotnet/elixir/swift/scala/elm/purescript/lean/solidity/maven/gradle/haskell/r/vala 等；
 > 下载源可按需在 manifest 中补充即变为可安装）。另支持 `~/.vsm/plugins/*.json` 无限扩展、
@@ -278,6 +278,19 @@ Windows 的系统 PATH 排在用户 PATH 前面；只把 shims 加到用户 PATH
 离开项目目录时，PATH 与 `GOROOT` / `JAVA_HOME` 等变量会自动还原，不会把上一个项目的版本带到别处。
 
 激活后，在配置了 `.tool-versions` 的目录里直接运行 `go` / `node`，会自动解析到对应版本。
+
+## 数据库版本与实例
+
+支持 PostgreSQL、MySQL、MariaDB、Redis、Valkey 的 **Docker / 原生**版本切换，按实例和版本独立保存数据。GUI 左侧打开「数据库版本 / 实例」。
+
+```bash
+vsm db use postgres 17-alpine --name api-pg --port 15432
+vsm db start api-pg
+vsm db switch api-pg 18-alpine
+vsm db connection api-pg
+```
+
+原生方式先纳管完整数据库程序，再使用 `--backend native`。切回旧版本恢复原数据，切换失败尝试恢复旧服务；跨版本数据迁移单独处理。详见[数据库版本切换](docs/databases.md)。
 
 ## Agent / AI 与切换提示
 

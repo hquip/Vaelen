@@ -38,7 +38,7 @@ async function selectDatabaseInstance() {
   if(selected) {
     db("Name").value=selected.name;db("Engine").value=selected.engine;db("Backend").value=selected.backend;db("Version").value=selected.version;db("Port").value=selected.port;
     const actual=selected.versions?.[selected.version]?.actual_version;
-    db("Status").textContent=(selected.running?"运行中":"已停止")+" · "+selected.engine+" "+selected.version+(actual?"（实际 "+actual+"）":"")+" · "+selected.backend;
+    db("Status").textContent=(selected.error?"状态待检查":selected.running?"运行中":"已停止")+" · "+selected.engine+" "+selected.version+(actual?"（实际 "+actual+"）":"")+" · "+selected.backend;
     db("Data").textContent="当前版本数据："+selected.data_location;
     if(selected.error)databaseError(selected.error);
   } else {
@@ -53,7 +53,7 @@ async function refreshDatabases(preferred) {
   databaseInstances=await call("DatabaseList");
   const previous=preferred===undefined?db("Instance").value:preferred;
   const first=document.createElement("option");first.value="";first.textContent="创建新实例";
-  db("Instance").replaceChildren(first,...databaseInstances.map(instance=>{const option=document.createElement("option");option.value=instance.name;option.textContent=instance.name+" · "+instance.engine+" "+instance.version+" · "+(instance.running?"运行中":"已停止");return option;}));
+  db("Instance").replaceChildren(first,...databaseInstances.map(instance=>{const option=document.createElement("option");option.value=instance.name;option.textContent=instance.name+" · "+instance.engine+" "+instance.version+" · "+(instance.error?"状态待检查":instance.running?"运行中":"已停止");return option;}));
   db("Instance").value=databaseInstances.some(i=>i.name===previous)?previous:"";
   await selectDatabaseInstance();
 }
@@ -78,6 +78,7 @@ db("Save").addEventListener("click",()=>databaseAction(async()=>{
   const request={name:db("Name").value.trim(),engine:db("Engine").value,backend:db("Backend").value,version:db("Version").value.trim(),port:Number(db("Port").value)};
   if(!db("Instance").value&&databaseInstances.some(i=>i.name===request.name))throw Error("已有同名实例，请从列表选择后切换，或使用新的名称");
   if(!request.version)throw Error("请选择数据库版本；原生方式需要先纳管程序");
+  if(!Number.isInteger(request.port)||request.port<1||request.port>65535)throw Error("端口需要填写 1–65535 之间的整数");
   databaseOutput("正在保存 / 切换版本…");const state=await call("DatabaseUse",request);await refreshDatabases(state.name);databaseOutput(state.running?"版本已切换，服务运行中。":"版本已选择，点击启动即可运行。");
 },true));
 for(const action of ["Start","Stop"])db(action).addEventListener("click",()=>databaseAction(async()=>{const state=await call("Database"+action,db("Instance").value);await refreshDatabases(state.name);databaseOutput(action==="Start"?"数据库已启动。":"数据库已停止，数据保留。");},true));

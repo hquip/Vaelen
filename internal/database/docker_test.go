@@ -83,3 +83,34 @@ func TestDockerImageVersionVerifiedBeforeAllocatingData(t *testing.T) {
 		t.Fatal("data allocated for wrong image")
 	}
 }
+
+func TestMissingDockerDataIsNeverReplacedWithEmptyVolume(t *testing.T) {
+	paths := core.Paths{Root: t.TempDir()}
+	t.Setenv("VSM_HOME", paths.Root)
+	m := New(paths)
+	if _, err := m.Use(context.Background(), Request{Name: "dev", Engine: "postgres", Version: "17"}); err != nil {
+		t.Fatal(err)
+	}
+	i, _ := m.load("dev")
+	if _, err := m.credentials(i); err != nil {
+		t.Fatal(err)
+	}
+	v := i.Versions[i.Version]
+	v.Allocated = true
+	v.Initialized = true
+	v.ImageID = "sha256:" + strings.Repeat("a", 64)
+	v.ActualVersion = "17.9"
+	if err := m.save(i); err != nil {
+		t.Fatal(err)
+	}
+	m.runner = func(ctx context.Context, program string, args []string, env map[string]string) ([]byte, error) {
+		if len(args) > 1 && args[1] == "inspect" {
+			return nil, fmt.Errorf("No such object")
+		}
+		t.Fatalf("modified resources after data loss: %v", args)
+		return nil, nil
+	}
+	if _, err := m.Start(context.Background(), "dev"); err == nil || !strings.Contains(err.Error(), "数据卷丢失") {
+		t.Fatalf("missing data silently recreated: %v", err)
+	}
+}

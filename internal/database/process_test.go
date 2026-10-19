@@ -2,11 +2,14 @@ package database
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
 	"testing"
 	"time"
+
+	"vsm/internal/config"
 )
 
 func TestDatabaseProcessHelper(t *testing.T) {
@@ -36,6 +39,39 @@ func TestPostgresClientClearsServiceEnvironment(t *testing.T) {
 	out, err := m.run(ctx, os.Args[0], []string{"-test.run=^TestDatabaseProcessHelper$"}, env)
 	if err != nil || !strings.Contains(string(out), "service=false options=\n") {
 		t.Fatalf("inherited or empty PGSERVICE reached client: %q %v", out, err)
+	}
+}
+
+func TestNativeOwnershipRejectsReusedPIDBeforeContactingService(t *testing.T) {
+	m, _ := fakeManager(t)
+	configureTest(t, m)
+	i, _ := m.load("dev")
+	i.Backend = "native"
+	i.Engine = "mysql"
+	i.Versions[i.Version].Allocated = true
+	if err := m.prepareVersion(i); err != nil {
+		t.Fatal(err)
+	}
+	data, _ := json.Marshal(processRecord{PID: os.Getpid(), Token: "different-process-creation"})
+	if err := config.WriteFileAtomic(m.versionPath(i, "process.json"), data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	m.runner = func(context.Context, string, []string, map[string]string) ([]byte, error) {
+		t.Fatal("contacted a foreign service after PID mismatch")
+		return nil, nil
+	}
+	if err := (nativeDriver{m}).stop(context.Background(), i); err != nil {
+		t.Fatal(err)
+	}
+}
+func TestProcessCreationIdentityIsStable(t *testing.T) {
+	first, err := processIdentity(os.Getpid())
+	if err != nil || first == "" {
+		t.Fatalf("%q %v", first, err)
+	}
+	second, err := processIdentity(os.Getpid())
+	if err != nil || first != second {
+		t.Fatalf("process identity changed: %q %q %v", first, second, err)
 	}
 }
 func TestQueryOutputExcludesWarningsAndErrorRedactsCredentials(t *testing.T) {

@@ -139,6 +139,9 @@ func (d dockerDriver) start(ctx context.Context, i *Instance) (err error) {
 			return fmt.Errorf("数据库卷不属于此实例，拒绝复用")
 		}
 	} else {
+		if v.Allocated {
+			return fmt.Errorf("已有数据库数据卷丢失，拒绝创建空库替代：%s", volumeName(i))
+		}
 		if _, err := d.command(ctx, []string{"volume", "create", "--label", ownerLabel + "=" + i.Owner, volumeName(i)}, nil); err != nil {
 			return err
 		}

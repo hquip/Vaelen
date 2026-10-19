@@ -50,7 +50,14 @@ func runDatabase(args []string) error {
 		if s.Running {
 			state = "运行中"
 		}
-		fmt.Printf("%s · %s %s · %s · %s\n地址: 127.0.0.1:%d\n数据: %s\n", s.Name, s.Engine, s.Version, s.Backend, state, s.Port, s.DataLocation)
+		if s.Error != "" {
+			state = "状态待检查"
+		}
+		version := s.Version
+		if actual := s.Versions[s.Version]; actual != nil && actual.ActualVersion != "" {
+			version += "（实际 " + actual.ActualVersion + "）"
+		}
+		fmt.Printf("%s · %s %s · %s · %s\n地址: 127.0.0.1:%d\n数据: %s\n", s.Name, s.Engine, version, s.Backend, state, s.Port, s.DataLocation)
 		if s.Error != "" {
 			fmt.Println("提示:", s.Error)
 		}
