@@ -100,13 +100,20 @@ func Run(args []string) (code int) {
 				event = "command.failed"
 			}
 			if logErr != nil {
-				fields["error"] = logErr.Error()
+				fields["error"] = logging.ErrorMessage(logErr)
 			}
 			logging.Record(level, "cli", event, fields)
 		}()
 	}
 
 	switch cmd {
+	case "db":
+		if err := runDatabase(rest); err != nil {
+			logErr = err
+			fmt.Fprintln(os.Stderr, "错误:", err)
+			return 1
+		}
+		return 0
 	case "version", "-v", "--version":
 		fmt.Println("vsm " + buildinfo.DisplayVersion())
 		return 0
@@ -237,6 +244,7 @@ const usageText = `vsm - 多语言版本管理器 (%s)
   run [--install-missing] -- <command> [args] 按项目版本自动执行（补装必须校验 SHA256）
   project init [--mode local|versions|docker] [--image 镜像] 为项目初始化隔离环境
   project status [--json]      显示项目环境
+  db <命令>                   数据库版本、独立实例与数据管理（Docker / 原生）
   mcp [serve|config] --project <目录> [--read-only] MCP 服务或客户端配置
       config --client <客户端>                 Cursor / Claude / Codex / VS Code / Windsurf 配置
   which     <tool>             打印当前版本主命令的完整路径

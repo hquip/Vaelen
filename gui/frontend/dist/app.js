@@ -533,6 +533,7 @@ function statusOf(tool) {
 }
 
 function renderDetail(tool) {
+  const databaseTool = ["postgres","mysql","mariadb","redis","valkey"].includes(tool);
   const s = statusOf(tool);
   const detail = document.getElementById("detail");
   if (!s) {
@@ -600,6 +601,7 @@ function renderDetail(tool) {
   detail.innerHTML = `
     <div class="detail-head">${langIcon(tool, 42)}<h2>${escapeHtml(displayName(tool))}</h2>${headBadge}</div>
     ${cards}
+    ${databaseTool ? `<div class="section"><p class="project-hint">本页管理数据库程序与命令路径。运行中的服务版本、端口和独立数据，请通过数据库实例入口切换。</p><button id="openDatabaseTool" class="primary-btn">管理 ${escapeHtml(tool)} 实例与版本</button></div>` : ""}
     ${hint}
     ${s.activation ? `<div class="act-hint"><strong>全局默认：</strong>${escapeHtml(s.activation.global || "未设置")}<br /><strong>VSM 选择的程序：</strong><code>${escapeHtml(s.activation.executable || "未找到")}</code><br /><strong>GUI 进程 PATH 命中：</strong><code>${escapeHtml(s.activation.command || "未找到")}</code>${(s.activation.warnings || []).map(w => `<p>${escapeHtml(w)}</p>`).join("")}</div>` : ""}
 
@@ -624,7 +626,8 @@ function renderDetail(tool) {
     </div>
 
     <div class="section">
-      <p class="section-title">安装新版本</p>
+      <p class="section-title">${databaseTool ? "获取数据库程序" : "安装新版本"}</p>
+      ${databaseTool ? `<p class="project-hint">Docker 实例会自动拉取官方镜像；原生程序请先安装完整发行包，再点击「添加路径」纳管。</p><button id="databaseInstallEntry" class="ghost-btn">打开数据库实例</button>` : `
       <div class="install-row">
         <input id="versionInput" placeholder="latest（聚焦可加载远端版本，输入可筛选）" autocomplete="off" list="remoteList" />
         <datalist id="remoteList"></datalist>
@@ -638,12 +641,13 @@ function renderDetail(tool) {
         <input id="requireChecksum" type="checkbox"> 要求发布方 SHA256 校验
       </label>
       <div id="installProgress" class="progress hidden"><div class="progress-bar" id="installBar"></div><span class="progress-text" id="installPct"></span></div>
-      <pre id="installLog" class="log"></pre>
+      <pre id="installLog" class="log"></pre>`}
     </div>`}`;
 
   detail.querySelectorAll("button[data-act]").forEach((btn) => {
     btn.addEventListener("click", () => onVerAction(tool, btn.dataset.act, btn.dataset.ver));
   });
+  for (const id of ["openDatabaseTool","databaseInstallEntry"]) { const button=document.getElementById(id);if(button)button.addEventListener("click",()=>openDatabaseManager(tool)); }
   const ata = document.getElementById("adoptToolAllBtn");
   if (ata) ata.addEventListener("click", () => onAdoptToolAll(tool));
   const addPath = document.getElementById("addToolPathBtn");

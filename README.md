@@ -4,7 +4,7 @@
 等多语言运行环境的安装、版本切换与激活。设计对标 asdf / mise / vfox，核心追求 **全链路零 CGO 的 Go 单体**：
 一键交叉编译全平台、单二进制分发、内置版本切换。
 
-> CLI 为纯标准库实现、**零外部依赖**，内置 **73 种语言/工具**：其中 17 种可直接安装
+> CLI 为纯标准库实现、**零外部依赖**，内置 **78 种语言/工具**：其中 17 种可直接安装
 > （`go` `node` `java` `python` `zig` `deno` `bun` `gleam` `vlang` `kotlin` `tinygo` `nushell` `cmake` `ninja` `typst` `just` `uv`），
 > 其余 50+ 种支持 **识别与版本切换**（涵盖 rust/dart/php/dotnet/elixir/swift/scala/elm/purescript/lean/solidity/maven/gradle/haskell/r/vala 等；
 > 下载源可按需在 manifest 中补充即变为可安装）。另支持 `~/.vsm/plugins/*.json` 无限扩展、
@@ -14,6 +14,25 @@
 > 跨平台桌面 GUI（`gui/`，Wails v2；**Windows / macOS / Linux**）：语言列表与安装/卸载、系统版本检测与一键纳管、
 > 镜像切换、网络代理设置、安装进度条、当前目录 local 设置、一键写入用户级 PATH。
 > **macOS 版为 Universal 通用二进制**（Apple Silicon + Intel），隐藏式标题栏 + 原生菜单，内置 CLI，一个 `.app` 开箱即用。
+
+## v1.1.1 数据库实例与已有环境修复
+
+- **数据库版本切换**：PostgreSQL、MySQL、MariaDB、Redis、Valkey，支持 Docker 官方镜像和已安装原生程序；GUI 左侧新增「数据库版本 / 实例」。
+- **独立数据**：每个实例、版本独立保存数据，支持启动、停止、切换、日志、连接信息和客户端执行；切换失败尝试恢复旧版本。
+- **全局切换**：修复旧 shim 和终端 PATH 优先级导致的无效切换，显示全局设置、项目覆盖和实际命令来源，补齐终端激活指引。
+- **已有环境**：按工具准确扫描，支持手动添加路径，识别已有 Conda 环境及 Maven 完整安装，保留环境内原有依赖。
+- **日志时间**：CLI 和 GUI 按本地时区显示，JSON 与导出保留 UTC。
+
+```bash
+vsm db use postgres 17-alpine --name dev --port 15432
+vsm db start dev
+vsm db switch dev 18-alpine
+vsm db list --json
+```
+
+数据库切换会短暂重启服务，新版本使用独立数据；跨版本数据迁移需要另行备份、导入。原生方式需要完整的服务端与客户端程序；Docker 方式需要已启动的 Docker。详见[数据库说明](docs/databases.md)和[发布说明](docs/releases/v1.1.1.md)。
+
+下载 [v1.1.1 正式版](https://github.com/hquip/Vaelen/releases/tag/v1.1.1)；已有版本可运行 `vsm update --gui` 同步更新 CLI 和 GUI。
 
 ## v1.1.0 项目工作台
 
@@ -36,7 +55,7 @@ vsm project trust
 vsm tasks run test --locked
 ```
 
-先检查生成的配置，再执行 trust。具体能力与边界见[项目工作台说明](docs/workspaces.md)。下载 [v1.1.0 正式版](https://github.com/hquip/Vaelen/releases/tag/v1.1.0)；已有版本可运行 `vsm update --gui` 同步更新 CLI 和 GUI。
+先检查生成的配置，再执行 trust。具体能力与边界见[项目工作台说明](docs/workspaces.md)。
 
 ## 设计要点
 
@@ -143,7 +162,7 @@ sudo ln -sf /Applications/VSM.app/Contents/MacOS/vsm /usr/local/bin/vsm
 自行打包（需在 Mac 上，产出与 Release 相同的通用版 zip）：
 
 ```bash
-bash scripts/package-macos.sh 1.1.0 dist
+bash scripts/package-macos.sh 1.1.1 dist
 ```
 
 > 打 `v*` tag 即可由 GitHub Actions 在 Windows / macOS / Linux 三个 runner 上分别本地编译，
@@ -278,6 +297,19 @@ Windows 的系统 PATH 排在用户 PATH 前面；只把 shims 加到用户 PATH
 离开项目目录时，PATH 与 `GOROOT` / `JAVA_HOME` 等变量会自动还原，不会把上一个项目的版本带到别处。
 
 激活后，在配置了 `.tool-versions` 的目录里直接运行 `go` / `node`，会自动解析到对应版本。
+
+## 数据库版本与实例
+
+支持 PostgreSQL、MySQL、MariaDB、Redis、Valkey 的 **Docker / 原生**版本切换，按实例和版本独立保存数据。GUI 左侧打开「数据库版本 / 实例」。
+
+```bash
+vsm db use postgres 17-alpine --name api-pg --port 15432
+vsm db start api-pg
+vsm db switch api-pg 18-alpine
+vsm db connection api-pg
+```
+
+原生方式先纳管完整数据库程序，再使用 `--backend native`。切回旧版本恢复原数据，切换失败尝试恢复旧服务；跨版本数据迁移单独处理。详见[数据库版本切换](docs/databases.md)。
 
 ## Agent / AI 与切换提示
 

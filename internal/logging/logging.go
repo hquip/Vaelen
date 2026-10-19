@@ -107,6 +107,19 @@ func Record(level, component, event string, fields Fields) {
 	}
 }
 
+// ErrorMessage allows process errors to retain diagnostics for the caller while
+// excluding child output (which can contain SQL/data) from persistent logs.
+func ErrorMessage(err error) string {
+	if err == nil {
+		return ""
+	}
+	var safe interface{ LogMessage() string }
+	if errors.As(err, &safe) {
+		return safe.LogMessage()
+	}
+	return err.Error()
+}
+
 // Start returns an operation finisher. Callers must pass the actual final error.
 // Never pass command arguments, environment dumps, subprocess output or MCP
 // request/result bodies as fields.
@@ -122,7 +135,7 @@ func Start(component, event string, fields Fields) func(error) {
 		level, status := "info", "completed"
 		if err != nil {
 			level, status = "error", "failed"
-			result["error"] = err.Error()
+			result["error"] = ErrorMessage(err)
 		}
 		Record(level, component, event+"."+status, result)
 	}

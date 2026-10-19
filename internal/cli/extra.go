@@ -297,7 +297,7 @@ func (a *app) cmdCompletion(args []string) error {
 _vsm_completion() {
   COMPREPLY=()
   local cur="${COMP_WORDS[COMP_CWORD]}"
-  local cmds="install uninstall use list list-all current context run project mcp which exec reshim activate env path-init detect adopt mirror proxy install-root doctor completion shell clean size version update logs lock tasks tools help"
+  local cmds="install uninstall use list list-all current context run project mcp which exec reshim activate env path-init detect adopt mirror proxy install-root doctor completion shell clean size version update logs lock tasks tools db help"
   if [ "$COMP_CWORD" -eq 1 ]; then
     COMPREPLY=( $(compgen -W "$cmds" -- "$cur") )
     return
@@ -311,6 +311,7 @@ _vsm_completion() {
         COMPREPLY=( $(compgen -W "bash zsh sh fish powershell pwsh cmd" -- "$cur") ) ;;
       mirror) COMPREPLY=( $(compgen -W "cn off" -- "$cur") ) ;;
       tasks) COMPREPLY=( $(compgen -W "list graph run" -- "$cur") ) ;;
+      db) COMPREPLY=( $(compgen -W "use switch start stop list status versions engines logs connection exec" -- "$cur") ) ;;
       tools) COMPREPLY=( $(compgen -W "list search add" -- "$cur") ) ;;
       project) COMPREPLY=( $(compgen -W "init status configure inspect trust import" -- "$cur") ) ;;
       logs) COMPREPLY=( $(compgen -W "path export clear --tail --level --json" -- "$cur") ) ;;
@@ -326,7 +327,7 @@ complete -F _vsm_completion vsm
 (( $+functions[compdef] )) || { autoload -Uz compinit && compinit }
 _vsm() {
   local -a cmds tools shells
-  cmds=(install uninstall use list list-all current context run project mcp which exec reshim activate env path-init detect adopt mirror proxy install-root doctor completion shell clean size version update logs lock tasks tools help)
+  cmds=(install uninstall use list list-all current context run project mcp which exec reshim activate env path-init detect adopt mirror proxy install-root doctor completion shell clean size version update logs lock tasks tools db help)
   tools=(%s)
   shells=(bash zsh sh fish powershell pwsh cmd)
   if (( CURRENT == 2 )); then
@@ -340,6 +341,7 @@ _vsm() {
       activate|env|completion|path-init) _describe 'shell' shells ;;
       mirror) _values 'mode' cn off ;;
       tasks) _values 'tasks' list graph run ;;
+      db) _values 'database' use switch start stop list status versions engines logs connection exec ;;
       tools) _values 'tools' list search add ;;
       project) _values 'project' init status configure inspect trust import ;;
       logs) _values 'logs' path export clear --tail --level --json ;;
@@ -351,7 +353,7 @@ compdef _vsm vsm
 `, tools)
 	case "fish":
 		fmt.Printf(`# vsm fish 补全：vsm completion fish | source
-set -l vsm_cmds install uninstall use list list-all current context run project mcp which exec reshim activate env path-init detect adopt mirror proxy install-root doctor completion shell clean size version update logs lock tasks tools help
+set -l vsm_cmds install uninstall use list list-all current context run project mcp which exec reshim activate env path-init detect adopt mirror proxy install-root doctor completion shell clean size version update logs lock tasks tools db help
 set -l vsm_tools %s
 complete -c vsm -f
 complete -c vsm -n "not __fish_seen_subcommand_from $vsm_cmds" -a "$vsm_cmds"
@@ -360,6 +362,7 @@ complete -c vsm -n "__fish_seen_subcommand_from use install uninstall list list-
 complete -c vsm -n "__fish_seen_subcommand_from activate env completion" -a "bash zsh sh fish powershell pwsh cmd"
 complete -c vsm -n "__fish_seen_subcommand_from mirror" -a "cn off"
 complete -c vsm -n "__fish_seen_subcommand_from logs" -a "path export clear"
+complete -c vsm -n "__fish_seen_subcommand_from db" -a "use switch start stop list status versions engines logs connection exec"
 complete -c vsm -n "__fish_seen_subcommand_from proxy" -a "off system"
 `, tools)
 	case "powershell", "pwsh":
@@ -367,7 +370,7 @@ complete -c vsm -n "__fish_seen_subcommand_from proxy" -a "off system"
 		fmt.Printf(`# vsm PowerShell 补全：vsm completion powershell | Out-String | Invoke-Expression
 Register-ArgumentCompleter -Native -CommandName vsm -ScriptBlock {
     param($wordToComplete, $commandAst, $cursorPosition)
-    $cmds = @('install','uninstall','use','list','list-all','current','context','run','project','mcp','which','exec','reshim','activate','env','path-init','detect','adopt','mirror','proxy','install-root','doctor','completion','shell','clean','size','version','update','logs','lock','tasks','tools','help')
+    $cmds = @('install','uninstall','use','list','list-all','current','context','run','project','mcp','which','exec','reshim','activate','env','path-init','detect','adopt','mirror','proxy','install-root','doctor','completion','shell','clean','size','version','update','logs','lock','tasks','tools','db','help')
     $tools = @(%s)
     $shells = @('bash','zsh','sh','fish','powershell','pwsh','cmd')
     $words = @($commandAst.CommandElements | ForEach-Object { $_.ToString() })
@@ -382,6 +385,7 @@ Register-ArgumentCompleter -Native -CommandName vsm -ScriptBlock {
             { $_ -in @('activate','env','completion','path-init') } { $cands = $shells }
             'mirror' { $cands = @('cn','off') }
             'tasks' { $cands = @('list','graph','run') }
+            'db' { $cands = @('use','switch','start','stop','list','status','versions','engines','logs','connection','exec') }
             'tools' { $cands = @('list','search','add') }
             'project' { $cands = @('init','status','configure','inspect','trust','import') }
             'logs' { $cands = @('path','export','clear','--tail','--level','--json') }

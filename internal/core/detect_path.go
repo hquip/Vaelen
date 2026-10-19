@@ -29,7 +29,7 @@ func InspectToolPath(tool, path string) (SystemVersion, error) {
 	if err != nil {
 		return SystemVersion{}, err
 	}
-	names := plugin.DetectCommands()[tool]
+	names := plugin.ProbeCommands()[tool]
 	if len(names) == 0 {
 		names = []string{tool}
 	}

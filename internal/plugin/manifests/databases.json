@@ -1,0 +1,7 @@
+[
+  {"name":"postgres","service":true,"detect_commands":["postgres"],"source":{"type":"github-tags","repo":"postgres/postgres","stripPrefix":"REL_"},"url":"","assets":{},"bin":"bin","commands":["postgres","psql","pg_ctl"],"env":{}},
+  {"name":"mysql","service":true,"detect_commands":["mysqld"],"source":{"type":"github-tags","repo":"mysql/mysql-server","stripPrefix":"mysql-"},"url":"","assets":{},"bin":"bin","commands":["mysqld","mysql","mysqladmin"],"env":{}},
+  {"name":"mariadb","service":true,"detect_commands":["mariadbd"],"source":{"type":"github-tags","repo":"MariaDB/server","stripPrefix":"mariadb-"},"url":"","assets":{},"bin":"bin","commands":["mariadbd","mariadb","mariadb-admin"],"env":{}},
+  {"name":"redis","service":true,"detect_commands":["redis-server"],"source":{"type":"github-tags","repo":"redis/redis","stripPrefix":""},"url":"","assets":{},"bin":"","commands":["redis-server","redis-cli"],"env":{}},
+  {"name":"valkey","service":true,"detect_commands":["valkey-server"],"source":{"type":"github-tags","repo":"valkey-io/valkey","stripPrefix":""},"url":"","assets":{},"bin":"","commands":["valkey-server","valkey-cli"],"env":{}}
+]

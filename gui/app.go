@@ -20,6 +20,7 @@ import (
 	"vsm/internal/buildinfo"
 	"vsm/internal/config"
 	"vsm/internal/core"
+	"vsm/internal/database"
 	"vsm/internal/logging"
 	"vsm/internal/mcpconfig"
 	"vsm/internal/mcpserver"
@@ -73,10 +74,11 @@ type App struct {
 	// 用 TryLock 而不是排队等待：安装可能持续数分钟，排队会让按钮看起来毫无反应。
 	mu sync.Mutex
 
-	workMu     sync.Mutex
-	taskCancel context.CancelFunc
-	dirMu      sync.RWMutex
-	projectDir string // 「设为本目录」写入 .tool-versions 的目标目录；空表示尚未选择
+	workMu         sync.Mutex
+	taskCancel     context.CancelFunc
+	databaseCancel context.CancelFunc
+	dirMu          sync.RWMutex
+	projectDir     string // 「设为本目录」写入 .tool-versions 的目标目录；空表示尚未选择
 }
 
 // errBusy 在已有写操作进行中时返回给前端。
@@ -226,6 +228,7 @@ func (a *App) startup(ctx context.Context) {
 }
 func (a *App) shutdown(ctx context.Context) {
 	a.CancelWorkspaceTask()
+	a.CancelDatabaseOperation()
 	logging.Record("info", "gui", "app.stopped", nil)
 }
 
@@ -451,6 +454,11 @@ func (a *App) Uninstall(tool, version string) (err error) {
 	}
 	defer done()
 	c := a.c()
+	unlock, err := database.GuardUninstall(c.paths, tool, version)
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	if err := c.inst.Uninstall(tool, version); err != nil {
 		return err
 	}

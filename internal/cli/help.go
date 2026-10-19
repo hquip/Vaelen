@@ -41,7 +41,7 @@ func helpTopicForArgs(command string, args []string) ([]string, bool) {
 		}
 		if isHelpFlag(arg) {
 			topic := []string{command}
-			if (command == "project" || command == "mcp" || command == "logs" || command == "tasks" || command == "tools") && len(args) > 0 && !strings.HasPrefix(args[0], "-") {
+			if (command == "project" || command == "mcp" || command == "logs" || command == "tasks" || command == "tools" || command == "db") && len(args) > 0 && !strings.HasPrefix(args[0], "-") {
 				topic = append(topic, args[0])
 			}
 			return topic, true
@@ -87,6 +87,18 @@ func printHelpSection(title string, lines []string) {
 }
 
 var commandHelpTopics = map[string]commandHelp{
+	"db use":         {Summary: "创建实例或选择数据库版本", Usage: []string{"vsm db use <数据库> <版本> [--name 实例] [--backend docker|native] [--port 端口] [--json]"}, Examples: []string{"vsm db use postgres 17 --name dev --port 55432", "vsm db use mysql 8.4 --backend native --name mysql-dev --port 3307"}, Notes: []string{"配置新实例后使用 db start 启动；运行中的实例会切换并重启，数据按版本隔离。原生版本需先 adopt 完整安装目录。"}},
+	"db switch":      {Summary: "切换已有实例的数据库版本", Usage: []string{"vsm db switch <实例名> <版本> [--json]"}, Examples: []string{"vsm db switch dev 18"}, Notes: []string{"保留旧版本数据，启动失败尝试恢复旧服务；不自动迁移旧数据。"}},
+	"db start":       {Summary: "启动数据库实例", Usage: []string{"vsm db start <实例名> [--json]"}, Examples: []string{"vsm db start dev"}},
+	"db stop":        {Summary: "停止数据库实例并保留数据", Usage: []string{"vsm db stop <实例名> [--json]"}, Examples: []string{"vsm db stop dev"}},
+	"db list":        {Summary: "列出数据库实例与状态", Usage: []string{"vsm db list [--json]"}, Examples: []string{"vsm db list --json"}},
+	"db status":      {Summary: "列出数据库实例与状态", Usage: []string{"vsm db status [--json]"}, Examples: []string{"vsm db status"}},
+	"db engines":     {Summary: "列出支持的数据库", Usage: []string{"vsm db engines"}, Examples: []string{"vsm db engines"}},
+	"db versions":    {Summary: "列出已纳管的原生数据库版本", Usage: []string{"vsm db versions <数据库> [--json]"}, Examples: []string{"vsm db versions postgres"}},
+	"db logs":        {Summary: "查看数据库实例最近日志", Usage: []string{"vsm db logs <实例名> [--json]"}, Examples: []string{"vsm db logs dev"}},
+	"db connection":  {Summary: "显式显示含密码的本机连接地址", Usage: []string{"vsm db connection <实例名> [--json]"}, Examples: []string{"vsm db connection dev"}},
+	"db exec":        {Summary: "通过该版本的数据库客户端执行参数", Usage: []string{"vsm db exec <实例名> -- <客户端参数>"}, Examples: []string{"vsm db exec dev -- -c \"SELECT version()\"", "vsm db exec cache -- SET hello world"}, Notes: []string{"-- 后的选项属于数据库客户端，包括 --help / --json。"}},
+	"db":             {Summary: "数据库版本切换与独立实例管理", Aliases: []string{"database"}, Usage: []string{"vsm db use <数据库> <版本> [--name 实例] [--backend docker|native] [--port 端口]", "vsm db switch <实例> <版本>", "vsm db start|stop|logs|connection <实例>", "vsm db list [--json]", "vsm db exec <实例> -- <客户端参数>"}, Notes: []string{"支持 postgres / mysql / mariadb / redis / valkey。Docker 自动拉取官方镜像并锁定摘要；原生使用已纳管的完整数据库程序。", "同实例按版本隔离数据；切回旧版本恢复旧数据。运行中切换会重启服务，失败尝试恢复旧版本。新版本不会自动迁移旧数据。", "仅监听 127.0.0.1；连接密码保存在本地私有凭据文件，connection 显式显示连接信息。停止服务保留数据。"}, Examples: []string{"vsm db use postgres 17 --name dev --port 55432", "vsm db start dev", "vsm db switch dev 18", "vsm adopt mysql --path D:\\mysql-8.4", "vsm db use mysql 8.4 --backend native --name local-mysql --port 3307"}},
 	"project import": {Summary: "预览或导入 mise 工具版本", Usage: []string{"vsm project import --from mise [--file 导出的JSON] [--apply]"}, Notes: []string{"默认只预览。--apply 创建新的 vsm.json，不覆盖已有文件。只导入工具版本，不复制任务或秘密变量。未指定文件时以 MISE_SAFE=1 调用 mise ls --current --json。"}, Examples: []string{"vsm project import --from mise", "vsm project import --from mise --file mise-tools.json --apply"}},
 
 	"lock":              {Summary: "锁定项目工具链的具体安装包", Usage: []string{"vsm lock [--platform os/arch,...] [--update|--check] [--json]"}, Options: []string{"--platform  windows/amd64,linux/arm64 等目标", "--update  重新解析版本与包摘要", "--check  只检查锁文件与项目要求是否一致", "--json  结构化结果"}, Notes: []string{"安装包必须有发布方 SHA256。普通 lock 保留已有锁定构建。提交 vsm.lock 后使用 install --locked。"}, Examples: []string{"vsm lock", "vsm lock --platform windows/amd64,darwin/arm64,linux/amd64", "vsm install --locked", "vsm run --locked -- go test ./..."}},

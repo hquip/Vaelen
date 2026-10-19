@@ -45,6 +45,7 @@
           <span class="foot-label">项目环境与 AI</span>
           <button id="projectEnvBtn" class="mini" title="选择项目、初始化独立环境，并连接 AI 客户端">隔离环境 / MCP</button>
           <button id="workbenchBtn" class="mini" title="工具链锁定、项目配置、任务和工具目录">项目工作台</button>
+          <button id="databaseBtn" class="mini">数据库版本 / 实例</button>
         </div>
       </div>
       <div class="filter-wrap">
@@ -268,6 +269,36 @@
     </div>
   </div>
   <script src="app.js"></script>
+  <div id="databaseModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="databaseTitle">
+    <div class="modal-card project-env-card">
+      <h3 id="databaseTitle" class="modal-title">数据库版本与实例</h3>
+      <p class="modal-sub">Docker 自动获取官方镜像；原生方式复用已纳管的数据库程序。按实例名管理，每个版本独立保存数据。</p>
+      <div class="project-env-body">
+        <label class="project-field-label" for="databaseInstance">选择实例</label>
+        <select id="databaseInstance" class="modal-input"><option value="">创建新实例</option></select>
+        <p id="databaseStatus" class="project-hint" role="status"></p>
+        <label class="project-field-label" for="databaseName">实例名称</label><input id="databaseName" class="modal-input" placeholder="例如 dev-postgres" />
+        <div class="project-dir-row">
+          <div class="project-dir"><label class="project-field-label" for="databaseEngine">数据库</label><select id="databaseEngine" class="modal-input"></select></div>
+          <div class="project-dir"><label class="project-field-label" for="databaseBackend">运行方式</label><select id="databaseBackend" class="modal-input"><option value="docker">Docker 官方镜像</option><option value="native">本机原生程序</option></select></div>
+        </div>
+        <div class="project-dir-row">
+          <div class="project-dir"><label class="project-field-label" for="databaseVersion">数据库版本</label><input id="databaseVersion" class="modal-input" list="databaseVersions" placeholder="例如 17、8.4、7.4-alpine" /><datalist id="databaseVersions"></datalist></div>
+          <div><label class="project-field-label" for="databasePort">本机端口（127.0.0.1）</label><input id="databasePort" class="modal-input" type="number" min="1" max="65535" /></div>
+        </div>
+        <p id="databaseNativeHint" class="project-hint hidden">原生方式需要完整服务端和客户端程序。纳管安装目录后选择版本；VSM 会独立创建实例和数据。</p>
+        <button id="databaseAdopt" class="ghost-btn hidden">选择目录并纳管原生版本</button>
+        <p id="databaseData" class="project-hint"></p>
+        <p class="project-hint">运行中切换会短暂重启服务。新版本使用独立数据，切回旧版本恢复它原来的数据；跨版本升级迁移需单独完成。</p>
+        <p id="databaseError" class="project-error hidden" role="alert"></p>
+        <pre id="databaseOutput" class="project-commands hidden"></pre>
+        <div id="databaseConnectionWrap" class="hidden"><p class="project-hint">连接信息包含密码，仅供本机开发使用。</p><textarea id="databaseConnection" class="modal-input" rows="3" readonly aria-label="数据库连接地址"></textarea><button id="databaseCopy" class="mini">复制连接地址</button></div>
+      </div>
+      <div class="project-action-row"><button id="databaseSave" class="primary-btn">保存 / 切换版本</button><button id="databaseStart" class="ghost-btn">启动</button><button id="databaseStop" class="ghost-btn">停止</button><button id="databaseLogs" class="ghost-btn">日志</button><button id="databaseConnect" class="ghost-btn">连接信息</button></div>
+      <div class="modal-actions"><button id="databaseRefresh" class="ghost-btn">刷新</button><button id="databaseCancel" class="ghost-btn" disabled>取消操作</button><span class="modal-spacer"></span><button id="databaseClose" class="ghost-btn">关闭</button></div>
+    </div>
+  </div>
   <script src="workbench.js"></script>
+  <script src="database.js"></script>
 </body>
 </html>

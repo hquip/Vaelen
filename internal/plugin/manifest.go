@@ -19,15 +19,17 @@ var manifestFS embed.FS
 // 怎么下载、装到哪、需要哪些环境变量。内置一批，也可放到 ~/.vsm/plugins/*.json
 // （或 $VSM_HOME/plugins）由用户/社区扩展——这正是支持数十种语言而无需改代码的关键。
 type Manifest struct {
-	Commands  []string          `json:"commands,omitempty"`
-	Match     string            `json:"match,omitempty"`
-	Name      string            `json:"name"`
-	Source    ManifestSource    `json:"source"`
-	URL       string            `json:"url"`                 // 下载 URL 模板，占位 {version} {os} {arch} {asset}
-	Assets    map[string]string `json:"assets"`              // "os/arch" -> asset 名模板（占位 {version} {os} {arch}）
-	Bin       string            `json:"bin"`                 // bin 子目录（相对安装目录，空=根），用 / 分隔
-	Env       map[string]string `json:"env"`                 // 环境变量，值可用 {dir} 代表安装目录
-	Checksums map[string]string `json:"checksums,omitempty"` // version/os/arch -> publisher SHA256
+	Service        bool              `json:"service,omitempty"`
+	DetectCommands []string          `json:"detect_commands,omitempty"`
+	Commands       []string          `json:"commands,omitempty"`
+	Match          string            `json:"match,omitempty"`
+	Name           string            `json:"name"`
+	Source         ManifestSource    `json:"source"`
+	URL            string            `json:"url"`                 // 下载 URL 模板，占位 {version} {os} {arch} {asset}
+	Assets         map[string]string `json:"assets"`              // "os/arch" -> asset 名模板（占位 {version} {os} {arch}）
+	Bin            string            `json:"bin"`                 // bin 子目录（相对安装目录，空=根），用 / 分隔
+	Env            map[string]string `json:"env"`                 // 环境变量，值可用 {dir} 代表安装目录
+	Checksums      map[string]string `json:"checksums,omitempty"` // version/os/arch -> publisher SHA256
 }
 
 // ManifestSource 描述如何获取可用版本列表。
@@ -232,10 +234,10 @@ func registerManifestData(data []byte) {
 }
 
 func validateManifest(m Manifest) error {
-	if len(m.Commands) > 16 || len(m.Match) > 256 || strings.ContainsAny(m.Match, "\x00\r\n") {
+	if len(m.Commands) > 16 || len(m.DetectCommands) > 16 || len(m.Match) > 256 || strings.ContainsAny(m.Match, "\x00\r\n") {
 		return fmt.Errorf("invalid manifest command/match")
 	}
-	for _, command := range m.Commands {
+	for _, command := range append(append([]string{}, m.Commands...), m.DetectCommands...) {
 		if !regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._+-]*$`).MatchString(command) {
 			return fmt.Errorf("unsafe command name")
 		}
