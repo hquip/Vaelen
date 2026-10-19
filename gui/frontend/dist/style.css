@@ -225,7 +225,7 @@ body { display: flex; flex-direction: column; height: 100vh; }
 .head-badge.off { background: var(--border-soft); color: var(--muted); border: 1px solid var(--border); }
 
 /* 激活提示 */
-.act-hint { color: var(--muted); font-size: 12px; line-height: 1.7; margin: -14px 0 20px; }
+.act-hint { color: var(--muted); font-size: 12px; line-height: 1.7; margin: -14px 0 20px; overflow-wrap: anywhere; }
 .act-hint code { background: var(--bg-soft); border: 1px solid var(--border); border-radius: 5px; padding: 1px 6px; font-family: Consolas, monospace; font-size: 11px; color: var(--text); }
 
 /* 状态卡片 */
@@ -250,7 +250,7 @@ body { display: flex; flex-direction: column; height: 100vh; }
 }
 .ver.active { border-color: var(--accent); }
 .ver .vname { font-family: Consolas, monospace; }
-.ver.active .vname::after { content: " ● 生效"; color: var(--green); font-size: 11px; }
+.ver.active .vname::after { content: " ● 已选择"; color: var(--green); font-size: 11px; }
 .vactions { display: flex; gap: 7px; }
 .empty-hint { color: var(--muted); font-style: italic; padding: 4px 0; }
 

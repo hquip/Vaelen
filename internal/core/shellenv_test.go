@@ -249,6 +249,99 @@ func TestEnvScriptExecutesInPowerShell(t *testing.T) {
 	}
 }
 
+// Exercise the actual hook, including immediate activation and repeated prompts.
+func TestPowerShellHookAppliesImmediatelyAndPreservesPrompt(t *testing.T) {
+	var bin string
+	for _, name := range []string{"pwsh", "powershell"} {
+		if p, err := exec.LookPath(name); err == nil {
+			bin = p
+			break
+		}
+	}
+	if bin == "" {
+		t.Skip("PowerShell unavailable")
+	}
+	dirs := trickyDirs(t)
+	shims := filepath.Join(t.TempDir(), "shims")
+	first, _ := EnvScript("powershell", []string{dirs[0]}, map[string]string{"JAVA_HOME": dirs[0]})
+	second, _ := EnvScript("powershell", []string{dirs[1]}, map[string]string{"JAVA_HOME": dirs[1]})
+	state := writeTemp(t, "state.ps1", first)
+	fakeCLI := writeTemp(t, "fake cli.ps1", "[IO.File]::ReadAllText("+quotePowerShell(state)+")\n$global:LASTEXITCODE = 99")
+	hook, err := HookScript("powershell", shims, fakeCLI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hookFile := writeTemp(t, "hook.ps1", hook)
+	sep := string(os.PathListSeparator)
+	base := "SYSTEM_JAVA" + sep + shims + sep + "OTHER"
+	script := "$ErrorActionPreference='Stop'\n" +
+		"Remove-Item env:VSM_PATH_BASE,env:_VSM_ENV_KEYS,env:JAVA_HOME -ErrorAction SilentlyContinue\n" +
+		"$env:PATH=" + quotePowerShell(base) + "\nfunction global:prompt { 'custom> ' }\n$global:LASTEXITCODE=42\n" +
+		"Invoke-Expression ([IO.File]::ReadAllText(" + quotePowerShell(hookFile) + "))\n" +
+		"[Console]::Out.WriteLine('FIRST='+$env:PATH)\n[Console]::Out.WriteLine('HOME1='+$env:JAVA_HOME)\n[Console]::Out.WriteLine('EXIT1='+$global:LASTEXITCODE)\n" +
+		"[IO.File]::WriteAllText(" + quotePowerShell(state) + ", " + quotePowerShell(second) + ")\n" +
+		"$p=prompt\n[Console]::Out.WriteLine('PROMPT='+$p)\n[Console]::Out.WriteLine('SECOND='+$env:PATH)\n[Console]::Out.WriteLine('HOME2='+$env:JAVA_HOME)\n" +
+		"Invoke-Expression ([IO.File]::ReadAllText(" + quotePowerShell(hookFile) + "))\n$p=prompt\n[Console]::Out.WriteLine('REPEAT='+$env:PATH)\n[Console]::Out.WriteLine('PROMPT2='+$p)\n[Console]::Out.WriteLine('EXIT2='+$global:LASTEXITCODE)\n"
+	script += "Remove-Variable _VSM_OriginalPrompt -Scope Global\n" +
+		"function global:prompt {\n" +
+		"  # old-vsm env powershell | Out-String | Invoke-Expression\n" +
+		"  $env:JAVA_HOME='legacy-wrong-version'\n" +
+		"  \"PS $($executionContext.SessionState.Path.CurrentLocation)> \"\n}\n" +
+		"Invoke-Expression ([IO.File]::ReadAllText(" + quotePowerShell(hookFile) + "))\n$null=prompt\n[Console]::Out.WriteLine('LEGACY_HOME='+$env:JAVA_HOME)\n"
+	stdout, stderr := runCmd(t, bin, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script)
+	if strings.TrimSpace(stderr) != "" {
+		t.Fatal(stderr)
+	}
+	normalizedBase := shims + sep + "SYSTEM_JAVA" + sep + "OTHER"
+	for _, want := range []string{
+		"FIRST=" + dirs[0] + sep + normalizedBase, "HOME1=" + dirs[0], "EXIT1=42",
+		"SECOND=" + dirs[1] + sep + normalizedBase, "HOME2=" + dirs[1], "PROMPT=custom> ",
+		"REPEAT=" + dirs[1] + sep + normalizedBase, "PROMPT2=custom> ", "EXIT2=42",
+		"LEGACY_HOME=" + dirs[1],
+	} {
+		if !strings.Contains(stdout, want) {
+			t.Fatalf("missing %q\n%s", want, stdout)
+		}
+	}
+}
+
+func TestPromptHooksRefreshWithoutDirectoryChange(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix prompt hooks")
+	}
+	for _, shell := range []string{"zsh", "fish"} {
+		t.Run(shell, func(t *testing.T) {
+			bin, err := findTestShell(shell)
+			if err != nil {
+				t.Skipf("%s unavailable", shell)
+			}
+			dirs := trickyDirs(t)
+			first, _ := EnvScript(shell, []string{dirs[0]}, map[string]string{"JAVA_HOME": dirs[0]})
+			second, _ := EnvScript(shell, []string{dirs[1]}, map[string]string{"JAVA_HOME": dirs[1]})
+			state := writeTemp(t, "current-env", first)
+			next := writeTemp(t, "next-env", second)
+			fake := filepath.Join(t.TempDir(), "fake cli")
+			if err := os.WriteFile(fake, []byte("#!/bin/sh\n/bin/cat "+quotePOSIX(state)+"\n"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			hook, _ := HookScript(shell, filepath.Join(t.TempDir(), "shims"), fake)
+			hookFile := writeTemp(t, "activate", hook)
+			invoke := "for fn in $precmd_functions; do $fn; done"
+			if shell == "fish" {
+				invoke = "emit fish_prompt"
+			}
+			script := "source " + quotePOSIX(hookFile) + "\nprintf 'FIRST=%s\\n' \"$JAVA_HOME\"\n/bin/cp " + quotePOSIX(next) + " " + quotePOSIX(state) + "\n" + invoke + "\nprintf 'SECOND=%s\\n' \"$JAVA_HOME\"\n"
+			stdout, stderr := runCmd(t, bin, "-c", script)
+			if strings.TrimSpace(stderr) != "" {
+				t.Fatal(stderr)
+			}
+			if !strings.Contains(stdout, "FIRST="+dirs[0]) || !strings.Contains(stdout, "SECOND="+dirs[1]) {
+				t.Fatalf("prompt did not refresh global selection: %s", stdout)
+			}
+		})
+	}
+}
+
 // TestEnvScriptExecutesInCmd 在 cmd.exe 批处理中执行：% 必须正确转义。
 func TestEnvScriptExecutesInCmd(t *testing.T) {
 	if runtime.GOOS != "windows" {

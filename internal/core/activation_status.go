@@ -1,0 +1,92 @@
+package core
+
+import (
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+
+	"vsm/internal/config"
+	"vsm/internal/plugin"
+)
+
+// ActivationStatus distinguishes the saved default, project resolution and the
+// command actually found on this process's PATH. A GUI cannot change an already
+// running terminal's environment; callers must not describe a saved default as
+// proof that an external terminal has switched.
+type ActivationStatus struct {
+	Global     string   `json:"global"`
+	Current    string   `json:"current"`
+	Source     string   `json:"source"`
+	Executable string   `json:"executable"`
+	Command    string   `json:"command"`
+	Warnings   []string `json:"warnings"`
+}
+
+func (a Activator) ActivationStatus(tool, dir string) ActivationStatus {
+	status := ActivationStatus{Warnings: []string{}}
+	if tv, err := config.Load(a.Paths.GlobalToolVersions()); err == nil {
+		status.Global, _ = tv.Get(tool)
+	}
+	r := a.Resolver.Resolve(tool, dir)
+	status.Current, status.Source = r.Version, r.Source
+	if r.Error != "" {
+		status.Warnings = append(status.Warnings, r.Error)
+	}
+	if status.Global != "" && r.Source != "全局" && r.Source != "" {
+		status.Warnings = append(status.Warnings, fmt.Sprintf("全局默认 %s；当前目录由 %s 指定 %s，优先于全局设置", status.Global, r.Source, r.Spec))
+	}
+	if r.Version == "" {
+		if r.Spec != "" && r.Error == "" {
+			status.Warnings = append(status.Warnings, "版本要求 "+r.Spec+" 没有匹配的已安装版本")
+		}
+		return status
+	}
+	status.Executable, _ = a.Which(tool, dir)
+	names := plugin.DetectCommands()[tool]
+	if len(names) == 0 {
+		names = []string{tool}
+	}
+	status.Command, _ = exec.LookPath(names[0])
+	if status.Command == "" {
+		status.Warnings = append(status.Warnings, "当前进程 PATH 中找不到 "+names[0]+"；请点击「激活 PATH」，并在终端执行激活命令")
+	} else if !sameCommandFile(status.Command, status.Executable) && !sameDir(filepath.Dir(status.Command), a.Paths.Shims()) {
+		status.Warnings = append(status.Warnings, "当前进程 PATH 优先命中 "+status.Command+"，会绕过 VSM；请激活终端。Windows 用户 PATH 不能覆盖排在前面的系统 PATH")
+	}
+	return status
+}
+
+func sameCommandFile(a, b string) bool {
+	if a == "" || b == "" {
+		return false
+	}
+	fa, ea := os.Stat(a)
+	fb, eb := os.Stat(b)
+	return ea == nil && eb == nil && os.SameFile(fa, fb)
+}
+
+// SetGlobalVersion updates the config only after shim generation succeeds. The
+// shim must point to this CLI, rather than a previously moved or outdated copy.
+// CLI callers may select an uninstalled version and receive a separate warning.
+func (a Activator) SetGlobalVersion(tool, version string) error {
+	if a.Paths.ProjectMode == "local" || a.Paths.ProjectMode == "docker" {
+		return fmt.Errorf("隔离项目请设置项目版本，不使用全局默认")
+	}
+	if _, ok := plugin.Get(tool); !ok {
+		return fmt.Errorf("不支持的工具: %s", tool)
+	}
+	if strings.TrimSpace(version) != version || version == "" || strings.ContainsAny(version, " \t\r\n\x00") {
+		return fmt.Errorf("版本号不能为空或包含空白字符")
+	}
+	if err := a.Paths.EnsureDirs(); err != nil {
+		return err
+	}
+	if a.VsmExe == "" {
+		return fmt.Errorf("未找到配套 VSM CLI，请将新版 CLI 与 GUI 放在同一目录后重试")
+	}
+	if err := a.GenerateShims(); err != nil {
+		return fmt.Errorf("生成激活 shim 失败，全局配置未修改: %w", err)
+	}
+	return config.SetIn(a.Paths.GlobalToolVersions(), tool, version)
+}

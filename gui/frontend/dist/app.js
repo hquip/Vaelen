@@ -31,11 +31,20 @@ async function refreshLogs() {
   document.getElementById("logsLocation").textContent = snapshot.directory;
   const bytes = (snapshot.files || []).reduce((sum, file) => sum + file.bytes, 0);
   document.getElementById("logsStatus").textContent = "记录级别: " + snapshot.level + " · " +
-    (bytes / 1024).toFixed(1) + " KiB · " + snapshot.entries.length + " 条记录（最新在前）";
+    (bytes / 1024).toFixed(1) + " KiB · " + snapshot.entries.length + " 条记录（最新在前） · 本地时间（" + Intl.DateTimeFormat().resolvedOptions().timeZone + "）；导出保留 UTC";
   document.getElementById("logsText").textContent = snapshot.entries.length
-    ? [...snapshot.entries].reverse().map(entry => entry.time + " [" + entry.level.toUpperCase() + "] " +
+    ? [...snapshot.entries].reverse().map(entry => localLogTime(entry.time) + " [" + entry.level.toUpperCase() + "] " +
       entry.component + " · " + entry.event + "\n" + JSON.stringify(entry.fields || {})).join("\n\n")
     : "暂无符合条件的日志。完成操作后点击刷新；调试记录需在启动 VSM 前设置 VSM_LOG_LEVEL=debug。";
+}
+function localLogTime(value) {
+  const time = new Date(value);
+  if (!Number.isFinite(time.getTime())) return value;
+  const pad = (n, width = 2) => String(n).padStart(width, "0");
+  const offset = -time.getTimezoneOffset();
+  return time.getFullYear() + "-" + pad(time.getMonth() + 1) + "-" + pad(time.getDate()) + " " +
+    pad(time.getHours()) + ":" + pad(time.getMinutes()) + ":" + pad(time.getSeconds()) + "." + pad(time.getMilliseconds(), 3) + " " +
+    (offset >= 0 ? "+" : "-") + pad(Math.floor(Math.abs(offset) / 60)) + ":" + pad(Math.abs(offset) % 60);
 }
 async function logsAction(action) {
   if (logsBusy) return;
@@ -509,12 +518,12 @@ function renderDetail(tool) {
   const isActive = !!s.current;
   const installedCount = (s.installed && s.installed.length) || 0;
   const headBadge = projectMode === "docker" ? `<span class="head-badge on">Docker 容器</span>` : isActive
-    ? `<span class="head-badge on">● ${escapeHtml(s.current)} 生效中</span>`
+    ? `<span class="head-badge on">● VSM 选择 ${escapeHtml(s.current)}</span>`
     : `<span class="head-badge off">未启用</span>`;
   const cards = `
     <div class="stat-cards">
       <div class="stat-card">
-        <div class="sc-label">当前版本</div>
+        <div class="sc-label">VSM 选择版本</div>
         <div class="sc-value ${isActive ? "green" : "muted"}">${projectMode === "docker" ? "运行时校验镜像版本" : isActive ? escapeHtml(s.current) : "未设置"}</div>
       </div>
       <div class="stat-card">
@@ -538,7 +547,7 @@ function renderDetail(tool) {
   const hint = projectMode === "local" || projectMode === "docker"
     ? `<p class="act-hint">项目隔离模式：在项目目录使用 <code>vsm run -- &lt;命令&gt;</code>，不会修改系统 PATH。可在「隔离环境 / MCP」生成 AI 客户端配置。</p>`
     : installedCount
-    ? `<p class="act-hint">💡 终端里让 <code>${escapeHtml(tool)}</code> 用 vsm 选的版本需先激活：点顶部「⚡ 激活PATH」，或终端运行 <code>vsm activate &lt;shell&gt;</code>。快速验证：<code>vsm exec ${escapeHtml(tool)} -- ${escapeHtml(tool)} --version</code></p>`
+    ? `<p class="act-hint">终端需执行激活脚本：PowerShell 用 <code>vsm activate powershell | Out-String | Invoke-Expression</code>；bash/zsh 用 <code>eval &quot;$(vsm activate bash)&quot;</code>（zsh 替换 shell 名）。点击「激活 PATH」配置后续终端；已打开的终端需重新激活。全局默认不会覆盖项目或环境变量。</p>`
     : "";
 
   let versHtml;
@@ -567,6 +576,7 @@ function renderDetail(tool) {
     <div class="detail-head">${langIcon(tool, 42)}<h2>${escapeHtml(displayName(tool))}</h2>${headBadge}</div>
     ${cards}
     ${hint}
+    ${s.activation ? `<div class="act-hint"><strong>全局默认：</strong>${escapeHtml(s.activation.global || "未设置")}<br /><strong>VSM 选择的程序：</strong><code>${escapeHtml(s.activation.executable || "未找到")}</code><br /><strong>GUI 进程 PATH 命中：</strong><code>${escapeHtml(s.activation.command || "未找到")}</code>${(s.activation.warnings || []).map(w => `<p>${escapeHtml(w)}</p>`).join("")}</div>` : ""}
 
     ${projectMode === "docker" ? `
     <div class="section">
@@ -878,7 +888,7 @@ async function onVerAction(tool, act, ver) {
       toast(`已设 ${tool} = ${ver}（${curDir}）`);
     } else if (act === "global") {
       await call("SetGlobal", tool, ver);
-      toast(`已设 ${tool} 全局 = ${ver}`);
+      toast(`已保存 ${tool} 全局默认 = ${ver}；终端需激活，项目配置仍优先`);
     } else if (act === "uninstall") {
       await call("Uninstall", tool, ver);
       toast(`已卸载 ${tool} ${ver}`);
@@ -986,14 +996,42 @@ document.getElementById("proxyInput").addEventListener("keydown", (e) => {
   else if (e.key === "Escape") closeProxyModal();
 });
 document.getElementById("pathBtn").addEventListener("click", async () => {
+  const modal = document.getElementById("activationModal");
+  const message = document.getElementById("activationMessage");
+  const error = document.getElementById("activationError");
+  const button = document.getElementById("pathBtn");
+  button.disabled = true;
+  modal.classList.remove("hidden");
+  message.textContent = "正在配置终端激活…";
+  error.textContent = "";
+  error.classList.add("hidden");
+  document.getElementById("activationTarget").textContent = "";
+  document.getElementById("activationCommandWrap").classList.add("hidden");
+  document.getElementById("activationCopy").disabled = true;
   try {
     const res = (await call("PathInit")) || {};
-    toast(res.status === "added"
+    message.textContent = res.message || (res.status === "added"
       ? `已写入 ${res.target}，新开终端生效`
       : `${res.target || "PATH"} 中已配置 vsm`);
+    document.getElementById("activationTarget").textContent = res.target ? "配置位置：" + res.target : "";
+    document.getElementById("activationCommand").value = res.command || "";
+    document.getElementById("activationCommandWrap").classList.toggle("hidden", !res.command);
+    document.getElementById("activationCopy").disabled = !res.command;
   } catch (e) {
-    toast("激活 PATH 失败: " + errMsg(e), true);
+    message.textContent = "激活未完成，请按下面的原因处理后重试。";
+    error.textContent = errMsg(e);
+    error.classList.remove("hidden");
+  } finally {
+    button.disabled = false;
   }
+});
+document.getElementById("activationClose").addEventListener("click", () => {
+  document.getElementById("activationModal").classList.add("hidden");
+});
+document.getElementById("activationCopy").addEventListener("click", async () => {
+  const input = document.getElementById("activationCommand");
+  try { await navigator.clipboard.writeText(input.value); toast("激活命令已复制，请在 PowerShell 中执行"); }
+  catch (_) { input.focus(); input.select(); toast("请按 Ctrl+C（macOS 用 ⌘C）复制激活命令"); }
 });
 document.getElementById("setRootBtn").addEventListener("click", async (e) => {
   e.stopPropagation();

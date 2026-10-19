@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -8,6 +9,7 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"time"
 
 	"vsm/internal/plugin"
 )
@@ -252,7 +254,7 @@ _vsm_hook`, posixVsm), nil
 	case "zsh":
 		return posixInit + fmt.Sprintf(`
 _vsm_hook() { eval "$(%s env zsh)"; }
-autoload -U add-zsh-hook 2>/dev/null && add-zsh-hook chpwd _vsm_hook
+autoload -U add-zsh-hook 2>/dev/null && { add-zsh-hook chpwd _vsm_hook; add-zsh-hook precmd _vsm_hook; }
 _vsm_hook`, posixVsm), nil
 	case "sh":
 		return posixInit + fmt.Sprintf(`
@@ -270,18 +272,31 @@ end
 function _vsm_hook --on-variable PWD
     %s env fish | source
 end
+function _vsm_prompt --on-event fish_prompt
+    _vsm_hook
+end
 _vsm_hook`, quoteFish(shellPath(shimsDir)), quoteFish(shellPath(shimsDir)), fishVsm), nil
 	case "powershell", "pwsh":
 		psVsm := vsmCmd
 		if vsmCmd != "vsm" {
 			psVsm = "& " + quotePowerShell(vsmCmd)
 		}
-		return fmt.Sprintf(`if (($env:PATH -split [regex]::Escape([string][IO.Path]::PathSeparator)) -notcontains %s) { $env:PATH = %s + [IO.Path]::PathSeparator + $env:PATH }
+		return fmt.Sprintf(`$env:PATH = (@(%s) + @($env:PATH -split [regex]::Escape([string][IO.Path]::PathSeparator) | Where-Object { $_ -and $_.TrimEnd('\','/') -ine %s })) -join [IO.Path]::PathSeparator
 if (-not (Test-Path env:VSM_PATH_BASE)) { $env:VSM_PATH_BASE = $env:PATH }
-function global:prompt {
-    %s env powershell | Out-String | Invoke-Expression
-    "PS $($executionContext.SessionState.Path.CurrentLocation)> "
-}`, quotePowerShell(shimsDir), quotePowerShell(shimsDir), psVsm), nil
+function global:_vsm_refresh {
+    $vsmExitCode = $global:LASTEXITCODE
+    try { %s env powershell | Out-String | ForEach-Object { if ($_) { Invoke-Expression $_ } } }
+    finally { $global:LASTEXITCODE = $vsmExitCode }
+}
+if (-not (Get-Variable _VSM_OriginalPrompt -Scope Global -ErrorAction SilentlyContinue)) {
+    $vsmPreviousPrompt = if (Test-Path Function:prompt) { (Get-Item Function:prompt).ScriptBlock } else { $null }
+    $vsmLegacyPrompt = $vsmPreviousPrompt -and $vsmPreviousPrompt.ToString().Contains('env powershell | Out-String | Invoke-Expression') -and $vsmPreviousPrompt.ToString().Contains('PS $($executionContext.SessionState.Path.CurrentLocation)> ')
+    $global:_VSM_OriginalPrompt = if ($vsmPreviousPrompt -and -not $vsmLegacyPrompt) { $vsmPreviousPrompt } else { { "PS $($executionContext.SessionState.Path.CurrentLocation)> " } }
+    Remove-Variable vsmPreviousPrompt,vsmLegacyPrompt -ErrorAction SilentlyContinue
+}
+function global:prompt { _vsm_refresh; & $global:_VSM_OriginalPrompt }
+_vsm_refresh
+`, quotePowerShell(shimsDir), quotePowerShell(strings.TrimRight(shimsDir, `\/`)), psVsm), nil
 	case "cmd":
 		return "set \"PATH=" + quoteCmd(shimsDir) + ";%PATH%\"", nil
 	}
@@ -290,24 +305,32 @@ function global:prompt {
 
 // PersistShimsPath 在 Windows 上把 shims 目录持久化写入「用户级 PATH」并广播变更：
 // 通过 .NET 的 SetEnvironmentVariable(User) 写注册表，会自动发出 WM_SETTINGCHANGE，
-// 新开终端即时生效，无需手动改 PATH。返回 "added" / "exists"。
+// 用户 PATH 不会覆盖排在前面的系统 PATH；Windows PowerShell 还需启动钩子。
+// 返回 "added" / "exists"。
 func PersistShimsPath(shimsDir string) (string, error) {
 	if runtime.GOOS != "windows" {
 		return "", fmt.Errorf("PersistShimsPath 仅用于 Windows；其它平台见 PersistShellHook")
 	}
-	// 前置写入：把 shims 放到用户 PATH 最前面，才能覆盖系统里已有的同名命令
-	// （如已存在的 java/node）。去重后再前置，避免重复累积。
+	// 前置到用户 PATH；系统 PATH 仍可能排在它前面。去重避免重复累积。
 	// 目录用单引号字面量，避免路径里的 $ 被 PowerShell 展开。
-	ps := fmt.Sprintf(`$d=%s
+	ps := fmt.Sprintf(`$ErrorActionPreference='Stop'
+$d=%s
 $p=[Environment]::GetEnvironmentVariable('Path','User'); if (-not $p) { $p='' }
 $parts=@($p -split ';' | Where-Object { $_ -ne '' })
-if ($parts.Count -gt 0 -and $parts[0] -eq $d) { 'exists' }
+$parts=@($parts | Where-Object {
+  try { [IO.Path]::GetFullPath([Environment]::ExpandEnvironmentVariables($_.Trim('"'))).TrimEnd('\','/') -ine $d.TrimEnd('\','/') }
+  catch { $true }
+})
+$next=(@($d)+$parts) -join ';'
+if ($next -ceq $p) { 'exists' }
 else {
-  $parts=$parts | Where-Object { $_ -ne $d }
-  [Environment]::SetEnvironmentVariable('Path', ((@($d)+$parts) -join ';'), 'User')
+  [Environment]::SetEnvironmentVariable('Path', $next, 'User')
   'added'
 }`, quotePowerShell(shimsDir))
-	c := exec.Command("powershell", "-NoProfile", "-Command", ps)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	c := exec.CommandContext(ctx, "powershell", "-NoProfile", "-NonInteractive", "-Command", ps)
+	c.WaitDelay = time.Second
 	hideConsole(c)
 	out, err := c.CombinedOutput()
 	if err != nil {

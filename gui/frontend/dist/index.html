@@ -80,6 +80,22 @@
 
   <div id="toast" class="toast hidden"></div>
 
+  <div id="activationModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="activationTitle">
+    <div class="modal-card project-env-card">
+      <h3 id="activationTitle" class="modal-title">终端激活</h3>
+      <div class="project-env-body">
+        <p id="activationMessage" class="project-hint" role="status"></p>
+        <p id="activationTarget" class="project-hint"></p>
+        <div id="activationCommandWrap" class="hidden">
+          <p class="project-hint">在已有 PowerShell 中执行下面的命令，立即应用所选版本：</p>
+          <textarea id="activationCommand" class="modal-input" rows="4" readonly aria-label="PowerShell 激活命令"></textarea>
+        </div>
+        <p id="activationError" class="project-error hidden" role="alert"></p>
+      </div>
+      <div class="modal-actions"><button id="activationCopy" class="primary-btn" disabled>复制激活命令</button><span class="modal-spacer"></span><button id="activationClose" class="ghost-btn">关闭</button></div>
+    </div>
+  </div>
+
   <div id="logsModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="logsTitle">
     <div class="modal-card logs-card">
       <h3 id="logsTitle" class="modal-title">运行日志</h3>

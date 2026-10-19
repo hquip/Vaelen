@@ -174,7 +174,7 @@ bash scripts/package-macos.sh 1.1.0 dist
 | `vsm adopt [--all] <tool> [ver]` | 纳管系统已装版本（链接进 vsm，可 use/卸载，不动原目录） |
 | `vsm mirror [cn\|off]` | 设置下载镜像（cn 国内加速 go/node/github / off 关闭） |
 | `vsm proxy [url\|off\|system]` | 设置网络代理（http/https/socks5；off 强制直连 / system 跟随系统环境变量） |
-| `vsm path-init` | Windows 写入用户级 PATH 并广播；macOS / Linux 写入当前 shell 的启动配置 |
+| `vsm path-init` | Windows 写入用户级 PATH 和 PowerShell 启动钩子；macOS / Linux 写入当前 shell 的启动配置 |
 | `vsm doctor [--json]` | 环境体检：shims 是否在 PATH、是否被同名命令抢占、PATH 重复、shim 残留、配置异常 |
 | `vsm shell <tool> <ver>` | 打开临时子 shell 使用某版本（不写任何配置，`exit` 即恢复） |
 | `vsm completion <shell>` | 输出 bash / zsh / fish / powershell 补全脚本 |
@@ -256,10 +256,10 @@ vsm reshim                 # 生成 shim
 最省事的方式——一条命令配置好新终端：
 
 ```bash
-vsm path-init              # Windows：写入用户级 PATH；macOS / Linux：写入 ~/.zshrc、~/.bashrc 等
+vsm path-init              # Windows：用户 PATH + PowerShell 钩子；macOS / Linux：~/.zshrc、~/.bashrc 等
 ```
 
-也可以手动写进 shell 配置（用 `eval` 的动态写法，vsm 升级后无需重写）：
+macOS / Linux 也可以手动写进 shell 配置（用 `eval` 的动态写法，vsm 升级后无需重写）：
 
 ```bash
 echo 'eval "$(vsm activate zsh)"'  >> ~/.zshrc     # zsh（macOS 默认）
@@ -267,8 +267,13 @@ echo 'eval "$(vsm activate bash)"' >> ~/.bashrc    # bash
 ```
 
 ```powershell
-Add-Content $PROFILE 'vsm activate powershell | Out-String | Invoke-Expression'
+vsm path-init powershell  # 自动发现 Windows PowerShell / pwsh 配置位置，保留自定义提示符
+vsm activate powershell | Out-String | Invoke-Expression # 立即激活已有 PowerShell
 ```
+
+Windows 的系统 PATH 排在用户 PATH 前面；只把 shims 加到用户 PATH，可能仍命中系统 Java 等旧版本。PowerShell 钩子会在当前会话应用所选工具，并随提示符刷新。`path-init` 不修改执行策略；配置被策略阻止时可按提示手动激活。cmd 可用 `vsm exec java -- java -version` 或手动将 shims 放到当前 PATH 最前。GUI 无法改写已打开的外部终端或 IDE 进程，IDE 需单独配置工具链。
+
+全局默认是兜底设置：项目的 `vsm.json` / `.tool-versions` 和 `VSM_<TOOL>_VERSION` 仍有更高优先级。GUI 详情会分别显示全局默认、VSM 选择和 GUI 进程 PATH 命中位置，不代表所有终端都已切换。CLI 与 GUI 应使用同一版本，并放在同一目录；切换全局版本会更新 shim，避免继续调用旧 CLI。
 
 离开项目目录时，PATH 与 `GOROOT` / `JAVA_HOME` 等变量会自动还原，不会把上一个项目的版本带到别处。
 
@@ -389,7 +394,7 @@ vsm logs clear
   - `.tar.xz` 解压（调用系统 tar，零新增依赖；zig / typst 等 xz 发行包在 Windows/macOS/Linux 均可安装）。
   - 并行分块下载 + 进度百分比 + SHA256 校验（Go / Node 官方校验值、GitHub 资产摘要、manifest 固定摘要）+ 失败重试。
   - shell hook 进目录自动切换（`activate` 安装 hook，`env` 输出当前目录环境）。
-  - Windows 用户级 PATH 广播（`path-init`，新终端免改配置）。
+  - Windows 用户级 PATH 广播及 PowerShell 启动钩子（`path-init`）。
   - 自动识别各生态惯用版本文件（`.nvmrc`/`.python-version`/`.ruby-version`/`.java-version`/`.go-version`
     + `go.mod`/`package.json` engines/`pyproject.toml`/`Gemfile`/`runtime.txt`），无需手写 `.tool-versions`。
   - 核心单元测试 + GitHub Actions（CI 跨平台编译、打 tag 自动 release）。

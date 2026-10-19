@@ -117,7 +117,7 @@ var commandHelpTopics = map[string]commandHelp{
 		Summary:  "查看、导出和清理本地诊断日志",
 		Usage:    []string{"vsm logs [--tail N] [--level debug|info|warn|error] [--json]", "vsm logs path", "vsm logs export <新文件.jsonl>", "vsm logs clear"},
 		Options:  []string{"--tail N  最近 N 条，默认 100，范围 1–1000", "--level  最低显示级别，默认显示所有已记录级别", "--json  输出目录、级别、文件和记录"},
-		Notes:    []string{"日志位于全局 VSM_HOME/logs（默认 ~/.vsm/logs），每个文件最多 2 MiB，保留 3 个备份。", "VSM_LOG_LEVEL=debug|info|warn|error|off 控制记录级别，默认 info。off 关闭新日志，不删除旧日志。", "不记录完整命令参数、子进程输出、MCP 请求正文或环境变量；URL 凭据、查询参数及常见密钥会脱敏。", "export 导出全部保留日志到新文件，不覆盖已有文件；分享前请检查其中的本地路径。clear 只清理 VSM 日志。"},
+		Notes:    []string{"日志位于全局 VSM_HOME/logs（默认 ~/.vsm/logs），每个文件最多 2 MiB，保留 3 个备份。", "界面及文本日志显示本地时间和时区偏移；--json 和 export 保留 UTC（Z 表示 UTC）。", "VSM_LOG_LEVEL=debug|info|warn|error|off 控制记录级别，默认 info。off 关闭新日志，不删除旧日志。", "不记录完整命令参数、子进程输出、MCP 请求正文或环境变量；URL 凭据、查询参数及常见密钥会脱敏。", "export 导出全部保留日志到新文件，不覆盖已有文件；分享前请检查其中的本地路径。clear 只清理 VSM 日志。"},
 		Examples: []string{"vsm logs --tail 50 --level error", "vsm logs --json", "vsm logs export vsm-diagnostics.jsonl", "vsm logs clear"},
 	},
 	"update": {
@@ -143,7 +143,7 @@ var commandHelpTopics = map[string]commandHelp{
 		Summary: "设置项目或全局默认版本", Aliases: []string{"u"},
 		Usage:    []string{"vsm use [-g] <tool> <version>"},
 		Options:  []string{"-g, --global  设置全局默认版本"},
-		Notes:    []string{"默认写入当前目录的 .tool-versions；此命令不会下载工具。", "支持具体版本、数字前缀和 latest；本地隔离项目应设置项目版本。"},
+		Notes:    []string{"默认写入当前目录的 .tool-versions；此命令不会下载工具。", "支持具体版本、数字前缀和 latest；本地隔离项目应设置项目版本。", "全局设置会重建 shim；终端需要 activate 或 path-init 配置的启动钩子，项目配置和 VSM_<TOOL>_VERSION 仍优先于全局。"},
 		Examples: []string{"vsm use go 1.25.11", "vsm use -g node 22"},
 	},
 	"list": {
@@ -235,7 +235,7 @@ var commandHelpTopics = map[string]commandHelp{
 	},
 	"path-init": {
 		Summary: "让新终端自动启用 VSM", Usage: []string{"vsm path-init [shell]"},
-		Notes:    []string{"Windows 写入用户级 PATH；macOS / Linux 配置对应 shell 的启动文件。", "local / docker 项目使用 vsm run，不持久添加项目工具目录。"},
+		Notes:    []string{"Windows 默认写入用户级 PATH 并配置 Windows PowerShell / 已安装 pwsh 的启动钩子，保留自定义 prompt；path-init cmd 只写用户 PATH。", "用户 PATH 无法覆盖前面的系统 PATH；已有 PowerShell 终端需手动加载 activate。此命令不更改执行策略，受策略限制的终端会显示提示。", "macOS / Linux 配置对应 shell 的启动文件。local / docker 项目使用 vsm run，不持久添加项目工具目录。"},
 		Examples: []string{"vsm path-init", "vsm path-init zsh"},
 	},
 	"detect": {
