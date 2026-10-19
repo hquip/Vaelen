@@ -29,8 +29,9 @@ func PowerShellActivationCommand(vsmCmd string) string {
 }
 
 // PersistPowerShellHooks configures both Windows PowerShell and installed pwsh.
-// Profile discovery respects redirected/OneDrive Documents folders. Never alter
-// the user's execution policy or existing prompt/custom startup commands.
+// Profile discovery respects redirected/OneDrive Documents folders. Append to
+// the console-host profile, after the all-hosts profile has customized prompt.
+// Never alter the user's execution policy or existing startup commands.
 func PersistPowerShellHooks(vsmCmd string) (PowerShellProfiles, error) {
 	result := PowerShellProfiles{Paths: []string{}, Warnings: []string{}}
 	if runtime.GOOS != "windows" {
@@ -48,7 +49,7 @@ func PersistPowerShellHooks(vsmCmd string) (PowerShellProfiles, error) {
 			return result, err
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		cmd := exec.CommandContext(ctx, bin, "-NoProfile", "-NonInteractive", "-Command", `[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false); [pscustomobject]@{path=$PROFILE.CurrentUserAllHosts;policy=(Get-ExecutionPolicy).ToString()} | ConvertTo-Json -Compress`)
+		cmd := exec.CommandContext(ctx, bin, "-NoProfile", "-NonInteractive", "-Command", `[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false); [pscustomobject]@{path=$PROFILE.CurrentUserCurrentHost;policy=(Get-ExecutionPolicy).ToString()} | ConvertTo-Json -Compress`)
 		hideConsole(cmd)
 		cmd.WaitDelay = time.Second
 		out, err := cmd.Output()
