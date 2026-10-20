@@ -318,6 +318,10 @@ button { cursor: pointer; font-family: inherit; border: none; border-radius: 8px
 .mini.danger:hover { background: var(--mini-danger-hover); color: var(--red); }
 
 /* Toast */
+.cli-preparation { flex-shrink: 0; padding: 10px 16px; border-top: 1px solid var(--accent); background: var(--card); display: flex; flex-direction: column; gap: 5px; font-size: 12px; }
+.cli-preparation.hidden { display: none; }
+.cli-preparation span { color: var(--muted); white-space: pre-wrap; overflow-wrap: anywhere; }
+.cli-preparation progress { width: 100%; height: 7px; accent-color: var(--accent); }
 .toast {
   position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%);
   background: var(--toast-bg); border: 1px solid var(--border); color: var(--text);

@@ -119,6 +119,32 @@ let updateRunning=false;
 let lastUpdateProgress = null;
 let updateProgressAt = 0;
 let updateProgressTimer = null;
+let activationBusy = false;
+function syncActivationButtons() {
+  document.querySelectorAll('[data-act="global"], #pathBtn').forEach(button => button.disabled = activationBusy);
+}
+function renderCLIProgress(progress) {
+  const panel = document.getElementById("cliPreparation");
+  if (progress.stage === "ready" || progress.stage === "failed") {
+    panel.classList.add("hidden");
+    return;
+  }
+  panel.classList.remove("hidden");
+  const labels = {checking:"未找到同版本 CLI，正在查询 GitHub 官方发布",connecting:"正在连接 GitHub 下载运行组件",retrying:"下载停滞，保留已收数据后重试",parallel:"正在分块下载运行组件",fallback:"来源不支持分块，改用单连接",downloading:"正在下载配套 CLI",verifying:"正在校验运行组件 SHA256",validating:"正在验证运行组件版本",done:"运行组件已下载，正在验证"};
+  let text = labels[progress.stage] || "正在准备配套 CLI";
+  const bar = document.getElementById("cliPreparationBar");
+  if (progress.total > 0) {
+    const percent = Math.min(100, Math.floor(100 * progress.downloaded / progress.total));
+    bar.value = percent;
+    text += ` · ${percent}% · ${updateBytes(progress.downloaded)} / ${updateBytes(progress.total)}`;
+    if (progress.bytes_per_second > 0) text += ` · ${updateBytes(progress.bytes_per_second)}/s`;
+  } else {
+    bar.removeAttribute("value");
+  }
+  if (progress.attempt > 1) text += ` · 第 ${progress.attempt}/3 次尝试`;
+  if (progress.connections > 1) text += ` · ${progress.connections} 连接`;
+  document.getElementById("cliPreparationText").textContent = text + "\n准备完成后自动继续原操作，无需重复点击。";
+}
 function updateBytes(bytes) {
   const value = Math.max(0, Number(bytes) || 0);
   if (value < 1024) return Math.round(value) + " B";
@@ -687,6 +713,7 @@ function renderDetail(tool) {
   const dirLbl = document.getElementById("installDirLabel");
   if (dirLbl) dirLbl.addEventListener("click", () => { installDir = ""; updateInstallDirLabel(); });
   updateInstallDirLabel();
+  syncActivationButtons();
   if (projectMode !== "docker") loadSysVers(tool);
 }
 
@@ -966,8 +993,11 @@ async function pickProjectDir(tool) {
 }
 
 async function onVerAction(tool, act, ver) {
-  const buttons = act === "global" ? [...document.querySelectorAll('[data-act="global"]')] : [];
-  buttons.forEach(button => button.disabled = true);
+  if (act === "global") {
+    if (activationBusy) return;
+    activationBusy = true;
+    syncActivationButtons();
+  }
   try {
     if (act === "local") {
       try {
@@ -991,19 +1021,16 @@ async function onVerAction(tool, act, ver) {
   } catch (e) {
     toast(errMsg(e), true);
   } finally {
-    buttons.forEach(button => button.disabled = false);
+    if (act === "global") {
+      activationBusy = false;
+      syncActivationButtons();
+    }
   }
 }
 
 function bindEvents() {
   if (window.runtime && typeof window.runtime.EventsOn === "function") {
-    window.runtime.EventsOn("path:progress", progress => {
-      const button = document.getElementById("pathBtn");
-      if (button.disabled && progress.stage === "downloading") {
-        const percent = progress.total > 0 ? Math.floor(100 * progress.downloaded / progress.total) : 0;
-        button.textContent = `准备运行组件 ${percent}%`;
-      }
-    });
+    window.runtime.EventsOn("path:progress", renderCLIProgress);
     window.runtime.EventsOn("update:progress", progress => { if (updateRunning) renderUpdateProgress(progress); });
     window.runtime.EventsOn("install:progress", (msg) => {
       const log = document.getElementById("installLog");
@@ -1098,6 +1125,9 @@ document.getElementById("proxyInput").addEventListener("keydown", (e) => {
   else if (e.key === "Escape") closeProxyModal();
 });
 document.getElementById("pathBtn").addEventListener("click", async () => {
+  if (activationBusy) return;
+  activationBusy = true;
+  syncActivationButtons();
   const button = document.getElementById("pathBtn");
   const label = button.textContent;
   button.disabled = true;
@@ -1110,7 +1140,8 @@ document.getElementById("pathBtn").addEventListener("click", async () => {
   } catch (e) {
     toast(errMsg(e), true);
   } finally {
-    button.disabled = false;
+    activationBusy = false;
+    syncActivationButtons();
     button.textContent = label;
   }
 });
