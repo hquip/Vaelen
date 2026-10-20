@@ -452,7 +452,8 @@ func (a *App) SetInstallRoot(dir string) (err error) {
 
 // SetGlobal 设全局默认版本（写 ~/.vsm/.tool-versions）。
 func (a *App) SetGlobal(tool, version string) (err error) {
-	defer logGUI("version.global", logging.Fields{"tool": tool, "version": version}, &err)()
+	operationID := logging.NewOperationID()
+	defer logGUI("version.global", logging.Fields{"tool": tool, "version": version, "operation_id": operationID}, &err)()
 	done, err := a.begin()
 	if err != nil {
 		return err
@@ -462,7 +463,10 @@ func (a *App) SetGlobal(tool, version string) (err error) {
 	if err != nil {
 		return err
 	}
-	selection := c.act
+	act := c.act
+	act.TraceID = operationID
+	act.LogActivationSnapshot("gui-process", "before-global-save", "", a.resolveDir(), []string{tool})
+	selection := act
 	selection.Resolver.Pinned = map[string]string{tool: version}
 	executable, err := selection.Which(tool, a.resolveDir())
 	if err != nil {
@@ -475,13 +479,14 @@ func (a *App) SetGlobal(tool, version string) (err error) {
 	if version != "" && strings.Trim(version, "0123456789.") == "" && core.BestMatch(version, []string{actual.Version}) == "" {
 		return fmt.Errorf("安装记录为 %s %s，程序实际报告 %s；请重新检测并纳管，全局默认未修改", tool, version, actual.Version)
 	}
-	if err := c.act.SetGlobalVersion(tool, version); err != nil {
+	if err := act.SetGlobalVersion(tool, version); err != nil {
 		return err
 	}
-	logging.Record("info", "gui", "version.global.selected", logging.Fields{"tool": tool, "version": version, "actual": actual.Version, "executable": executable, "cli": c.act.VsmExe})
+	logging.Record("info", "gui", "version.global.selected", logging.Fields{"operation_id": operationID, "tool": tool, "version": version, "actual": actual.Version, "executable": executable, "cli": c.act.VsmExe})
+	act.LogActivationSnapshot("gui-process", "after-global-save", "", a.resolveDir(), []string{tool})
 	status := c.act.ActivationStatus(tool, a.resolveDir())
 	for _, warning := range status.Warnings {
-		logging.Record("warn", "gui", "version.global.activation", logging.Fields{"tool": tool, "version": version, "warning": warning})
+		logging.Record("warn", "gui", "version.global.activation", logging.Fields{"operation_id": operationID, "tool": tool, "version": version, "warning": warning})
 	}
 	return nil
 }
@@ -801,11 +806,12 @@ func (a *App) SetProxy(input string) (err error) {
 
 // PathInitResult 描述「激活 PATH」的结果。
 type PathInitResult struct {
-	Status   string                   `json:"status"` // added | exists
-	Target   string                   `json:"target"` // 写入位置：Windows 为「用户级 PATH」，其它平台为 shell 配置文件路径
-	Message  string                   `json:"message"`
-	Verified bool                     `json:"verified"`
-	Check    *core.CmdActivationCheck `json:"check,omitempty"`
+	Status     string                   `json:"status"` // added | exists
+	Target     string                   `json:"target"` // 写入位置：Windows 为「用户级 PATH」，其它平台为 shell 配置文件路径
+	Message    string                   `json:"message"`
+	Verified   bool                     `json:"verified"`
+	Check      *core.CmdActivationCheck `json:"check,omitempty"`
+	CurrentCmd string                   `json:"current_cmd,omitempty"`
 }
 
 func checkActivationCLI(path string) error {
@@ -839,7 +845,8 @@ func checkActivationCLIContext(ctx context.Context, path string) error {
 //   - Windows：把 shims 写入用户级 PATH 并配置 PowerShell 启动钩子；
 //   - macOS / Linux：把激活语句写进 ~/.zshrc 等 shell 配置文件（此前这里直接报错）。
 func (a *App) PathInit() (result PathInitResult, err error) {
-	defer logGUI("path.init", logging.Fields{}, &err)()
+	operationID := logging.NewOperationID()
+	defer logGUI("path.init", logging.Fields{"operation_id": operationID}, &err)()
 	if a.c().paths.ProjectMode == "local" || a.c().paths.ProjectMode == "docker" {
 		return PathInitResult{}, fmt.Errorf("隔离项目使用 vsm run，不把项目目录写入系统 PATH")
 	}
@@ -855,11 +862,17 @@ func (a *App) PathInit() (result PathInitResult, err error) {
 	if err := c.paths.EnsureDirs(); err != nil {
 		return PathInitResult{}, err
 	}
-	if err := c.act.GenerateShims(); err != nil {
-		return PathInitResult{}, err
+	act := c.act
+	act.TraceID = operationID
+	act.LogActivationSnapshot("gui-process", "before-path-init", "", a.resolveDir(), nil)
+	shimFinish := logging.Start("activation", "shims.generate", logging.Fields{"operation_id": operationID, "shims_dir": c.paths.Shims(), "cli": act.VsmExe})
+	shimErr := act.GenerateShims()
+	shimFinish(shimErr)
+	if shimErr != nil {
+		return PathInitResult{}, shimErr
 	}
 	if runtime.GOOS == "windows" {
-		st, err := core.PersistShimsPath(c.paths.Shims())
+		st, err := core.PersistShimsPath(c.paths.Shims(), operationID)
 		if err != nil {
 			return PathInitResult{}, err
 		}
@@ -867,10 +880,10 @@ func (a *App) PathInit() (result PathInitResult, err error) {
 		if err != nil {
 			return PathInitResult{}, fmt.Errorf("用户 PATH 已写入，但 PowerShell 激活配置失败: %w", err)
 		}
-		if _, err := core.PersistCmdHook(c.paths.Root); err != nil {
+		if _, err := core.PersistCmdHook(c.paths.Root, operationID); err != nil {
 			return PathInitResult{}, fmt.Errorf("用户 PATH 和 PowerShell 已配置，但 cmd 自动激活失败: %w", err)
 		}
-		check, err := c.act.VerifyCmdActivation(a.resolveDir())
+		check, err := act.VerifyCmdActivation(a.resolveDir())
 		if err != nil {
 			return PathInitResult{}, fmt.Errorf("启动配置已写入，但 cmd 验证未通过: %w", err)
 		}
@@ -879,16 +892,19 @@ func (a *App) PathInit() (result PathInitResult, err error) {
 			if !row.Passed {
 				level, event = "warn", "path.command.failed"
 			}
-			logging.Record(level, "gui", event, logging.Fields{"tool": row.Tool, "selected": row.Version, "actual": row.ActualVersion, "command": row.Command, "executable": row.Executable, "code": row.Code, "error": row.Error, "action": row.Action, "pathext": check.PathExt, "cli": c.act.VsmExe})
+			logging.Record(level, "gui", event, logging.Fields{"operation_id": operationID, "scope": "controlled-cmd", "tool": row.Tool, "selected": row.Version, "actual": row.ActualVersion, "command": row.Command, "executable": row.Executable, "code": row.Code, "error": row.Error, "action": row.Action, "pathext": check.PathExt, "cmd_modes": check.CmdModes, "cli": c.act.VsmExe})
 		}
-		return activationResult(st, "用户级 PATH、cmd 用户启动配置、"+strings.Join(profiles.Paths, "、"), check, profiles.Warnings), nil
+		result = activationResult(st, "用户级 PATH、cmd 用户启动配置、"+strings.Join(profiles.Paths, "、"), check, profiles.Warnings)
+		result.CurrentCmd, _ = core.CmdActivationCommand(c.paths.Root)
+		act.LogActivationSnapshot("gui-process", "after-path-init", "", a.resolveDir(), nil)
+		return result, nil
 	}
 	rc, st, err := core.PersistShellHook(core.DefaultShell(), core.VsmCommand(c.act.VsmExe))
 	return PathInitResult{Status: st, Target: rc, Message: "终端启动配置已保存", Verified: err == nil}, err
 }
 
 func activationResult(status, target string, check core.CmdActivationCheck, warnings []string) PathInitResult {
-	message := "终端激活已配置，所选版本已通过执行验证"
+	message := "终端启动配置已保存，所选版本已在受控 cmd 中通过执行验证"
 	if len(check.Tools) == 0 {
 		message = "终端激活已配置；选择工具版本后即可验证"
 	}

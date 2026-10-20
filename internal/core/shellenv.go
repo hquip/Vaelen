@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"vsm/internal/logging"
 	"vsm/internal/plugin"
 )
 
@@ -307,7 +308,13 @@ _vsm_refresh
 // 通过 .NET 的 SetEnvironmentVariable(User) 写注册表，会自动发出 WM_SETTINGCHANGE，
 // 用户 PATH 不会覆盖排在前面的系统 PATH；Windows PowerShell 还需启动钩子。
 // 返回 "added" / "exists"。
-func PersistShimsPath(shimsDir string) (string, error) {
+func PersistShimsPath(shimsDir string, operationIDs ...string) (status string, err error) {
+	operationID := logging.NewOperationID()
+	if len(operationIDs) > 0 && operationIDs[0] != "" {
+		operationID = operationIDs[0]
+	}
+	finish := logging.Start("activation", "user-path.persist", logging.Fields{"operation_id": operationID, "shims_dir": shimsDir, "target": "user-path", "process_path_changes": false})
+	defer func() { finish(err) }()
 	if runtime.GOOS != "windows" {
 		return "", fmt.Errorf("PersistShimsPath 仅用于 Windows；其它平台见 PersistShellHook")
 	}
@@ -336,7 +343,9 @@ else {
 	if err != nil {
 		return "", fmt.Errorf("写入用户 PATH 失败: %v (%s)", err, strings.TrimSpace(string(out)))
 	}
-	return strings.TrimSpace(string(out)), nil
+	status = strings.TrimSpace(string(out))
+	logging.Record("info", "activation", "user-path.result", logging.Fields{"operation_id": operationID, "status": status, "shims_dir": shimsDir, "process_path_changes": false})
+	return status, nil
 }
 
 // hookBlockBegin / hookBlockEnd 标记 vsm 写入 shell 配置文件的区块，保证幂等、可识别、可删除。

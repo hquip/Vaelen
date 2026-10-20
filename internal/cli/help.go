@@ -125,11 +125,16 @@ var commandHelpTopics = map[string]commandHelp{
 		Summary: "清理 VSM 运行日志", Usage: []string{"vsm logs clear"},
 		Notes: []string{"仅删除主日志及轮换备份；保留工具、项目配置、下载缓存及其它文件。"}, Examples: []string{"vsm logs clear"},
 	},
+	"logs diagnose": {
+		Summary: "记录当前终端的版本选择和命令顺序", Usage: []string{"vsm logs diagnose [tool]"},
+		Notes:    []string{"在出现问题的原终端执行，记录全局默认、有效版本、配置来源、PATH 前部和候选命令路径。", "只读取路由与配置，不运行语言程序，不修改 PATH；随后可用 logs export 导出。"},
+		Examples: []string{"vsm logs diagnose java", "vsm logs diagnose"},
+	},
 	"logs": {
 		Summary:  "查看、导出和清理本地诊断日志",
-		Usage:    []string{"vsm logs [--tail N] [--level debug|info|warn|error] [--json]", "vsm logs path", "vsm logs export <新文件.jsonl>", "vsm logs clear"},
+		Usage:    []string{"vsm logs [--tail N] [--level debug|info|warn|error] [--json]", "vsm logs path", "vsm logs diagnose [tool]", "vsm logs export <新文件.jsonl>", "vsm logs clear"},
 		Options:  []string{"--tail N  最近 N 条，默认 100，范围 1–1000", "--level  最低显示级别，默认显示所有已记录级别", "--json  输出目录、级别、文件和记录"},
-		Notes:    []string{"日志位于全局 VSM_HOME/logs（默认 ~/.vsm/logs），每个文件最多 2 MiB，保留 3 个备份。", "界面及文本日志显示本地时间和时区偏移；--json 和 export 保留 UTC（Z 表示 UTC）。", "VSM_LOG_LEVEL=debug|info|warn|error|off 控制记录级别，默认 info。off 关闭新日志，不删除旧日志。", "不记录完整命令参数、子进程输出、MCP 请求正文或环境变量；URL 凭据、查询参数及常见密钥会脱敏。", "export 导出全部保留日志到新文件，不覆盖已有文件；分享前请检查其中的本地路径。clear 只清理 VSM 日志。"},
+		Notes:    []string{"日志位于全局 VSM_HOME/logs（默认 ~/.vsm/logs），每个文件最多 2 MiB，保留 3 个备份。", "界面及文本日志显示本地时间和时区偏移；--json 和 export 保留 UTC（Z 表示 UTC）。", "VSM_LOG_LEVEL=debug|info|warn|error|off 控制记录级别，默认 info。off 关闭新日志，不删除旧日志。", "不记录完整命令参数、子进程输出、MCP 请求正文或完整环境；激活诊断只记录 PATH 前部、候选程序、PATHEXT、运行时 HOME 和版本覆盖变量。URL 凭据、查询参数及常见密钥会脱敏。", "cmd 初始化自动记录 PATH 调整前后，受控验证与用户会话分别标记；同次操作和初始化会话可按编号关联。", "export 导出全部保留日志到新文件，不覆盖已有文件；分享前请检查其中的本地路径。clear 只清理 VSM 日志。"},
 		Examples: []string{"vsm logs --tail 50 --level error", "vsm logs --json", "vsm logs export vsm-diagnostics.jsonl", "vsm logs clear"},
 	},
 	"update": {
@@ -247,7 +252,7 @@ var commandHelpTopics = map[string]commandHelp{
 	},
 	"path-init": {
 		Summary: "让新终端自动启用 VSM", Usage: []string{"vsm path-init [shell]"},
-		Notes:    []string{"Windows 默认写入用户 PATH，并配置 cmd AutoRun 与 PowerShell 启动钩子；保留已有启动命令和自定义 prompt。path-init cmd 只配置 cmd 与用户 PATH。", "cmd 启动时将 shims 前置；已通过 VSM 的 cmd 后续全局切换无需重开。尚未激活的已有 cmd 需加载一次返回的命令；/D 跳过 AutoRun，/V:ON 请使用 /V:OFF。", "不改系统 PATH 或执行策略。cmd 启动配置存于 HKCU\\Software\\Microsoft\\Command Processor，原命令保存在 VSM.AutoRun.Previous；不要手动删除原有命令。", "macOS / Linux 配置对应 shell 的启动文件。local / docker 项目使用 vsm run，不持久添加项目工具目录。"},
+		Notes:    []string{"Windows 默认写入用户 PATH，并配置 cmd AutoRun 与 PowerShell 启动钩子；保留已有启动命令和自定义 prompt。path-init cmd 只配置 cmd 与用户 PATH。", "cmd 启动时将 shims 前置；已通过 VSM 的 cmd 后续全局切换无需重开。尚未激活的已有 cmd 需加载一次返回的命令；/D 跳过 AutoRun，支持 /V:ON 和 /V:OFF。", "不改系统 PATH 或执行策略。cmd 启动配置存于 HKCU\\Software\\Microsoft\\Command Processor，原命令保存在 VSM.AutoRun.Previous；不要手动删除原有命令。", "macOS / Linux 配置对应 shell 的启动文件。local / docker 项目使用 vsm run，不持久添加项目工具目录。"},
 		Examples: []string{"vsm path-init", "vsm path-init zsh"},
 	},
 	"detect": {

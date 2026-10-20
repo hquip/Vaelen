@@ -15,6 +15,14 @@
 > 镜像切换、网络代理设置、安装进度条、当前目录 local 设置、一键写入用户级 PATH。
 > **macOS 版为 Universal 通用二进制**（Apple Silicon + Intel），隐藏式标题栏 + 原生菜单，内置 CLI，一个 `.app` 开箱即用。
 
+## v1.1.9 cmd 激活修复与详细日志
+
+- **cmd 兼容修复**：支持延迟变量展开开启和关闭两种模式，修复带引号与 `&` 的 PATH 项被拼坏的问题；执行验证同时覆盖两种模式。
+- **清楚显示切换结果**：区分全局默认保存、项目/环境变量覆盖与受控验证；保留失败详情，并提供已有 cmd 的一次性加载命令。
+- **详细诊断**：记录配置写入、入口生成、启动配置读回、初始化前后和实际运行程序；`vsm logs diagnose java` 可只读采集原终端状态，GUI 支持导出。
+
+下载 [v1.1.9 正式版](https://github.com/hquip/Vaelen/releases/tag/v1.1.9)，或使用 GUI「检查 VSM 更新」/ `vsm update --gui`。**升级并重启后，点击一次「激活 PATH」生成新版初始化脚本。**详见[发布说明](docs/releases/v1.1.9.md)。
+
 ## v1.1.8 Windows 激活修复与可操作诊断
 
 修复 Windows `PATHEXT` 缺少 `.CMD` 时跳过 VSM 命令入口的问题，自动补齐并保留已有扩展名。激活结果会持续显示在页面中，区分当前目录同名程序、入口被其它程序遮挡、入口缺失和实际执行失败，并可复制实际命中路径等诊断信息。
@@ -216,7 +224,7 @@ sudo ln -sf /Applications/VSM.app/Contents/MacOS/vsm /usr/local/bin/vsm
 自行打包（需在 Mac 上，产出与 Release 相同的通用版 zip）：
 
 ```bash
-bash scripts/package-macos.sh 1.1.8 dist
+bash scripts/package-macos.sh 1.1.9 dist
 ```
 
 > 打 `v*` tag 即可由 GitHub Actions 在 Windows / macOS / Linux 三个 runner 上分别本地编译，
@@ -462,11 +470,16 @@ GUI 左下角「日志」支持筛选、导出和清理。
 ```bash
 vsm logs --tail 100
 vsm logs --level error
+vsm logs diagnose java
 vsm logs export vsm-report.jsonl
 vsm logs clear
 ```
 
 默认保存在 `~/.vsm/logs`（或 `VSM_HOME/logs`），通过 `VSM_LOG_LEVEL=debug|info|warn|error|off` 控制记录级别。
+
+版本切换诊断默认以 `info` 记录配置写入、入口生成、cmd AutoRun 读回结果、两种延迟展开模式的验证，以及运行时实际启动的程序。cmd 初始化脚本自动记录 PATH 调整前后；`scope` 区分 GUI、受控 cmd 和用户会话，`operation_id` / `helper_session` 关联同次操作。
+
+已有终端仍无法切换时，在那个终端运行 `vsm logs diagnose java`，再从 GUI「日志 → 导出」或 `vsm logs export` 导出。诊断不会运行语言程序或修改环境；自动记录 PATH 前 12 项、首个命中的命令、运行时 HOME 与版本覆盖变量；手动诊断和 GUI 导出补充最多 16 个候选命令，沿用脱敏和轮换。更新程序后需点击一次「激活 PATH」生成带诊断的新脚本；脚本未被加载时无法产生用户会话记录。
 日志保存在本地，代理凭据、URL 查询参数与常见密钥会脱敏。详见[日志说明](docs/logging.md)。
 
 ## 许可证

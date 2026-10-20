@@ -52,6 +52,7 @@ func (a *App) ExportLogs() (string, error) {
 	if err != nil || path == "" {
 		return "", err
 	}
+	a.c().act.LogActivationSnapshot("gui-process", "before-log-export", "", a.resolveDir(), nil)
 	store, err := logging.Default()
 	if err != nil {
 		return "", err

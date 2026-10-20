@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"vsm/internal/config"
+	"vsm/internal/logging"
 	"vsm/internal/plugin"
 )
 
@@ -21,6 +22,8 @@ type Activator struct {
 	// VsmExe 是 vsm CLI 可执行文件的绝对路径；shim 用它调用 `vsm exec`，
 	// 这样即使 vsm 不在 PATH 里垫片也能工作。为空时回退为裸命令 "vsm"。
 	VsmExe string
+	// TraceID connects one GUI/CLI action to its core diagnostic steps.
+	TraceID string
 }
 
 // Which 返回 tool 当前解析版本下主命令的完整路径。
@@ -91,7 +94,23 @@ func (a Activator) Run(tool, startDir, cmdName string, cmdArgs []string) error {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Env = buildEnv(binDirs, p.ExecEnv(installDir))
+	fields := a.activationFields()
+	if a.TraceID == "" {
+		operationID := os.Getenv("VSM_ACTIVATION_OPERATION")
+		if operationID == "" {
+			operationID = logging.NewOperationID()
+		}
+		fields["operation_id"] = operationID
+	}
+	fields["scope"] = "runtime-process"
+	if os.Getenv("_VSM_CMD_SCOPE") == "controlled-cmd" {
+		fields["scope"] = "controlled-cmd"
+	}
+	fields["tool"], fields["selected_version"], fields["source"] = tool, res.Version, res.Source
+	fields["selected_executable"], fields["directory"], fields["parent_pid"] = exe, startDir, os.Getppid()
+	finish := logging.Start("activation", "runtime.dispatch", fields)
 	if err := cmd.Run(); err != nil {
+		finish(err)
 		// 透传子进程退出码：`vsm exec go test ./...` 失败时必须让脚本/CI 感知真实状态码，
 		// 否则 `vsm exec ... && deploy` 这类串联会失效，lint 用 2、git 用 128 也全被抹平。
 		var ee *exec.ExitError
@@ -100,6 +119,7 @@ func (a Activator) Run(tool, startDir, cmdName string, cmdArgs []string) error {
 		}
 		return err
 	}
+	finish(nil)
 	return nil
 }
 

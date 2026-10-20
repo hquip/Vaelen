@@ -61,6 +61,33 @@ func TestLevelsRedactionAndFailedOperation(t *testing.T) {
 	}
 }
 
+func TestOperationCorrelationAndRedactedDiagnosticLists(t *testing.T) {
+	s := testStore(t)
+	t.Setenv("VSM_TEST_API_TOKEN", "hidden-list-credential")
+	fields := Fields{"cmd_modes": []string{"OFF", "ON"}, "candidates": []string{"/tools/java", "https://user:password@example.test/a?token=secret", "/hidden-list-credential/tool"}}
+	finish := Start("activation", "snapshot", fields)
+	fields["unexpected"] = "caller mutation"
+	fields["cmd_modes"].([]string)[0] = "caller mutation"
+	finish(nil)
+	snapshot, err := s.Read(100, "")
+	if err != nil || len(snapshot.Entries) != 2 {
+		t.Fatalf("missing trace: %+v %v", snapshot, err)
+	}
+	first, last := snapshot.Entries[0].Fields, snapshot.Entries[1].Fields
+	if first["operation_id"] == "" || first["operation_id"] != last["operation_id"] || last["unexpected"] != nil {
+		t.Fatalf("operation correlation/snapshot failed: %+v", snapshot.Entries)
+	}
+	if modes, ok := last["cmd_modes"].([]string); !ok || len(modes) != 2 || modes[0] != "OFF" || modes[1] != "ON" {
+		t.Fatalf("diagnostic array omitted: %#v", last["cmd_modes"])
+	}
+	raw, _ := json.Marshal(snapshot)
+	for _, secret := range []string{"user:", "password@", "token=secret", "hidden-list-credential"} {
+		if strings.Contains(string(raw), secret) {
+			t.Fatalf("diagnostic list leaked %q: %s", secret, raw)
+		}
+	}
+}
+
 func TestRotationExportAndClear(t *testing.T) {
 	s := testStore(t)
 	s.maxBytes, s.backups = 650, 2

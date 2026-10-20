@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"os"
 	"os/exec"
@@ -10,8 +11,10 @@ import (
 	"syscall"
 	"testing"
 	"time"
+	"unicode/utf16"
 
 	"vsm/internal/config"
+	"vsm/internal/logging"
 )
 
 func executingActivationFixture(t *testing.T) (Activator, []byte) {
@@ -59,6 +62,7 @@ func runRegistryScript(t *testing.T, script string) string {
 
 func TestCmdHookPreservesAutoRunAndRefusesExternalChanges(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "已有环境 & tools")
+	t.Setenv("VSM_HOME", root)
 	key := `Software\VSM\Tests\` + filepath.Base(t.TempDir())
 	// Always use a private test key; never touch the real Command Processor key.
 	t.Cleanup(func() {
@@ -160,6 +164,7 @@ func TestCmdStartupOverridesSystemPATHWithoutCodePageOrDuplicates(t *testing.T) 
 }
 
 func TestCmdHookRejectsExpansionBeforeWriting(t *testing.T) {
+	t.Setenv("VSM_HOME", t.TempDir())
 	for _, name := range []string{"%TEMP%", "!value!"} {
 		root := filepath.Join(t.TempDir(), name)
 		if _, err := persistCmdHookAt(root, `Software\VSM\Tests\unused`); err == nil {
@@ -168,6 +173,52 @@ func TestCmdHookRejectsExpansionBeforeWriting(t *testing.T) {
 		if _, err := os.Stat(root); !os.IsNotExist(err) {
 			t.Fatalf("created unsafe hook: %v", err)
 		}
+	}
+}
+
+func TestCmdStartupPreservesModeAndLiteralPATHCharacters(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "中文 & tools (test)")
+	helper := filepath.Join(root, "vsm-cmd-init.cmd")
+	if err := config.WriteFileAtomic(helper, []byte(cmdStartupScript(root)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	baseline := `"` + filepath.Join(t.TempDir(), "old !bang! & quoted") + `";` + os.Getenv("PATH")
+	for _, mode := range []string{"OFF", "ON"} {
+		t.Run(mode, func(t *testing.T) {
+			// Read native cmd output; PowerShell modifies PATHEXT on startup.
+			batch := "@echo off\r\ncall \"%VSM_TEST_INIT%\"\r\ncall \"%VSM_TEST_INIT%\"\r\nset \"VSM_TEST_MODE=!VSM_TEST_SENTINEL!\"\r\nset PATH\r\nset VSM_TEST_MODE\r\nset VSM_HOME\r\nset _VSM_CMD_ 2>nul\r\nexit /b 0\r\n"
+			file := filepath.Join(t.TempDir(), "mode.cmd")
+			if err := os.WriteFile(file, []byte(batch), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			cmd := exec.Command(windowsCmdPath(), "/D", "/U", "/V:"+mode, "/C", file)
+			cmd.Env = append(os.Environ(), "VSM_TEST_INIT="+helper, "PATH="+baseline, "PATHEXT=.EXE;.PY", "VSM_HOME=", "bang=must-not-expand", "VSM_TEST_SENTINEL=ready")
+			out, err := cmd.CombinedOutput()
+			if err != nil {
+				t.Fatalf("cmd /V:%s: %v %s", mode, err, out)
+			}
+			if len(out)%2 != 0 {
+				t.Fatalf("cmd /V:%s returned invalid UTF-16: %q", mode, out)
+			}
+			units := make([]uint16, len(out)/2)
+			for i := range units {
+				units[i] = binary.LittleEndian.Uint16(out[2*i:])
+			}
+			got := map[string]string{}
+			for _, line := range strings.Split(string(utf16.Decode(units)), "\n") {
+				key, value, ok := strings.Cut(strings.TrimSuffix(line, "\r"), "=")
+				if ok {
+					got[strings.ToUpper(key)] = value
+				}
+			}
+			wantMode := "!VSM_TEST_SENTINEL!"
+			if mode == "ON" {
+				wantMode = "ready"
+			}
+			if got["PATH"] != filepath.Join(root, "shims")+";"+baseline || got["VSM_TEST_MODE"] != wantMode || got["PATHEXT"] != ".EXE;.PY;.CMD" || !sameDir(got["VSM_HOME"], root) || got["_VSM_CMD_EXPECTED"] != "" {
+				t.Fatalf("helper changed caller mode, existing PATH, or extensions: %+v", got)
+			}
+		})
 	}
 }
 
@@ -325,7 +376,7 @@ func TestCmdActivationRepairsMissingCMDExtension(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !check.Passed || !check.PathExtRepaired || len(check.Tools) != 1 || check.Tools[0].ActualVersion != "17.0.12" || !sameDir(filepath.Dir(check.Tools[0].Command), a.Paths.Shims()) {
+	if !check.Passed || !check.PathExtRepaired || strings.Join(check.CmdModes, ",") != "OFF,ON" || len(check.Tools) != 1 || check.Tools[0].ActualVersion != "17.0.12" || !sameDir(filepath.Dir(check.Tools[0].Command), a.Paths.Shims()) {
 		t.Fatalf("activation did not repair .CMD before executing Java: %+v", check)
 	}
 	// Keep one cmd process alive through 17 -> 21 -> 17, loading the activation
@@ -351,5 +402,130 @@ func TestCmdActivationRepairsMissingCMDExtension(t *testing.T) {
 	}
 	if strings.Join(versions, ",") != `"17.0.12","21.0.1","17.0.12"` {
 		t.Fatalf("versions did not change in the same cmd after repairing PATHEXT: %s", out)
+	}
+	// A regression that works only with delayed expansion OFF must fail GUI
+	// validation, even though every selected runtime works in that one mode.
+	helper := filepath.Join(a.Paths.Root, "vsm-cmd-init.cmd")
+	broken := "@if \"!!\"==\"\" exit /b 1\r\n" + cmdStartupScript(a.Paths.Root)
+	if err := os.WriteFile(helper, []byte(broken), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.VerifyCmdActivation(dir); err == nil || !strings.Contains(err.Error(), "/V:ON") {
+		t.Fatalf("validation accepted a helper broken in the caller's mode: %v", err)
+	}
+}
+
+func TestCmdExistingSessionWithSystemJavaBeforeShims(t *testing.T) {
+	a, data := executingActivationFixture(t)
+	t.Setenv("VSM_LOG_LEVEL", "info")
+	if err := a.SetGlobalVersion("java", "17.0.12"); err != nil {
+		t.Fatal(err)
+	}
+	helper := filepath.Join(a.Paths.Root, "vsm-cmd-init.cmd")
+	if err := config.WriteFileAtomic(helper, []byte(cmdStartupScript(a.Paths.Root)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	oracle := filepath.Join(t.TempDir(), "Oracle javapath")
+	if err := config.WriteFileAtomic(filepath.Join(oracle, "java.exe"), data, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	// Match the customer's screenshot: system Java 21, Oracle javapath, then
+	// VSM shims. Keep the very same cmd alive before and after loading once.
+	batch := "@echo off\r\ncall java -version\r\ncall \"%VSM_TEST_INIT%\"\r\ncall java -version\r\n\"%VSM_TEST_CLI%\" use -g java 21.0.1\r\ncall java -version\r\n\"%VSM_TEST_CLI%\" use -g java 17.0.12\r\ncall java -version\r\n"
+	file := filepath.Join(dir, "customer-session.cmd")
+	if err := os.WriteFile(file, []byte(batch), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, mode := range []string{"OFF", "ON"} {
+		t.Run("delayed-expansion-"+mode, func(t *testing.T) {
+			cmd := exec.Command(windowsCmdPath(), "/D", "/V:"+mode, "/C", file)
+			cmd.Dir = dir
+			cmd.Env = append(os.Environ(), "VSM_HOME="+a.Paths.Root, "VSM_TEST_INIT="+helper, "VSM_TEST_CLI="+a.VsmExe, "VSM_PROJECT_BOUNDARY="+dir,
+				"PATH="+filepath.Join(a.Paths.InstallDir("java", "21.0.1"), "bin")+";"+oracle+";"+a.Paths.Shims()+";"+os.Getenv("PATH"))
+			out, err := cmd.CombinedOutput()
+			if err != nil {
+				t.Fatalf("customer cmd fixture: %v %s", err, out)
+			}
+			var versions []string
+			for _, line := range strings.Split(strings.ReplaceAll(string(out), "\r\n", "\n"), "\n") {
+				if strings.HasPrefix(line, "java version ") {
+					versions = append(versions, strings.TrimPrefix(line, "java version "))
+				}
+			}
+			if strings.Join(versions, ",") != `"21.0.1","17.0.12","21.0.1","17.0.12"` {
+				t.Fatalf("same cmd did not recover after a single initialization: %s", out)
+			}
+		})
+	}
+	// The copied command must target the same helper, including custom homes.
+	status := a.ActivationStatus("java", dir)
+	command, err := CmdActivationCommand(a.Paths.Root)
+	if err != nil || status.CurrentCmd != command {
+		t.Fatalf("copied command uses the wrong home: %+v %v", status, err)
+	}
+	store, _ := logging.Default()
+	snapshot, err := store.Read(1000, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, after, dispatched := false, false, false
+	sessions := map[string]bool{}
+	for _, entry := range snapshot.Entries {
+		fields := entry.Fields
+		if entry.Event == "environment.snapshot" && fields["scope"] == "cmd-session" {
+			if fields["phase"] == "before" && fields["shims_index"] == float64(2) {
+				before = true
+				sessions[fields["helper_session"].(string)] = true
+			}
+			if fields["phase"] == "after" && fields["shims_index"] == float64(0) && sessions[fields["helper_session"].(string)] {
+				after = true
+			}
+		}
+		if entry.Event == "runtime.dispatch.started" && fields["selected_version"] == "17.0.12" {
+			dispatched = true
+		}
+	}
+	if !before || !after || !dispatched {
+		t.Fatalf("missing real-session before/after or final dispatch evidence: before=%t after=%t dispatched=%t", before, after, dispatched)
+	}
+}
+
+func TestCmdStartupLoggingFailureDoesNotBlockActivation(t *testing.T) {
+	a, _ := executingActivationFixture(t)
+	if err := a.SetGlobalVersion("java", "17.0.12"); err != nil {
+		t.Fatal(err)
+	}
+	helper := filepath.Join(a.Paths.Root, "vsm-cmd-init.cmd")
+	if err := os.WriteFile(helper, []byte(cmdStartupScript(a.Paths.Root)), 0644); err != nil {
+		t.Fatal(err)
+	}
+	logs := filepath.Join(a.Paths.Root, "logs")
+	if _, err := os.Stat(logs); err == nil {
+		if err := os.Rename(logs, filepath.Join(a.Paths.Root, "saved-logs")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(logs, []byte("blocked diagnostic directory"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	file := filepath.Join(dir, "logging-blocked.cmd")
+	if err := os.WriteFile(file, []byte("@echo off\r\ncall \"%VSM_TEST_INIT%\"\r\ncall java -version\r\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	for _, level := range []string{"info", "off", "info"} {
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		cmd := exec.CommandContext(ctx, windowsCmdPath(), "/D", "/V:ON", "/C", file)
+		cmd.Dir = dir
+		cmd.Env = append(os.Environ(), "VSM_HOME="+a.Paths.Root, "VSM_TEST_INIT="+helper, "VSM_PROJECT_BOUNDARY="+dir, "VSM_LOG_LEVEL="+level,
+			"PATH="+filepath.Join(a.Paths.InstallDir("java", "21.0.1"), "bin")+";"+os.Getenv("PATH"))
+		started := time.Now()
+		out, err := cmd.CombinedOutput()
+		cancel()
+		t.Logf("same cmd startup + Java with log level %s: %s", level, time.Since(started).Round(time.Millisecond))
+		if err != nil || strings.TrimSpace(string(out)) != `java version "17.0.12"` {
+			t.Fatalf("diagnostics broke command routing or printed output: %v %q", err, out)
+		}
 	}
 }

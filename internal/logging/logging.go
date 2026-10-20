@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"vsm/internal/buildinfo"
@@ -22,6 +23,12 @@ const (
 )
 
 type Fields map[string]any
+
+var operationSequence atomic.Uint64
+
+func NewOperationID() string {
+	return fmt.Sprintf("%x-%x-%x", os.Getpid(), time.Now().UnixNano(), operationSequence.Add(1))
+}
 
 type Entry struct {
 	Time      string `json:"time"`
@@ -124,6 +131,18 @@ func ErrorMessage(err error) string {
 // Never pass command arguments, environment dumps, subprocess output or MCP
 // request/result bodies as fields.
 func Start(component, event string, fields Fields) func(error) {
+	// Own a snapshot so caller changes cannot race with the finisher.
+	initial := make(Fields, len(fields)+1)
+	for key, value := range fields {
+		if values, ok := value.([]string); ok {
+			value = append([]string(nil), values...)
+		}
+		initial[key] = value
+	}
+	if _, exists := initial["operation_id"]; !exists {
+		initial["operation_id"] = NewOperationID()
+	}
+	fields = initial
 	start := time.Now()
 	Record("info", component, event+".started", fields)
 	return func(err error) {
@@ -151,6 +170,43 @@ func safeFields(fields Fields) Fields {
 		switch v := v.(type) {
 		case string:
 			result[k] = Redact(v)
+		case []string:
+			// Diagnostic lists (PATH candidates and cmd modes) must survive JSON
+			// serialization, while each element receives the usual redaction.
+			count := min(len(v), 24)
+			values := make([]string, 0, count)
+			for _, item := range v[:count] {
+				item = Redact(item)
+				if len(item) > 512 {
+					item = strings.ToValidUTF8(item[:512], "") + " [truncated]"
+				}
+				values = append(values, item)
+			}
+			if count < len(v) {
+				result[k+"_omitted"] = len(v) - count
+			}
+			result[k] = values
+		case []any:
+			// Read/export sanitize decoded JSON a second time. Preserve only
+			// flat string lists; arbitrary nested objects remain unsupported.
+			values := make([]string, 0, min(len(v), 24))
+			valid := true
+			for _, item := range v[:min(len(v), 24)] {
+				text, ok := item.(string)
+				if !ok {
+					valid = false
+					break
+				}
+				values = append(values, text)
+			}
+			if valid {
+				result[k] = safeFields(Fields{"items": values})["items"]
+				if len(v) > 24 {
+					result[k+"_omitted"] = len(v) - 24
+				}
+			} else {
+				result[k] = "[omitted]"
+			}
 		case bool, int, int64, float64:
 			result[k] = v
 		default:

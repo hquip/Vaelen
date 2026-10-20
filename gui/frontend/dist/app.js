@@ -121,26 +121,62 @@ let updateProgressAt = 0;
 let updateProgressTimer = null;
 let activationBusy = false;
 let activationDiagnostic = "";
+let pendingActivationDiagnostic = "";
+let currentCmdActivation = "";
+function renderActivationReport(title, message, problems, diagnostic, currentCmd = "") {
+  document.getElementById("activationReport").classList.remove("hidden");
+  document.getElementById("activationReportTitle").textContent = title;
+  document.getElementById("activationReportMessage").textContent = message;
+  const container = document.getElementById("activationReportProblems");
+  container.replaceChildren();
+  for (const problem of problems) {
+    const item = document.createElement("p");
+    item.className = "activation-problem";
+    item.textContent = problem;
+    container.appendChild(item);
+  }
+  activationDiagnostic = diagnostic;
+  document.getElementById("activationReportDetails").textContent = diagnostic;
+  currentCmdActivation = currentCmd;
+  document.getElementById("activationCurrentCmd").classList.toggle("hidden", !currentCmd);
+  document.getElementById("activationCurrentCmdText").textContent = currentCmd;
+}
 function showActivationReport(result, failure) {
   const check = result.check;
   const problems = (check?.tools || []).filter(row => !row.passed);
   const ok = !failure && result.verified !== false;
-  document.getElementById("activationReport").classList.remove("hidden");
-  document.getElementById("activationReportTitle").textContent = ok ? "终端激活已完成" : "版本切换仍需处理";
-  document.getElementById("activationReportMessage").textContent = failure
+  const message = failure
     ? "这次激活没有完成，请查看详情后重试。"
     : result.message || "终端配置已保存。";
-  const container = document.getElementById("activationReportProblems");
-  container.replaceChildren();
-  for (const row of problems) {
-    const item = document.createElement("p");
-    item.className = "activation-problem";
-    item.textContent = displayName(row.tool) + "：" + row.error + "\n" + (row.action || "请查看诊断详情，确认所选程序是否可用。");
-    container.appendChild(item);
-  }
-  activationDiagnostic = ["VSM " + document.getElementById("appVersion").textContent, result.message || "", failure || "", result.target ? "配置位置：" + result.target : "", check?.pathext ? "命令扩展名：" + check.pathext : "",
+  const diagnostic = ["VSM " + document.getElementById("appVersion").textContent, result.message || "", failure || "", result.target ? "配置位置：" + result.target : "", result.current_cmd ? "已有 cmd 加载命令：" + result.current_cmd : "", check?.pathext ? "命令扩展名：" + check.pathext : "", check?.cmd_modes?.length ? "已验证 cmd 延迟展开模式：" + check.cmd_modes.join(", ") : "",
     ...(check?.tools || []).map(row => [row.tool + "：" + (row.passed ? "验证通过" : "验证未通过"), "选择版本：" + row.version, "实际命中的程序：" + (row.command || "未找到"), "所选安装程序：" + (row.executable || "未找到"), "实际版本：" + (row.actual_version || "未取得"), row.code || "", row.error || "", row.action || ""].filter(Boolean).join("\n"))].filter(Boolean).join("\n\n");
-  document.getElementById("activationReportDetails").textContent = activationDiagnostic;
+  pendingActivationDiagnostic = ok ? "" : diagnostic;
+  renderActivationReport(ok ? "终端启动配置已保存" : "版本切换仍需处理", message,
+    problems.map(row => displayName(row.tool) + "：" + row.error + "\n" + (row.action || "请查看诊断详情，确认所选程序是否可用。")), diagnostic, result.current_cmd);
+}
+function showGlobalSelectionReport(tool, version, status) {
+  const activation = status?.activation;
+  const overridden = activation?.source && activation.source !== "全局";
+  const different = overridden && activation.current !== version;
+  const message = `${displayName(tool)} 的全局默认已保存为 ${version}。` + (different
+    ? `当前目录仍由 ${activation.source} 选择 ${activation.current || "未安装的版本"}，优先于全局默认。`
+    : "保存默认配置不会改写其它已运行终端的 PATH；已激活终端会按当前有效配置运行命令。若仍运行旧版本，请点击「激活 PATH」并按提示操作。");
+  const problems = [...(activation?.warnings || [])];
+  if (different) problems.unshift(activation.source.startsWith("环境变量 ")
+    ? "如需采用全局默认，请在原 cmd 清除该版本覆盖变量后重试；VSM 不会自动改动其它终端的变量。"
+    : "如需改变当前项目，请使用「设为本目录」；如需验证全局默认，请在没有项目版本要求的目录运行命令。");
+  if (pendingActivationDiagnostic) problems.push("上次激活验证未通过；本次只保存了全局默认，尚未重新验证。可点击「重新验证」查看现在的结果。");
+  if (!activation) problems.push("当前状态未能刷新，尚未确认有效版本；请重试刷新或激活验证。");
+  const diagnostic = ["VSM " + document.getElementById("appVersion").textContent,
+    "操作：保存全局默认（不代表外部终端已切换）", "工具：" + tool, "保存的版本：" + version,
+    "GUI 当前项目目录：" + (curDir || "未选择"),
+    activation ? "当前有效版本：" + (activation.current || "未解析") : "当前状态：未能刷新",
+    activation ? "配置来源：" + (activation.source || "未找到") : "",
+    activation ? "VSM 选择的程序：" + (activation.executable || "未找到") : "",
+    activation ? "GUI 启动时命中的命令（不是其它 cmd 的状态）：" + (activation.command || "未找到") : "",
+    activation?.current_cmd ? "已有 cmd 加载命令：" + activation.current_cmd : "",
+    ...problems, pendingActivationDiagnostic ? "上次激活失败详情（本次未重新验证）：\n" + pendingActivationDiagnostic : ""].filter(Boolean).join("\n\n");
+  renderActivationReport(different ? "全局默认已保存，当前版本被覆盖" : "全局默认已保存，终端状态待确认", message, problems, diagnostic, activation?.current_cmd);
 }
 function downloadNetworkLabel(network) {
   return {"local-proxy":"本机代理", "configured-proxy":"已配置代理", "environment-proxy":"环境变量代理", "direct":"直连"}[network] || "";
@@ -521,11 +557,12 @@ async function load() {
   } catch (e) {
     document.getElementById("toolList").innerHTML =
       `<div class="empty-hint" style="padding:12px 10px">加载失败：${escapeHtml(e.message)}</div>`;
-    return;
+    return false;
   }
   renderStat();
   renderSidebar();
   if (selected && statusOf(selected)) renderDetail(selected);
+  return true;
 }
 
 function renderStat() {
@@ -1042,8 +1079,12 @@ async function onVerAction(tool, act, ver) {
       toast(`已设 ${tool} = ${ver}（${curDir}）`);
     } else if (act === "global") {
       await call("SetGlobal", tool, ver);
-      document.getElementById("activationReport").classList.add("hidden");
-      toast(`已设置 ${tool} 全局默认 = ${ver}`);
+      // Saving a default is not proof that a different cmd process switched.
+      const refreshed = await load();
+      showGlobalSelectionReport(tool, ver, refreshed ? statusOf(tool) : null);
+      toast(`已保存 ${tool} 全局默认 = ${ver}；请查看有效版本和终端状态`);
+      if (refreshed) renderDetail(tool);
+      return;
     } else if (act === "uninstall") {
       await call("Uninstall", tool, ver);
       toast(`已卸载 ${tool} ${ver}`);
@@ -1195,6 +1236,15 @@ document.getElementById("activationReportCopy").addEventListener("click", async 
     const range = document.createRange(); range.selectNodeContents(details);
     const selection = window.getSelection(); selection.removeAllRanges(); selection.addRange(range);
     toast("请复制已选中的诊断信息");
+  }
+});
+document.getElementById("activationCurrentCmdCopy").addEventListener("click", async () => {
+  if (!currentCmdActivation) return;
+  try { await navigator.clipboard.writeText(currentCmdActivation); toast("激活命令已复制，请在原 cmd 中执行一次"); }
+  catch (_) {
+    const range = document.createRange(); range.selectNodeContents(document.getElementById("activationCurrentCmdText"));
+    const selection = window.getSelection(); selection.removeAllRanges(); selection.addRange(range);
+    toast("请复制已选中的命令，在原 cmd 中执行一次");
   }
 });
 
