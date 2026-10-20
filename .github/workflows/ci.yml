@@ -50,6 +50,24 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Prepare portable Windows Redis probes
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        timeout-minutes: 3
+        run: |
+          $fixtures = @(
+            @{ Name = 'redis3'; Repository = 'microsoftarchive/redis'; Tag = 'win-3.0.504'; File = 'Redis-x64-3.0.504.zip'; EnvName = 'VSM_TEST_REDIS_3' },
+            @{ Name = 'redis5'; Repository = 'tporadowski/redis'; Tag = 'v5.0.14.1'; File = 'Redis-x64-5.0.14.1.zip'; EnvName = 'VSM_TEST_REDIS_5' }
+          )
+          foreach ($fixture in $fixtures) {
+            $directory = Join-Path $env:RUNNER_TEMP $fixture.Name
+            $archive = "$directory.zip"
+            $url = "https://github.com/$($fixture.Repository)/releases/download/$($fixture.Tag)/$($fixture.File)"
+            Invoke-WebRequest -Uri $url -OutFile $archive -TimeoutSec 60
+            Expand-Archive -LiteralPath $archive -DestinationPath $directory
+            "$($fixture.EnvName)=$(Join-Path $directory 'redis-server.exe')" >> $env:GITHUB_ENV
+          }
+
       - name: Test
         env:
           VSM_TEST_PYTHON: python

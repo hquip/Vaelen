@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -232,7 +233,7 @@ func normDir(p string) string {
 // 覆盖三类约定：`--version`（多数）、`version`（go/zig 等子命令式）、`-version`（java）。
 func probeVersion(tool, bin string) (version string, err error) {
 	defer func() {
-		fields := logging.Fields{"tool": tool, "version": version}
+		fields := logging.Fields{"tool": tool, "path": bin, "version": version}
 		level := "debug"
 		if err != nil {
 			level = "warn"
@@ -271,7 +272,14 @@ func probeVersionCommand(tool, bin string, env []string, dir string) (string, er
 	if tool == "postgres" || tool == "mysql" || tool == "mariadb" || tool == "redis" || tool == "valkey" {
 		flags = []string{"--version"}
 	}
+	if tool == "redis" {
+		// Both switches are read-only Redis version requests. In particular,
+		// never try the generic "version" argument: servers treat it as a
+		// configuration filename instead of a version subcommand.
+		flags = []string{"--version", "-v"}
+	}
 	var lastErr error
+	var redisErrors []error
 	for _, flag := range flags {
 		ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
 		probeArgs := []string{flag}
@@ -317,12 +325,15 @@ func probeVersionCommand(tool, bin string, env []string, dir string) (string, er
 			err = fmt.Errorf("版本探测超时")
 		}
 		cancel()
+		message := strings.Join(strings.Fields(output.text), " ")
+		if len(message) > 512 {
+			message = message[:512]
+		}
 		if err != nil {
-			message := strings.Join(strings.Fields(output.text), " ")
-			if len(message) > 512 {
-				message = message[:512]
-			}
 			lastErr = fmt.Errorf("%s: %w；%s", flag, err, message)
+			if tool == "redis" {
+				redisErrors = append(redisErrors, lastErr)
+			}
 			continue
 		}
 		text := probeANSIEscape.ReplaceAllString(output.text, "")
@@ -330,12 +341,18 @@ func probeVersionCommand(tool, bin string, env []string, dir string) (string, er
 			if match := pattern.FindStringSubmatch(text); match != nil {
 				return match[1], nil
 			}
-			lastErr = fmt.Errorf("%s 未返回 %s 自身的版本信息", flag, tool)
+			lastErr = fmt.Errorf("%s 未返回 %s 自身的版本信息；%s", flag, tool, message)
+			if tool == "redis" {
+				redisErrors = append(redisErrors, lastErr)
+			}
 			continue
 		}
 		if m := versionRe.FindString(text); m != "" {
 			return m, nil
 		}
+	}
+	if len(redisErrors) > 0 {
+		return "", errors.Join(redisErrors...)
 	}
 	if lastErr != nil {
 		return "", lastErr
@@ -347,6 +364,7 @@ var probeANSIEscape = regexp.MustCompile(`\x1b\[[0-9;]*m`)
 var specificProbePatterns = map[string]*regexp.Regexp{
 	"maven":  regexp.MustCompile(`(?m)^Apache Maven\s+(\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?)`),
 	"python": regexp.MustCompile(`(?m)^Python\s+(\d+\.\d+(?:\.\d+)?(?:(?:a|b|rc)\d+)?)`),
+	"redis":  regexp.MustCompile(`(?im)^Redis server\s+v=(\d+(?:\.\d+)+(?:[-+][0-9A-Za-z.-]+)?)(?:\s|$)`),
 }
 
 type probeOutput struct{ text string }

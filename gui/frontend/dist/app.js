@@ -134,7 +134,7 @@ function renderUpdateProgress(progress, received = true) {
     if (progress.stage === "failed" && lastUpdateProgress) progress = {...lastUpdateProgress, stage: "failed"};
     lastUpdateProgress = progress;
   }
-  const labels = {checking:"检查发布版本",downloading:"下载更新包",verifying:"校验 SHA256",extracting:"解压应用",validating:"验证程序与签名",replacing:"备份并替换程序",done:"更新完成",failed:"更新失败"};
+  const labels = {checking:"检查发布版本",connecting:"连接 GitHub 下载源",retrying:"重试下载，保留已收数据",parallel:"分块下载更新包",fallback:"分块不可用，改为单连接",downloading:"下载更新包",verifying:"校验 SHA256",extracting:"解压应用",validating:"验证程序与签名",replacing:"备份并替换程序",done:"更新完成",failed:"更新失败"};
   document.getElementById("updateProgress").classList.remove("hidden");
   document.getElementById("updateStage").textContent = labels[progress.stage] || "正在更新";
   const bar = document.getElementById("updateProgressBar");
@@ -150,11 +150,14 @@ function renderUpdateProgress(progress, received = true) {
   }
   let detail = progress.asset || "正在连接官方 GitHub…";
   if (progress.file_count) detail = "文件 " + progress.file_index + "/" + progress.file_count + " · " + detail;
-  if (progress.stage === "downloading") {
+  if (["connecting", "retrying", "parallel", "fallback", "downloading"].includes(progress.stage)) {
     const idle = Math.floor((Date.now() - updateProgressAt) / 1000);
     detail += "\n" + updateBytes(downloaded) + " / " + updateBytes(total);
     detail += idle >= 3 ? " · 等待网络数据 " + idle + " 秒" : " · " + updateBytes(progress.bytes_per_second) + "/s";
     if (progress.attempt > 1) detail += " · 第 " + progress.attempt + "/3 次尝试";
+    if (progress.connections > 1) detail += " · " + progress.connections + " 连接分块";
+    if (progress.source) detail += progress.source === "github-api" ? " · GitHub 官方接口" : progress.source === "github-cdn" ? " · GitHub 官方 CDN" : " · GitHub 官方下载";
+    if (progress.stage === "connecting" || idle >= 3) detail += "\n连续 15 秒无数据会自动重试；支持分块时保留已收进度。";
   }
   document.getElementById("updateProgressDetails").textContent = detail;
 }
@@ -715,12 +718,13 @@ function sysRow(tool, v) {
       ? `<span class="sys-tag">已纳管</span>`
       : `<button class="mini" data-tool="${escapeHtml(tool)}" data-adopt="${escapeHtml(runtimeID(v))}" data-path="${escapeHtml(v.path)}">纳管</button>`;
   return `
-      <li class="ver">
+      <li class="ver${!v.version ? " probe-failed" : ""}">
         <span class="vname" title="${escapeHtml(versionHint)}">${escapeHtml(versionLabel)}</span>
         <span class="sys-right">
           <span class="sys-path" title="${escapeHtml(v.path)}">${escapeHtml(v.path)}</span>
           ${action}
         </span>
+        ${!v.version ? `<div class="probe-error">${escapeHtml(versionHint)}</div>` : ""}
       </li>`;
 }
 
