@@ -718,12 +718,13 @@ function sysRow(tool, v) {
       ? `<span class="sys-tag">已纳管</span>`
       : `<button class="mini" data-tool="${escapeHtml(tool)}" data-adopt="${escapeHtml(runtimeID(v))}" data-path="${escapeHtml(v.path)}">纳管</button>`;
   return `
-      <li class="ver">
+      <li class="ver${!v.version ? " probe-failed" : ""}">
         <span class="vname" title="${escapeHtml(versionHint)}">${escapeHtml(versionLabel)}</span>
         <span class="sys-right">
           <span class="sys-path" title="${escapeHtml(v.path)}">${escapeHtml(v.path)}</span>
           ${action}
         </span>
+        ${!v.version ? `<div class="probe-error">${escapeHtml(versionHint)}</div>` : ""}
       </li>`;
 }
 

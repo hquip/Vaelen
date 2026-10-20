@@ -15,7 +15,7 @@ func TestDatabaseProbesOnlyUseReadOnlyVersionArguments(t *testing.T) {
 	source := filepath.Join(root, "probe.go")
 	code := `package main
 import("fmt";"os")
-func main(){tool:=os.Getenv("VSM_DATABASE_EXPECT_TOOL");valid:=len(os.Args)==2&&os.Args[1]=="--version";if tool=="mysql"||tool=="mariadb"{valid=len(os.Args)==3&&os.Args[1]=="--no-defaults"&&os.Args[2]=="--version"};if valid{fmt.Println("database server 17.9");return};os.WriteFile(os.Getenv("VSM_DATABASE_MUTATION_MARKER"),[]byte("unsafe arguments"),0600);os.Exit(1)}`
+func main(){tool:=os.Getenv("VSM_DATABASE_EXPECT_TOOL");valid:=len(os.Args)==2&&os.Args[1]=="--version";if tool=="mysql"||tool=="mariadb"{valid=len(os.Args)==3&&os.Args[1]=="--no-defaults"&&os.Args[2]=="--version"};if valid{if tool=="redis"{fmt.Println("Redis server v=17.9 sha=0 malloc=jemalloc-5.2.1")}else{fmt.Println("database server 17.9")};return};os.WriteFile(os.Getenv("VSM_DATABASE_MUTATION_MARKER"),[]byte("unsafe arguments"),0600);os.Exit(1)}`
 	if err := os.WriteFile(source, []byte(code), 0600); err != nil {
 		t.Fatal(err)
 	}

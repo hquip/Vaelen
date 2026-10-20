@@ -259,6 +259,8 @@ body { display: flex; flex-direction: column; height: 100vh; }
 .overview-sub { color: var(--muted); font-size: 12.5px; margin: -2px 0 18px; }
 .sys-right { display: flex; align-items: center; gap: 10px; margin-left: auto; min-width: 0; }
 .sys-tag { font-size: 11px; color: var(--green); white-space: nowrap; }
+.ver.probe-failed { flex-wrap: wrap; gap: 8px; }
+.probe-error { flex-basis: 100%; min-width: 0; color: var(--muted); font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .sys-path {
   font-family: Consolas, monospace; font-size: 11px; color: var(--muted);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
