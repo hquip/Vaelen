@@ -248,3 +248,22 @@ func TestCmdActivationRejectsWrongRuntimeBehindShim(t *testing.T) {
 		t.Fatalf("did not compare actual versions: %+v", check)
 	}
 }
+
+func TestCmdActivationDoesNotIgnorePATHEXT(t *testing.T) {
+	a, _ := executingActivationFixture(t)
+	if err := a.SetGlobalVersion("java", "17.0.12"); err != nil {
+		t.Fatal(err)
+	}
+	if err := config.WriteFileAtomic(filepath.Join(a.Paths.Root, "vsm-cmd-init.cmd"), []byte(cmdStartupScript(a.Paths.Root)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATHEXT", ".EXE")
+	t.Setenv("PATH", filepath.Join(a.Paths.InstallDir("java", "21.0.1"), "bin")+";"+os.Getenv("PATH"))
+	check, err := a.VerifyCmdActivation(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if check.Passed || len(check.Tools) != 1 || !sameDir(filepath.Dir(check.Tools[0].Command), filepath.Join(a.Paths.InstallDir("java", "21.0.1"), "bin")) {
+		t.Fatalf("cmd skipped .CMD but validation passed: %+v", check)
+	}
+}

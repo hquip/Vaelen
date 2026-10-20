@@ -14,6 +14,40 @@ import (
 	"vsm/internal/plugin"
 )
 
+func findCmdCommand(dirs []string, name string) string {
+	for _, dir := range dirs {
+		for _, ext := range executableExts() {
+			file := filepath.Join(dir, name+ext)
+			if fileExists(file) {
+				return file
+			}
+		}
+	}
+	return ""
+}
+
+func probeCmdLookupVersion(tool, name string, env []string, dir string) (string, error) {
+	if name == "" || strings.Trim(name, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._+-") != "" {
+		return "", fmt.Errorf("无法安全验证 cmd 命令名")
+	}
+	file, err := os.CreateTemp("", "vsm-command-check-*.cmd")
+	if err != nil {
+		return "", err
+	}
+	namePath := file.Name()
+	defer os.Remove(namePath)
+	if _, err = file.WriteString("@echo off\r\n@call " + name + " %*\r\n"); err != nil {
+		file.Close()
+		return "", err
+	}
+	if err = file.Close(); err != nil {
+		return "", err
+	}
+	// Deliberately invoke the unqualified command as the user does. Executing a
+	// full java.cmd path would bypass cmd's current-directory/PATHEXT lookup.
+	return probeVersionCommand(tool, namePath, env, dir)
+}
+
 // VerifyCmdActivation discovers all configured commands automatically. /D keeps
 // this probe from running unrelated user AutoRun commands; loading our exact
 // managed helper exercises the PATH setup without modifying user processes.
@@ -68,7 +102,7 @@ func (a Activator) VerifyCmdActivation(dir string) (CmdActivationCheck, error) {
 		row.Before, _ = exec.LookPath(names[0])
 		// cmd searches the working directory before PATH. A local java.exe must
 		// be reported as an override rather than a successful shim activation.
-		row.Command = findExecutable(append([]string{dir}, dirs...), names[0])
+		row.Command = findCmdCommand(append([]string{dir}, dirs...), names[0])
 		row.Executable, err = a.Which(tool, dir)
 		if err != nil {
 			row.Error = err.Error()
@@ -81,7 +115,7 @@ func (a Activator) VerifyCmdActivation(dir string) (CmdActivationCheck, error) {
 				row.Passed = false
 			} else {
 				env := append(os.Environ(), "VSM_HOME="+a.Paths.Root, "PATH="+strings.Join(dirs, string(os.PathListSeparator)))
-				row.ActualVersion, err = probeVersionCommand(tool, row.Command, env, dir)
+				row.ActualVersion, err = probeCmdLookupVersion(tool, names[0], env, dir)
 				if err != nil {
 					row.Error = "经 shim 执行失败: " + err.Error()
 					row.Passed = false
