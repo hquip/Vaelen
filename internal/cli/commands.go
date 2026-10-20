@@ -702,7 +702,7 @@ func (a *app) cmdMirror(args []string) error {
 		}
 		mode := plugin.MirrorMode()
 		if mode == "" {
-			mode = "default"
+			mode = "auto"
 		}
 		if asJSON {
 			return printJSON(map[string]any{"mode": mode, "sources": custom})
@@ -713,7 +713,7 @@ func (a *app) cmdMirror(args []string) error {
 				fmt.Printf("  %s = %s\n", source, raw)
 			}
 		}
-		fmt.Println("设置: vsm mirror cn|off；自定义: vsm mirror set <go|node|java|npm|github|github-api> <URL>")
+		fmt.Println("设置: vsm mirror auto|cn|off；自定义: vsm mirror set <go|node|java|npm|github|github-api> <URL>")
 		return nil
 	}
 	if rest[0] == "set" || rest[0] == "unset" {
@@ -767,7 +767,7 @@ func (a *app) cmdMirror(args []string) error {
 	}
 	args = rest
 	if len(args) != 1 {
-		return fmt.Errorf("用法: vsm mirror [cn|off|custom] | set <源> <URL> | unset <源> | list [--json]")
+		return fmt.Errorf("用法: vsm mirror [auto|cn|off|custom] | set <源> <URL> | unset <源> | list [--json]")
 	}
 	global, err := core.DefaultPaths()
 	if err != nil {
@@ -775,8 +775,8 @@ func (a *app) cmdMirror(args []string) error {
 	}
 	path := filepath.Join(global.Root, "mirror")
 	mode := strings.ToLower(args[0])
-	if mode != "cn" && mode != "off" && mode != "custom" {
-		return fmt.Errorf("不支持的镜像: %s（可选 cn / off / custom）", mode)
+	if mode != "auto" && mode != "cn" && mode != "off" && mode != "custom" {
+		return fmt.Errorf("不支持的镜像: %s（可选 auto / cn / off / custom）", mode)
 	}
 	if err := os.MkdirAll(global.Root, 0755); err != nil {
 		return err
@@ -807,7 +807,7 @@ func (a *app) cmdProxy(args []string) error {
 		value, source := netcfg.Describe()
 		switch {
 		case value == "":
-			fmt.Println("当前代理: 未设置（跟随系统环境变量 HTTP_PROXY/HTTPS_PROXY）")
+			fmt.Println("当前代理: 自动检测（代理环境变量、系统本机代理、常见本机端口）")
 			if env := netcfg.SystemProxyEnv(); env != "" {
 				fmt.Println("  系统环境变量代理:", env)
 			}
@@ -819,7 +819,7 @@ func (a *app) cmdProxy(args []string) error {
 		fmt.Println("用法:")
 		fmt.Println("  vsm proxy <url>     设置代理，如 http://127.0.0.1:7890 或 socks5://127.0.0.1:1080")
 		fmt.Println("  vsm proxy off       强制直连（忽略系统环境变量）")
-		fmt.Println("  vsm proxy system    跟随系统环境变量（默认）")
+		fmt.Println("  vsm proxy system    自动检测代理（默认）")
 		return nil
 	}
 	stored, err := netcfg.Normalize(args[0])
@@ -837,7 +837,7 @@ func (a *app) cmdProxy(args []string) error {
 		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
 			return fmt.Errorf("清除代理设置失败: %w", err)
 		}
-		fmt.Println("已恢复跟随系统环境变量（HTTP_PROXY/HTTPS_PROXY）")
+		fmt.Println("已恢复代理自动检测（环境变量、系统本机代理与常见端口）")
 	case "off":
 		if err := config.WriteFileAtomic(path, []byte("off\n"), 0o644); err != nil {
 			return err

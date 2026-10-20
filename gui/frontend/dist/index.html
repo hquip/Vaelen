@@ -27,6 +27,7 @@
         <option value="light">主题: 浅色</option>
       </select>
       <select id="mirrorSel" class="mirror-sel" title="下载镜像">
+        <option value="auto">镜像: 自动</option>
         <option value="off">镜像: 关闭</option>
         <option value="cn">镜像: 国内</option>
         <option value="custom">镜像: 自定义</option>
@@ -152,10 +153,12 @@
   <div id="proxyModal" class="modal hidden">
     <div class="modal-card">
       <h3 class="modal-title">网络代理</h3>
-      <p class="modal-sub">支持 http / https / socks5。留空＝跟随系统环境变量；点“强制直连”忽略系统代理。</p>
+        <p class="modal-sub">支持 http / https / socks5。留空自动检测系统和本机代理；没有可用代理时，更新包尝试国内源。点“强制直连”跳过代理。</p>
+        <p id="proxyDetected" class="modal-sub" role="status"></p>
       <input id="proxyInput" class="modal-input" placeholder="http://127.0.0.1:7890 或 socks5://127.0.0.1:1080" autocomplete="off" spellcheck="false" />
       <div class="modal-actions">
         <button id="proxyDirectBtn" class="ghost-btn">强制直连</button>
+          <button id="proxyAutoBtn" class="ghost-btn">自动检测</button>
         <span class="modal-spacer"></span>
         <button id="proxyCancelBtn" class="ghost-btn">取消</button>
         <button id="proxySaveBtn" class="primary-btn">保存</button>

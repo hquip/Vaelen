@@ -737,20 +737,20 @@ func (a *App) SetLocal(tool, version string) (err error) {
 // CurrentDir 返回项目目录，供前端展示（保留旧方法名以兼容前端调用）。
 func (a *App) CurrentDir() string { return a.ProjectDir() }
 
-// GetMirror 返回当前下载镜像设置（cn / off）。优先环境变量 VSM_MIRROR，其次配置文件。
+// GetMirror 返回下载镜像模式，未配置时使用自动选择。
 func (a *App) GetMirror() string {
 	if m := plugin.MirrorMode(); m != "" {
 		return m
 	}
-	return "off"
+	return "auto"
 }
 
-// SetMirror 写入下载镜像设置（cn 国内加速 / off 关闭）。
+// SetMirror 写入下载镜像设置。
 func (a *App) SetMirror(mode string) (err error) {
 	defer logGUI("mirror.set", logging.Fields{"mode": mode}, &err)()
 	mode = strings.ToLower(strings.TrimSpace(mode))
-	if mode != "cn" && mode != "off" && mode != "custom" {
-		return fmt.Errorf("不支持的镜像: %s（可选 cn / off / custom）", mode)
+	if mode != "auto" && mode != "cn" && mode != "off" && mode != "custom" {
+		return fmt.Errorf("不支持的镜像: %s（可选 auto / cn / off / custom）", mode)
 	}
 	global, err := core.DefaultPaths()
 	if err != nil {
@@ -762,14 +762,20 @@ func (a *App) SetMirror(mode string) (err error) {
 	return config.WriteFileAtomic(filepath.Join(global.Root, "mirror"), []byte(mode+"\n"), 0o644)
 }
 
-// GetProxy 返回当前网络代理设置的原始值："" 表示跟随系统环境变量，"off" 表示强制直连，
+// GetProxy 返回当前网络代理设置的原始值："" 表示自动检测，"off" 表示强制直连，
 // 其余为代理 URL。优先环境变量 VSM_PROXY，其次配置文件。
 func (a *App) GetProxy() string {
 	return netcfg.ProxySetting()
 }
 
+func (a *App) DownloadNetwork() (netcfg.Route, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	return netcfg.RouteForURL(ctx, "https://github.com/hquip/Vaelen/releases")
+}
+
 // SetProxy 写入网络代理设置。入参可为代理 URL（http/https/socks5）、off（强制直连），
-// 或空字符串 / system（清除配置，回退系统环境变量）。
+// 或空字符串 / system（清除手动配置，自动检测）。
 func (a *App) SetProxy(input string) (err error) {
 	defer logGUI("proxy.set", logging.Fields{}, &err)()
 	stored, err := netcfg.Normalize(input)

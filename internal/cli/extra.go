@@ -227,7 +227,9 @@ func (a *app) cmdDoctor(args []string) error {
 
 	// 镜像与代理
 	mirror := plugin.MirrorMode()
-	if mirror == "" || mirror == "off" {
+	if mirror == "" || mirror == "auto" {
+		add("ok", "下载镜像", "自动：优先代理，无代理时使用国内源", "")
+	} else if mirror == "off" {
 		add("ok", "下载镜像", "未启用", "国内网络可执行 `vsm mirror cn` 加速")
 	} else {
 		add("ok", "下载镜像", mirror, "")
@@ -309,7 +311,7 @@ _vsm_completion() {
         COMPREPLY=( $(compgen -W "%s" -- "$cur") ) ;;
       activate|env|completion|path-init)
         COMPREPLY=( $(compgen -W "bash zsh sh fish powershell pwsh cmd" -- "$cur") ) ;;
-      mirror) COMPREPLY=( $(compgen -W "cn off" -- "$cur") ) ;;
+      mirror) COMPREPLY=( $(compgen -W "auto cn off custom" -- "$cur") ) ;;
       tasks) COMPREPLY=( $(compgen -W "list graph run" -- "$cur") ) ;;
       db) COMPREPLY=( $(compgen -W "use switch start stop list status versions engines logs connection exec" -- "$cur") ) ;;
       tools) COMPREPLY=( $(compgen -W "list search add" -- "$cur") ) ;;
@@ -339,7 +341,7 @@ _vsm() {
       help) _describe 'command' cmds ;;
       use|install|uninstall|list|list-all|which|exec|adopt|shell|size) _describe 'tool' tools ;;
       activate|env|completion|path-init) _describe 'shell' shells ;;
-      mirror) _values 'mode' cn off ;;
+      mirror) _values 'mode' auto cn off custom ;;
       tasks) _values 'tasks' list graph run ;;
       db) _values 'database' use switch start stop list status versions engines logs connection exec ;;
       tools) _values 'tools' list search add ;;
@@ -360,7 +362,7 @@ complete -c vsm -n "not __fish_seen_subcommand_from $vsm_cmds" -a "$vsm_cmds"
 complete -c vsm -n "__fish_seen_subcommand_from help" -a "$vsm_cmds"
 complete -c vsm -n "__fish_seen_subcommand_from use install uninstall list list-all which exec adopt shell" -a "$vsm_tools"
 complete -c vsm -n "__fish_seen_subcommand_from activate env completion" -a "bash zsh sh fish powershell pwsh cmd"
-complete -c vsm -n "__fish_seen_subcommand_from mirror" -a "cn off"
+complete -c vsm -n "__fish_seen_subcommand_from mirror" -a "auto cn off custom"
 complete -c vsm -n "__fish_seen_subcommand_from logs" -a "path export clear"
 complete -c vsm -n "__fish_seen_subcommand_from db" -a "use switch start stop list status versions engines logs connection exec"
 complete -c vsm -n "__fish_seen_subcommand_from proxy" -a "off system"
@@ -383,7 +385,7 @@ Register-ArgumentCompleter -Native -CommandName vsm -ScriptBlock {
             'help' { $cands = $cmds }
             { $_ -in @('use','install','uninstall','list','list-all','which','exec','adopt','shell','size') } { $cands = $tools }
             { $_ -in @('activate','env','completion','path-init') } { $cands = $shells }
-            'mirror' { $cands = @('cn','off') }
+            'mirror' { $cands = @('auto','cn','off','custom') }
             'tasks' { $cands = @('list','graph','run') }
             'db' { $cands = @('use','switch','start','stop','list','status','versions','engines','logs','connection','exec') }
             'tools' { $cands = @('list','search','add') }

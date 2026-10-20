@@ -20,6 +20,7 @@ type Progress struct {
 	FileCount         int     `json:"file_count,omitempty"`
 	Source            string  `json:"source,omitempty"`
 	Connections       int     `json:"connections,omitempty"`
+	Network           string  `json:"network,omitempty"`
 }
 
 // WithProgress returns a client configured for one operation. Callbacks run
@@ -31,6 +32,7 @@ func (c Client) report(p Progress) {
 		return
 	}
 	p.FileIndex, p.FileCount = c.fileIndex, c.fileCount
+	p.Network = c.networkSource
 	if p.Asset == "" {
 		p.Asset = c.currentAsset
 	}

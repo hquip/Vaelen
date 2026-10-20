@@ -255,8 +255,8 @@ const usageText = `vsm - 多语言版本管理器 (%s)
   path-init [shell]            新终端自动启用 vsm（Windows 写用户 PATH；macOS/Linux 写 ~/.zshrc 等）
   detect                       探测系统 PATH/环境变量中已安装的语言版本
   adopt [--all] <tool> [ver]   纳管系统已装版本（链接进 vsm，可 use/卸载，不动原目录）
-  mirror    [cn|off]           设置下载镜像（cn 国内加速 / off 关闭）
-  proxy     [url|off|system]   设置网络代理（http/https/socks5；off 直连 / system 跟随系统）
+  mirror    [auto|cn|off]      设置下载镜像（auto 优先代理 / cn 国内 / off 关闭）
+  proxy     [url|off|system]   设置网络代理（http/https/socks5；off 直连 / system 自动检测）
   doctor    [--json]           环境体检（PATH 顺序、shim 完整性、hook、配置异常）
   shell     <tool> <version>   打开临时子 shell 使用某版本（不写任何配置）
   completion <shell>           输出 bash/zsh/fish/powershell 补全脚本

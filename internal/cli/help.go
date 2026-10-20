@@ -262,13 +262,13 @@ var commandHelpTopics = map[string]commandHelp{
 		Examples: []string{"vsm adopt go", "vsm adopt go 1.25.11 /opt/go/bin/go", "vsm adopt python --path /opt/miniconda3/envs/science --name conda-science", "vsm adopt maven --path /opt/maven", "vsm adopt --all"},
 	},
 	"mirror": {
-		Summary: "查看或设置下载镜像", Usage: []string{"vsm mirror [cn|off|custom]", "vsm mirror set <go|node|java|npm|github|github-api> <URL>", "vsm mirror unset <源>", "vsm mirror list [--json]"},
+		Summary: "查看或设置下载镜像", Usage: []string{"vsm mirror [auto|cn|off|custom]", "vsm mirror set <go|node|java|npm|github|github-api> <URL>", "vsm mirror unset <源>", "vsm mirror list [--json]"},
 		Options: []string{"--json  输出镜像配置"},
-		Notes:   []string{"省略参数查看设置；cn 启用国内镜像，off 关闭所有重写；自定义源优先。", "github 基地址作为代理前缀；java 使用 Adoptium 镜像根目录（例如 https://mirrors.tuna.tsinghua.edu.cn/Adoptium/）；其余源替换对应上游基地址。", "cn 对 JDK 启用清华镜像；失败时回退官方文件，并使用同一官方 SHA256。", "发布方 SHA256 仍从原站获取。npm 源通过 vsm run 的子进程环境生效，不改 .npmrc。"}, Examples: []string{"vsm mirror list --json", "vsm mirror set github https://mirror.example/", "vsm mirror set node https://mirror.example/node/"},
+		Notes:   []string{"省略参数查看设置；默认 auto 优先代理、无代理时使用国内源；cn 固定启用国内镜像，off 关闭镜像。", "github 基地址作为代理前缀；java 使用 Adoptium 镜像根目录（例如 https://mirrors.tuna.tsinghua.edu.cn/Adoptium/）；其余源替换对应上游基地址。", "cn 对 JDK 启用清华镜像；失败时回退官方文件，并使用同一官方 SHA256。", "发布方 SHA256 仍从原站获取。npm 源通过 vsm run 的子进程环境生效，不改 .npmrc。"}, Examples: []string{"vsm mirror auto", "vsm mirror list --json", "vsm mirror set github https://mirror.example/", "vsm mirror set node https://mirror.example/node/"},
 	},
 	"proxy": {
 		Summary: "查看或设置网络代理", Usage: []string{"vsm proxy [url|off|system]", "vsm proxy --json"},
-		Notes:    []string{"支持 http / https / socks5 / socks5h；off 强制直连，system 跟随系统环境。", "VSM_PROXY 环境变量优先于保存的设置；不带参数查看当前配置。"},
+		Notes:    []string{"支持 http / https / socks5 / socks5h；off 强制直连，system 自动检测代理环境变量、系统本机代理和常见端口。", "VSM_PROXY 环境变量优先于保存的设置；不带参数查看当前配置。"},
 		Examples: []string{"vsm proxy", "vsm proxy http://127.0.0.1:7890", "vsm proxy system"},
 	},
 	"install-root": {

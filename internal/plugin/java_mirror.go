@@ -29,7 +29,7 @@ func temurinMirrorPath(raw string) (string, bool) {
 // A mirror and its official fallback always use the same pinned digest.
 func DownloadURLs(original string) []string {
 	preferred := MirrorURL(original)
-	if _, java := temurinMirrorPath(original); java && preferred != original {
+	if preferred != original {
 		return []string{preferred, original}
 	}
 	return []string{preferred}

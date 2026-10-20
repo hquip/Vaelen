@@ -15,6 +15,14 @@
 > 镜像切换、网络代理设置、安装进度条、当前目录 local 设置、一键写入用户级 PATH。
 > **macOS 版为 Universal 通用二进制**（Apple Silicon + Intel），隐藏式标题栏 + 原生菜单，内置 CLI，一个 `.app` 开箱即用。
 
+## v1.1.6 自动代理与国内下载源
+
+- **优先本机代理**：自动读取 Windows/macOS 系统本机代理，并检查常见 HTTP/SOCKS5 端口，验证隧道可用后使用，保留手动设置。
+- **无代理时国内源**：默认镜像模式 `auto`；更新包尝试国内下载服务，失败回退官方，始终校验官方 SHA256。
+- **路径可见**：GUI 显示检测到的本机代理，下载进度标明代理、国内源或官方 CDN；代理出口的 GitHub API 限流可回退官方直连查询。
+
+下载 [v1.1.6 正式版](https://github.com/hquip/Vaelen/releases/tag/v1.1.6)，或使用 GUI「检查 VSM 更新」/ `vsm update --gui`。首次升级由旧更新器执行，未识别代理时可先手动配置本机代理。详见[发布说明](docs/releases/v1.1.6.md)。
+
 ## v1.1.5 全局切换进度与忙碌提示修复
 
 - **组件准备可见**：全局切换或激活 PATH 自动补装配套 CLI 时，底部持续显示连接、下载大小、速度、重试、分块与校验进度，完成后自动继续原操作。
@@ -196,7 +204,7 @@ sudo ln -sf /Applications/VSM.app/Contents/MacOS/vsm /usr/local/bin/vsm
 自行打包（需在 Mac 上，产出与 Release 相同的通用版 zip）：
 
 ```bash
-bash scripts/package-macos.sh 1.1.5 dist
+bash scripts/package-macos.sh 1.1.6 dist
 ```
 
 > 打 `v*` tag 即可由 GitHub Actions 在 Windows / macOS / Linux 三个 runner 上分别本地编译，
@@ -225,8 +233,8 @@ bash scripts/package-macos.sh 1.1.5 dist
 | `vsm env [shell]` | 输出当前目录应生效的环境（供 hook 调用，一般不手动用） |
 | `vsm detect` | 探测系统 PATH / 环境变量中已安装的语言运行时及版本 |
 | `vsm adopt [--all] <tool> [ver]` | 纳管系统已装版本（链接进 vsm，可 use/卸载，不动原目录） |
-| `vsm mirror [cn\|off]` | 设置下载镜像（cn 国内加速 go/node/github / off 关闭） |
-| `vsm proxy [url\|off\|system]` | 设置网络代理（http/https/socks5；off 强制直连 / system 跟随系统环境变量） |
+| `vsm mirror [auto\|cn\|off]` | 自动优先代理、无代理时国内源；cn 固定国内，off 关闭镜像 |
+| `vsm proxy [url\|off\|system]` | 设置网络代理（http/https/socks5；off 强制直连 / system 自动检测） |
 | `vsm path-init` | Windows 写入用户级 PATH 和 PowerShell 启动钩子；macOS / Linux 写入当前 shell 的启动配置 |
 | `vsm doctor [--json]` | 环境体检：shims 是否在 PATH、是否被同名命令抢占、PATH 重复、shim 残留、配置异常 |
 | `vsm shell <tool> <ver>` | 打开临时子 shell 使用某版本（不写任何配置，`exit` 即恢复） |
@@ -248,7 +256,7 @@ vsm update --gui
 
 GUI 左下角提供「检查 VSM 更新」。Windows / Linux GUI 更新时同时更新同目录的 CLI；macOS 应用内会整体更新 `VSM.app`，验证签名与内置 CLI。更新完成后重新启动程序。所有资源必须通过官方 SHA256 校验，替换失败时尝试恢复旧文件，不改项目和语言安装。
 
-更新包达到 8 MiB 时探测 Range 支持，最多使用 4 连接并行下载；分块断流后只续传剩余字节。连接或响应体连续 15 秒无数据会触发重试，有官方资产 ID 时交替尝试 GitHub 下载地址与官方 API，不自动使用第三方镜像。不支持分块时回退单连接；全部数据仍需通过同一官方 SHA256，未校验完成不替换程序。进度显示连接、重试、分块与回退状态。实际速度取决于网络和代理，此续传限本次更新任务。
+更新包达到 8 MiB 时探测 Range 支持，最多使用 4 连接并行下载；分块断流后只续传剩余字节。连接或响应体连续 15 秒无数据会触发重试。默认优先本机代理，无代理时尝试国内下载源，再回退官方；镜像返回损坏文件时回退官方并重新校验。`vsm mirror off` 禁用镜像。不支持分块时回退单连接；全部数据仍需通过同一官方 SHA256，未校验完成不替换程序。进度显示网络路径、重试、分块与回退状态。实际速度取决于网络和代理，此续传限本次更新任务。
 
 旧于 v1.0.5 的程序尚无更新命令，需要先从 [Releases](https://github.com/hquip/Vaelen/releases/latest) 手动升级一次。程序所在目录需可写；macOS 应用请先移出只读磁盘映像。仍在使用的旧程序可能保留备份路径，重启后可按提示删除。详细参数见 `vsm help update`。
 
@@ -265,9 +273,9 @@ vsm proxy --json
 vsm current --all
 ```
 
-以上镜像域名为格式示例，请替换为自己的可用服务。`github` 将完整原始 URL 附加到代理前缀；`github-api`、`go`、`node`、`npm` 替换对应基地址。`npm` 也通过 `vsm run` 的子进程环境设置 registry，不改 `.npmrc`。`vsm mirror off` 禁用所有镜像，`cn` 使用内置规则，`custom` 使用自定义规则；可用 `vsm mirror unset <源>` 删除单项。发布方摘要和 VSM 更新始终走官方来源，不接受镜像提供的 SHA256。
+以上镜像域名为格式示例，请替换为自己的可用服务。`github` 将完整原始 URL 附加到代理前缀；`github-api`、`go`、`node`、`npm` 替换对应基地址。`npm` 也通过 `vsm run` 的子进程环境设置 registry，不改 `.npmrc`。`vsm mirror auto` 默认优先代理、无代理时使用国内源；`off` 禁用所有镜像，`cn` 使用内置规则，`custom` 使用自定义规则。可用 `vsm mirror unset <源>` 删除单项。VSM 更新版本元数据和发布方摘要始终来自官方，程序包允许国内源传输，不接受镜像提供的 SHA256。
 
-代理支持 `http` / `https` / `socks5` / `socks5h`；不带参数查看当前配置。网络设置保存到全局 VSM 数据目录，隔离项目中的 CLI 和 GUI 同样生效。`VSM_PROXY` / `VSM_MIRROR` 环境变量优先。`current` 在可用终端中显示彩色工具/版本，重定向及 JSON 输出不插入颜色；`NO_COLOR` 或 `TERM=dumb` 禁用颜色。
+代理支持 `http` / `https` / `socks5` / `socks5h`；不带参数查看当前配置。未配置时自动使用代理环境变量、系统本机代理或经过协议验证的常见本机端口；支持 `NO_PROXY`，不写系统代理设置。GUI 代理输入留空或点击「自动检测」即可启用。网络设置保存到全局 VSM 数据目录，隔离项目中的 CLI 和 GUI 同样生效。`VSM_PROXY` / `VSM_MIRROR` 环境变量优先。`current` 在可用终端中显示彩色工具/版本，重定向及 JSON 输出不插入颜色；`NO_COLOR` 或 `TERM=dumb` 禁用颜色。
 
 `list` / `list-all` / `current` / `detect` / `doctor` / `size` / `clean` / `context` 均支持 `--json`，便于编辑器插件与 CI 集成。
 `vsm exec` 会**原样透传子进程退出码**，可直接用于 `vsm exec go test ./... && deploy` 这类脚本。

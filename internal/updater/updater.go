@@ -30,12 +30,14 @@ const repository = "https://github.com/hquip/Vaelen"
 var stableVersion = regexp.MustCompile(`^v?[0-9]+\.[0-9]+\.[0-9]+$`)
 
 type Asset struct {
-	ID          int64  `json:"id,omitempty"`
-	Name        string `json:"name"`
-	URL         string `json:"browser_download_url"`
-	Size        int64  `json:"size"`
-	Digest      string `json:"digest"`
-	resolvedURL string
+	ID             int64  `json:"id,omitempty"`
+	Name           string `json:"name"`
+	URL            string `json:"browser_download_url"`
+	Size           int64  `json:"size"`
+	Digest         string `json:"digest"`
+	resolvedURL    string
+	resolvedSource string
+	mirrors        []string
 }
 type Info struct {
 	Current   string  `json:"current"`
@@ -53,16 +55,19 @@ type Result struct {
 }
 type Client struct {
 	http                                    *http.Client
+	metadataDirect                          *http.Client
 	api                                     string
 	progress                                func(Progress)
 	fileIndex, fileCount                    int
 	currentAsset                            string
 	currentSize, totalBytes, completedBytes int64
 	downloadConfig                          *assetDownloadConfig
+	networkPolicy                           func(context.Context, Asset) downloadNetwork
+	networkSource                           string
 }
 
 func New() Client {
-	return Client{http: netcfg.Client(10 * time.Minute), api: "https://api.github.com/repos/hquip/Vaelen/releases"}
+	return Client{http: netcfg.Client(10 * time.Minute), metadataDirect: netcfg.DirectClient(30 * time.Second), api: "https://api.github.com/repos/hquip/Vaelen/releases", networkPolicy: automaticDownloadNetwork}
 }
 
 func (c Client) Check(ctx context.Context, current, version string) (info Info, err error) {
@@ -124,6 +129,15 @@ func (c Client) getWithProgress(ctx context.Context, raw string, limit int64, as
 		req.Header.Set("User-Agent", "vsm-updater")
 		req.Header.Set("Accept-Encoding", "identity")
 		resp, err := c.http.Do(req)
+		if err == nil && c.metadataDirect != nil && req.URL.Hostname() == "api.github.com" && (resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusTooManyRequests) {
+			// Shared proxy exits may exhaust GitHub's unauthenticated API quota.
+			// Only metadata retries directly; package transfers retain the proxy.
+			if route, routeErr := netcfg.RouteForURL(ctx, raw); routeErr == nil && route.Proxy != "" {
+				resp.Body.Close()
+				logging.Record("info", "updater", "metadata.direct.fallback", logging.Fields{"reason": "proxy API rate limit"})
+				resp, err = c.metadataDirect.Do(req.Clone(ctx))
+			}
+		}
 		if err == nil {
 			if resp.StatusCode != http.StatusOK {
 				resp.Body.Close()
@@ -241,6 +255,12 @@ func (c Client) download(ctx context.Context, info Info, name, dest string) erro
 			return fmt.Errorf("发布方未提供 %s 的 SHA256；停止更新", name)
 		}
 	}
+	if c.networkPolicy != nil {
+		c.report(Progress{Stage: "routing", Asset: name, Total: a.Size})
+		network := c.networkPolicy(ctx, a)
+		a.mirrors, c.networkSource = network.mirrors, network.proxy
+		logging.Record("info", "updater", "download.route", logging.Fields{"asset": name, "network": network.proxy, "domestic_sources": len(network.mirrors)})
+	}
 	data, err := c.downloadAsset(ctx, a)
 	if err != nil {
 		return err
@@ -250,6 +270,17 @@ func (c Client) download(ctx context.Context, info Info, name, dest string) erro
 	}
 	c.report(Progress{Stage: "verifying", Asset: name, Downloaded: a.Size, Total: a.Size})
 	hash := sha256.Sum256(data)
+	if hex.EncodeToString(hash[:]) != sum && len(a.mirrors) > 0 {
+		logging.Record("warn", "updater", "download.mirror.rejected", logging.Fields{"asset": name, "reason": "SHA256"})
+		c.report(Progress{Stage: "official-fallback", Asset: name, Total: a.Size})
+		a.mirrors, a.resolvedURL = nil, ""
+		data, err = c.downloadAsset(ctx, a)
+		if err != nil {
+			return err
+		}
+		c.report(Progress{Stage: "verifying", Asset: name, Downloaded: a.Size, Total: a.Size})
+		hash = sha256.Sum256(data)
+	}
 	if hex.EncodeToString(hash[:]) != sum {
 		return fmt.Errorf("%s SHA256 校验失败，旧程序未更改", name)
 	}
