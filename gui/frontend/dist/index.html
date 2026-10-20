@@ -106,13 +106,19 @@
       <div class="project-env-body">
         <p id="activationMessage" class="project-hint" role="status"></p>
         <p id="activationTarget" class="project-hint"></p>
+        <div id="activationReport" class="project-hint hidden" role="status"></div>
         <div id="activationCommandWrap" class="hidden">
           <p class="project-hint">在已有 PowerShell 中执行下面的命令，立即应用所选版本：</p>
           <textarea id="activationCommand" class="modal-input" rows="4" readonly aria-label="PowerShell 激活命令"></textarea>
         </div>
+        <div id="activationCmdWrap" class="hidden">
+          <p class="project-hint">尚未经过 VSM 的已有 cmd 可加载一次；已激活的 cmd 后续切换无需重开：</p>
+          <textarea id="activationCmdCommand" class="modal-input" rows="2" readonly aria-label="cmd 激活命令"></textarea>
+          <button id="activationCmdCopy" class="ghost-btn">复制 cmd 命令</button>
+        </div>
         <p id="activationError" class="project-error hidden" role="alert"></p>
       </div>
-      <div class="modal-actions"><button id="activationCopy" class="primary-btn" disabled>复制激活命令</button><span class="modal-spacer"></span><button id="activationClose" class="ghost-btn">关闭</button></div>
+      <div class="modal-actions"><button id="activationOpen" class="primary-btn hidden" disabled>打开已激活 cmd</button><button id="activationCopy" class="ghost-btn" disabled>复制 PowerShell 命令</button><span class="modal-spacer"></span><button id="activationClose" class="ghost-btn">关闭</button></div>
     </div>
   </div>
 

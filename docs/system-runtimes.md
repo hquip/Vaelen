@@ -18,6 +18,16 @@ vsm use -g python office-python
 
 纳管通过目录链接接入已有安装；VSM 卸载只删除链接，原安装和依赖仍保留。`local` 与 `docker` 隔离项目不链接宿主机工具；需要复用已有安装时使用 `versions` 模式。
 
+## Windows 全局切换与 cmd
+
+点击 GUI「激活 PATH」会配置用户 PATH、cmd AutoRun 和 PowerShell 启动钩子。新开的 cmd 自动把 VSM shims 放到系统 Java 等工具之前，不修改系统 PATH 或原安装。
+
+已经通过 VSM shim 的 cmd，GUI 切换全局默认后，下次 `java -version` 即使用所选版本，无需重新激活或重开。`where java` 的第一项应位于 VSM 数据目录的 `shims` 下；后面的系统 Java 可以保留。项目版本和 `VSM_JAVA_VERSION` 环境覆盖仍优先于全局默认。
+
+若原有 cmd 的 PATH 从未包含 VSM，GUI 无法直接改写那个进程的环境。可在原 cmd 加载弹窗中的 cmd 命令一次，或使用「打开已激活 cmd」。GUI 显示的是它自身启动时的 PATH，不能据此断言其它终端仍在使用旧版本。
+
+`vsm path-init cmd` 只配置 cmd 与用户 PATH；不带 shell 时同时配置 PowerShell。cmd `/D` 会跳过 AutoRun；`/V:ON` 请使用 `/V:OFF`。cmd 数据目录不能包含 `%` 或 `!`。启动配置位于 `HKCU\Software\Microsoft\Command Processor`，原来的 AutoRun 字符串与类型保存在 `VSM.AutoRun.Previous` / `VSM.AutoRun.Kind`；若已被外部修改，VSM 会报错并保留现状。撤销时恢复原 AutoRun，再移除 `VSM.AutoRun.*` 值；不要删除其它程序的启动命令。
+
 ## Conda 的 Python 环境
 
 支持纳管已经存在的 Conda / Miniconda / Anaconda / Miniforge Python 环境。自动发现读取 `~/.conda/environments.txt`、`CONDA_PREFIX` / `CONDA_EXE` 和常见 `envs` 目录；自定义位置可手动添加。

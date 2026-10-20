@@ -275,7 +275,7 @@ vsm reshim                 # 生成 shim
 最省事的方式——一条命令配置好新终端：
 
 ```bash
-vsm path-init              # Windows：用户 PATH + PowerShell 钩子；macOS / Linux：~/.zshrc、~/.bashrc 等
+vsm path-init              # Windows：用户 PATH + cmd / PowerShell 钩子；macOS / Linux：~/.zshrc、~/.bashrc 等
 ```
 
 macOS / Linux 也可以手动写进 shell 配置（用 `eval` 的动态写法，vsm 升级后无需重写）：
@@ -290,7 +290,7 @@ vsm path-init powershell  # 自动发现 Windows PowerShell / pwsh 配置位置�
 vsm activate powershell | Out-String | Invoke-Expression # 立即激活已有 PowerShell
 ```
 
-Windows 的系统 PATH 排在用户 PATH 前面；只把 shims 加到用户 PATH，可能仍命中系统 Java 等旧版本。PowerShell 钩子会在当前会话应用所选工具，并随提示符刷新。`path-init` 不修改执行策略；配置被策略阻止时可按提示手动激活。cmd 可用 `vsm exec java -- java -version` 或手动将 shims 放到当前 PATH 最前。GUI 无法改写已打开的外部终端或 IDE 进程，IDE 需单独配置工具链。
+Windows 的系统 PATH 排在用户 PATH 前面；只写用户 PATH，可能仍命中系统 Java 等旧版本。「激活 PATH」/ `path-init` 会配置 cmd 和 PowerShell 启动钩子，把 VSM 放在系统工具之前，并自动验证已配置工具的命令入口。已经通过 VSM 的 cmd 后续全局切换即时生效，无需重开；从未加载 VSM 的已有 cmd 需执行弹窗中的 cmd 命令一次。PowerShell 随提示符刷新；不修改执行策略。GUI 的 PATH 不代表其它终端；IDE 需单独配置工具链。详见[Windows 激活说明](docs/system-runtimes.md#windows-全局切换与-cmd)。
 
 全局默认是兜底设置：项目的 `vsm.json` / `.tool-versions` 和 `VSM_<TOOL>_VERSION` 仍有更高优先级。GUI 详情会分别显示全局默认、VSM 选择和 GUI 进程 PATH 命中位置，不代表所有终端都已切换。CLI 与 GUI 应使用同一版本，并放在同一目录；切换全局版本会更新 shim，避免继续调用旧 CLI。
 

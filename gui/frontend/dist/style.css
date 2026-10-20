@@ -347,6 +347,7 @@ button { cursor: pointer; font-family: inherit; border: none; border-radius: 8px
 .modal-input:focus { border-color: var(--accent); }
 .modal-actions { display: flex; align-items: center; gap: 8px; margin-top: 16px; }
 .modal-spacer { flex: 1; }
+#activationModal .modal-actions { flex-wrap: wrap; }
 
 .modal .hidden { display: none; }
 .project-env-card { display: flex; flex-direction: column; width: 640px; max-height: calc(100vh - 32px); }

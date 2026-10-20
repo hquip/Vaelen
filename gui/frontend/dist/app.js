@@ -1095,6 +1095,11 @@ document.getElementById("pathBtn").addEventListener("click", async () => {
   document.getElementById("activationTarget").textContent = "";
   document.getElementById("activationCommandWrap").classList.add("hidden");
   document.getElementById("activationCopy").disabled = true;
+  document.getElementById("activationOpen").disabled = true;
+  document.getElementById("activationOpen").classList.add("hidden");
+  document.getElementById("activationCmdWrap").classList.add("hidden");
+  document.getElementById("activationReport").textContent = "";
+  document.getElementById("activationReport").classList.add("hidden");
   try {
     const res = (await call("PathInit")) || {};
     message.textContent = res.message || (res.status === "added"
@@ -1104,6 +1109,21 @@ document.getElementById("pathBtn").addEventListener("click", async () => {
     document.getElementById("activationCommand").value = res.command || "";
     document.getElementById("activationCommandWrap").classList.toggle("hidden", !res.command);
     document.getElementById("activationCopy").disabled = !res.command;
+    document.getElementById("activationCmdCommand").value = res.cmd_command || "";
+    document.getElementById("activationCmdWrap").classList.toggle("hidden", !res.cmd_command);
+    document.getElementById("activationOpen").classList.toggle("hidden", !res.cmd_command);
+    document.getElementById("activationOpen").disabled = !res.cmd_command;
+    if (res.check) {
+      const report = document.getElementById("activationReport");
+      report.classList.remove("hidden");
+      report.textContent = (res.check.passed ? "cmd 自动激活验证通过" : "cmd 自动激活验证发现问题") + "（独立测试进程）";
+      for (const tool of res.check.tools || []) {
+        const row = document.createElement("p");
+        row.textContent = `${tool.passed ? "✓" : "✗"} ${tool.tool} ${tool.version || "未匹配版本"} · ${tool.source || "未设置"}\n命令入口：${tool.command || "未找到"}\n所选程序：${tool.executable || "未找到"}${tool.error ? "\n原因：" + tool.error : ""}`;
+        row.style.whiteSpace = "pre-wrap";
+        report.appendChild(row);
+      }
+    }
   } catch (e) {
     message.textContent = "激活未完成，请按下面的原因处理后重试。";
     error.textContent = errMsg(e);
@@ -1119,6 +1139,21 @@ document.getElementById("activationCopy").addEventListener("click", async () => 
   const input = document.getElementById("activationCommand");
   try { await navigator.clipboard.writeText(input.value); toast("激活命令已复制，请在 PowerShell 中执行"); }
   catch (_) { input.focus(); input.select(); toast("请按 Ctrl+C（macOS 用 ⌘C）复制激活命令"); }
+});
+
+document.getElementById("activationCmdCopy").addEventListener("click", async () => {
+  const input = document.getElementById("activationCmdCommand");
+  try { await navigator.clipboard.writeText(input.value); toast("cmd 激活命令已复制"); }
+  catch (_) { input.focus(); input.select(); toast("请按 Ctrl+C 复制 cmd 激活命令"); }
+});
+
+document.getElementById("activationOpen").addEventListener("click", async e => {
+  e.target.disabled = true;
+  const error = document.getElementById("activationError");
+  error.classList.add("hidden");
+  try { await call("OpenActivatedTerminal"); toast("已打开激活的 cmd，可直接运行 java -version"); }
+  catch (err) { error.textContent = errMsg(err); error.classList.remove("hidden"); }
+  finally { e.target.disabled = false; }
 });
 document.getElementById("setRootBtn").addEventListener("click", async (e) => {
   e.stopPropagation();

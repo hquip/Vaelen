@@ -754,10 +754,12 @@ func (a *App) SetProxy(input string) (err error) {
 
 // PathInitResult 描述「激活 PATH」的结果。
 type PathInitResult struct {
-	Status  string `json:"status"` // added | exists
-	Target  string `json:"target"` // 写入位置：Windows 为「用户级 PATH」，其它平台为 shell 配置文件路径
-	Message string `json:"message"`
-	Command string `json:"command,omitempty"`
+	Status     string                   `json:"status"` // added | exists
+	Target     string                   `json:"target"` // 写入位置：Windows 为「用户级 PATH」，其它平台为 shell 配置文件路径
+	Message    string                   `json:"message"`
+	Command    string                   `json:"command,omitempty"`
+	CmdCommand string                   `json:"cmd_command,omitempty"`
+	Check      *core.CmdActivationCheck `json:"check,omitempty"`
 }
 
 func checkActivationCLI(path string) error {
@@ -808,14 +810,51 @@ func (a *App) PathInit() (result PathInitResult, err error) {
 		if err != nil {
 			return PathInitResult{}, fmt.Errorf("用户 PATH 已写入，但 PowerShell 激活配置失败: %w", err)
 		}
-		message := "已配置用户 PATH 和 PowerShell 启动钩子。请新开 PowerShell；已有终端执行 vsm activate powershell | Out-String | Invoke-Expression。cmd 使用 vsm exec <tool> -- <命令>，或将 shims 前置到当前 cmd 的 PATH。"
+		if _, err := core.PersistCmdHook(c.paths.Root); err != nil {
+			return PathInitResult{}, fmt.Errorf("用户 PATH 和 PowerShell 已配置，但 cmd 自动激活失败: %w", err)
+		}
+		cmdCommand, err := core.CmdActivationCommand(c.paths.Root)
+		if err != nil {
+			return PathInitResult{}, err
+		}
+		check, err := c.act.VerifyCmdActivation(a.resolveDir())
+		if err != nil {
+			return PathInitResult{}, fmt.Errorf("启动配置已写入，但 cmd 验证未通过: %w", err)
+		}
+		message := "已配置 cmd 和 PowerShell 自动激活。已通过 VSM 的 cmd，后续全局版本切换立即生效，无需反复激活或重开。尚未加载 VSM 的已有 cmd，可执行下方命令加载一次；新开的 cmd 自动配置。也可点击「打开已激活 cmd」直接使用。cmd /D 跳过启动配置，/V:ON 需使用 /V:OFF。"
 		if len(profiles.Warnings) > 0 {
 			message += "\n" + strings.Join(profiles.Warnings, "\n")
 		}
-		return PathInitResult{Status: st, Target: "用户级 PATH、" + strings.Join(profiles.Paths, "、"), Message: message, Command: core.PowerShellActivationCommand(c.act.VsmExe)}, nil
+		if !check.Passed {
+			message = "cmd 启动配置已写入，但部分工具验证未通过，请查看自动检测结果。"
+		}
+		logging.Record("info", "gui", "path.init.verified", logging.Fields{"shell": "cmd", "passed": check.Passed, "tools": len(check.Tools)})
+		return PathInitResult{Status: st, Target: "用户级 PATH、cmd 用户启动配置、" + strings.Join(profiles.Paths, "、"), Message: message, Command: core.PowerShellActivationCommand(c.act.VsmExe), CmdCommand: cmdCommand, Check: &check}, nil
 	}
 	rc, st, err := core.PersistShellHook(core.DefaultShell(), core.VsmCommand(c.act.VsmExe))
 	return PathInitResult{Status: st, Target: rc}, err
+}
+
+// OpenActivatedTerminal is explicitly requested by a GUI button. It starts a
+// visible, already configured cmd; it cannot mutate an existing terminal.
+func (a *App) OpenActivatedTerminal() (err error) {
+	defer logGUI("terminal.open", logging.Fields{"shell": "cmd"}, &err)()
+	done, err := a.begin()
+	if err != nil {
+		return err
+	}
+	defer done()
+	c := a.c()
+	if c.paths.ProjectMode == "local" || c.paths.ProjectMode == "docker" {
+		return fmt.Errorf("隔离项目请使用 vsm run")
+	}
+	if err := checkActivationCLI(c.act.VsmExe); err != nil {
+		return err
+	}
+	if err := c.act.GenerateShims(); err != nil {
+		return err
+	}
+	return c.act.OpenActivatedCmd(a.resolveDir())
 }
 
 // AdoptAll 纳管系统检测到的全部版本（跳过已纳管/已装），返回成功纳管数量。
