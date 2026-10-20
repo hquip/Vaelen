@@ -122,7 +122,7 @@ func (a *app) cmdDoctor(args []string) error {
 	switch {
 	case shimIdx < 0:
 		add("warn", "shims 不在 PATH 中", shimsDir,
-			"运行 `vsm path-init`（Windows 写用户 PATH 和 PowerShell 钩子；macOS/Linux 写入 shell 配置），已有终端重新 activate")
+			"运行 `vsm path-init`（Windows 配置用户 PATH 和 cmd / PowerShell 钩子；macOS/Linux 写入 shell 配置），未激活的已有终端加载一次激活命令")
 	default:
 		var ahead []string
 		for _, d := range pathDirs[:shimIdx] {
@@ -135,7 +135,7 @@ func (a *app) cmdDoctor(args []string) error {
 		if len(ahead) > 0 {
 			add("warn", "PATH 中有同名命令排在 vsm shims 之前",
 				"vsm 选好的版本会被它们抢占："+strings.Join(ahead, ", "),
-				"加载 `vsm activate <shell>`；Windows 的用户 PATH 无法覆盖系统 PATH，`vsm path-init` 可配置 PowerShell 钩子；cmd 需手动前置 shims 或用 vsm exec")
+				"运行 `vsm path-init` 配置 cmd / PowerShell 自动激活；已加载 VSM 的终端后续全局切换无需重开")
 		} else {
 			add("ok", "shims 在 PATH 中", fmt.Sprintf("位置 #%d: %s", shimIdx+1, shimsDir), "")
 		}

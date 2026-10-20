@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"vsm/internal/config"
@@ -52,7 +53,11 @@ func (a Activator) ActivationStatus(tool, dir string) ActivationStatus {
 	if status.Command == "" {
 		status.Warnings = append(status.Warnings, "当前进程 PATH 中找不到 "+names[0]+"；请点击「激活 PATH」，并在终端执行激活命令")
 	} else if !sameCommandFile(status.Command, status.Executable) && !sameDir(filepath.Dir(status.Command), a.Paths.Shims()) {
-		status.Warnings = append(status.Warnings, "当前进程 PATH 优先命中 "+status.Command+"，会绕过 VSM；请激活终端。Windows 用户 PATH 不能覆盖排在前面的系统 PATH")
+		hint := "请点击「激活 PATH」配置终端启动钩子"
+		if runtime.GOOS == "windows" {
+			hint = "请点击「激活 PATH」配置 cmd / PowerShell"
+		}
+		status.Warnings = append(status.Warnings, "GUI 启动时的 PATH 优先命中 "+status.Command+"；这不代表已激活终端的实际结果。若终端仍使用该程序，"+hint+"；已通过 VSM shim 的终端后续切换无需重开")
 	}
 	return status
 }

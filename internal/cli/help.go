@@ -247,7 +247,7 @@ var commandHelpTopics = map[string]commandHelp{
 	},
 	"path-init": {
 		Summary: "让新终端自动启用 VSM", Usage: []string{"vsm path-init [shell]"},
-		Notes:    []string{"Windows 默认写入用户级 PATH 并配置 Windows PowerShell / 已安装 pwsh 的启动钩子，保留自定义 prompt；path-init cmd 只写用户 PATH。", "用户 PATH 无法覆盖前面的系统 PATH；已有 PowerShell 终端需手动加载 activate。此命令不更改执行策略，受策略限制的终端会显示提示。", "macOS / Linux 配置对应 shell 的启动文件。local / docker 项目使用 vsm run，不持久添加项目工具目录。"},
+		Notes:    []string{"Windows 默认写入用户 PATH，并配置 cmd AutoRun 与 PowerShell 启动钩子；保留已有启动命令和自定义 prompt。path-init cmd 只配置 cmd 与用户 PATH。", "cmd 启动时将 shims 前置；已通过 VSM 的 cmd 后续全局切换无需重开。尚未激活的已有 cmd 需加载一次返回的命令；/D 跳过 AutoRun，/V:ON 请使用 /V:OFF。", "不改系统 PATH 或执行策略。cmd 启动配置存于 HKCU\\Software\\Microsoft\\Command Processor，原命令保存在 VSM.AutoRun.Previous；不要手动删除原有命令。", "macOS / Linux 配置对应 shell 的启动文件。local / docker 项目使用 vsm run，不持久添加项目工具目录。"},
 		Examples: []string{"vsm path-init", "vsm path-init zsh"},
 	},
 	"detect": {

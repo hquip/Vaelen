@@ -471,6 +471,29 @@ func (a *app) cmdPathInit(args []string) error {
 			return err
 		}
 		fmt.Println("用户 PATH（"+res+"）:", a.paths.Shims())
+		if len(args) == 0 || args[0] == "cmd" {
+			if _, err := core.PersistCmdHook(a.paths.Root); err != nil {
+				return fmt.Errorf("用户 PATH 已写入，但 cmd 自动激活失败: %w", err)
+			}
+			command, err := core.CmdActivationCommand(a.paths.Root)
+			if err != nil {
+				return err
+			}
+			fmt.Println("已配置 cmd 用户启动钩子；新开 cmd 自动生效，已有 cmd 执行:", command)
+			check, err := a.act.VerifyCmdActivation(a.cwd)
+			if err != nil {
+				return fmt.Errorf("cmd 启动配置已写入，但验证失败: %w", err)
+			}
+			for _, row := range check.Tools {
+				fmt.Printf("cmd 激活验证 %s %s: %s -> %s\n", row.Tool, row.Version, row.Command, row.Executable)
+				if row.Error != "" {
+					fmt.Println("提示:", row.Error)
+				}
+			}
+			if !check.Passed {
+				return fmt.Errorf("cmd 启动配置已写入，但部分工具未通过验证")
+			}
+		}
 		if len(args) == 0 || args[0] != "cmd" {
 			profiles, err := core.PersistPowerShellHooks(a.act.VsmExe)
 			if err != nil {
@@ -484,7 +507,7 @@ func (a *app) cmdPathInit(args []string) error {
 			}
 			fmt.Println("请新开 PowerShell；已有终端执行:", core.PowerShellActivationCommand(a.act.VsmExe))
 		}
-		fmt.Println("用户 PATH 不会覆盖系统 PATH 中的同名命令。cmd 可执行 vsm exec <tool> -- <命令>，或将 shims 前置到当前 PATH。")
+		fmt.Println("启动钩子会把 VSM 放在系统命令之前。已有终端需执行激活命令或重新打开；cmd /D 会跳过启动钩子。")
 		return nil
 	}
 	shell := core.DefaultShell()
