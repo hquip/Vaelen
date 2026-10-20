@@ -801,9 +801,11 @@ func (a *App) SetProxy(input string) (err error) {
 
 // PathInitResult 描述「激活 PATH」的结果。
 type PathInitResult struct {
-	Status  string `json:"status"` // added | exists
-	Target  string `json:"target"` // 写入位置：Windows 为「用户级 PATH」，其它平台为 shell 配置文件路径
-	Message string `json:"message"`
+	Status   string                   `json:"status"` // added | exists
+	Target   string                   `json:"target"` // 写入位置：Windows 为「用户级 PATH」，其它平台为 shell 配置文件路径
+	Message  string                   `json:"message"`
+	Verified bool                     `json:"verified"`
+	Check    *core.CmdActivationCheck `json:"check,omitempty"`
 }
 
 func checkActivationCLI(path string) error {
@@ -872,26 +874,34 @@ func (a *App) PathInit() (result PathInitResult, err error) {
 		if err != nil {
 			return PathInitResult{}, fmt.Errorf("启动配置已写入，但 cmd 验证未通过: %w", err)
 		}
-		message := "已配置终端激活，并执行验证了已选择的工具"
-		if len(profiles.Warnings) > 0 {
-			message += "\n" + strings.Join(profiles.Warnings, "\n")
-		}
-		if !check.Passed {
-			var problems []string
-			for _, row := range check.Tools {
-				if !row.Passed {
-					problems = append(problems, row.Tool+": "+row.Error)
-				}
-			}
-			return PathInitResult{}, fmt.Errorf("终端配置已写入，但实际执行验证失败: %s", strings.Join(problems, "；"))
-		}
 		for _, row := range check.Tools {
-			logging.Record("info", "gui", "path.command.verified", logging.Fields{"tool": row.Tool, "selected": row.Version, "actual": row.ActualVersion, "cli": c.act.VsmExe})
+			level, event := "info", "path.command.verified"
+			if !row.Passed {
+				level, event = "warn", "path.command.failed"
+			}
+			logging.Record(level, "gui", event, logging.Fields{"tool": row.Tool, "selected": row.Version, "actual": row.ActualVersion, "command": row.Command, "executable": row.Executable, "code": row.Code, "error": row.Error, "action": row.Action, "pathext": check.PathExt, "cli": c.act.VsmExe})
 		}
-		return PathInitResult{Status: st, Target: "用户级 PATH、cmd 用户启动配置、" + strings.Join(profiles.Paths, "、"), Message: message}, nil
+		return activationResult(st, "用户级 PATH、cmd 用户启动配置、"+strings.Join(profiles.Paths, "、"), check, profiles.Warnings), nil
 	}
 	rc, st, err := core.PersistShellHook(core.DefaultShell(), core.VsmCommand(c.act.VsmExe))
-	return PathInitResult{Status: st, Target: rc}, err
+	return PathInitResult{Status: st, Target: rc, Message: "终端启动配置已保存", Verified: err == nil}, err
+}
+
+func activationResult(status, target string, check core.CmdActivationCheck, warnings []string) PathInitResult {
+	message := "终端激活已配置，所选版本已通过执行验证"
+	if len(check.Tools) == 0 {
+		message = "终端激活已配置；选择工具版本后即可验证"
+	}
+	if !check.Passed {
+		message = "终端配置已保存，部分工具尚未切换成功；请查看下方原因"
+	}
+	if check.PathExtRepaired {
+		message += "；已自动修复 Windows 命令扩展名设置"
+	}
+	if len(warnings) > 0 {
+		message += "\n" + strings.Join(warnings, "\n")
+	}
+	return PathInitResult{Status: status, Target: target, Message: message, Verified: check.Passed, Check: &check}
 }
 
 // AdoptAll 纳管系统检测到的全部版本（跳过已纳管/已装），返回成功纳管数量。

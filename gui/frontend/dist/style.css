@@ -119,6 +119,14 @@ body { display: flex; flex-direction: column; height: 100vh; }
 .stat { font-size: 12px; color: var(--muted); }
 
 /* 主从布局 */
+.activation-report { flex-shrink: 0; max-height: 40vh; overflow: auto; padding: 12px 18px; border-bottom: 1px solid var(--accent); background: var(--card); font-size: 12px; line-height: 1.6; }
+.activation-report.hidden { display: none; }
+.activation-report-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.activation-report p { white-space: pre-wrap; overflow-wrap: anywhere; margin: 4px 0; }
+.activation-report-actions { display: flex; gap: 8px; margin: 7px 0; }
+.activation-report summary { cursor: pointer; color: var(--muted); }
+.activation-report pre { white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; -webkit-user-select: text; }
+.activation-report .activation-problem { border-top: 1px solid var(--border); padding-top: 5px; }
 .layout { flex: 1 1 auto; display: flex; min-height: 0; }
 
 .sidebar {

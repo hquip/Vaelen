@@ -15,6 +15,12 @@
 > 镜像切换、网络代理设置、安装进度条、当前目录 local 设置、一键写入用户级 PATH。
 > **macOS 版为 Universal 通用二进制**（Apple Silicon + Intel），隐藏式标题栏 + 原生菜单，内置 CLI，一个 `.app` 开箱即用。
 
+## v1.1.8 Windows 激活修复与可操作诊断
+
+修复 Windows `PATHEXT` 缺少 `.CMD` 时跳过 VSM 命令入口的问题，自动补齐并保留已有扩展名。激活结果会持续显示在页面中，区分当前目录同名程序、入口被其它程序遮挡、入口缺失和实际执行失败，并可复制实际命中路径等诊断信息。
+
+下载 [v1.1.8 正式版](https://github.com/hquip/Vaelen/releases/tag/v1.1.8)，或使用 GUI「检查 VSM 更新」/ `vsm update --gui`。更新后点击「激活 PATH」重新验证；已加载 VSM 的同一 cmd 支持连续切换版本。详见[发布说明](docs/releases/v1.1.8.md)。
+
 ## v1.1.7 Redis 版本输出后的超时修复
 
 修复 Redis 已输出完整版本、等待进程退出超时后仍显示「版本读取失败」的问题。只读系统检测和手动添加路径会保留完整版本，超时仍终止探测进程并记录诊断；实际命令执行验证仍要求正常结束。
@@ -210,7 +216,7 @@ sudo ln -sf /Applications/VSM.app/Contents/MacOS/vsm /usr/local/bin/vsm
 自行打包（需在 Mac 上，产出与 Release 相同的通用版 zip）：
 
 ```bash
-bash scripts/package-macos.sh 1.1.7 dist
+bash scripts/package-macos.sh 1.1.8 dist
 ```
 
 > 打 `v*` tag 即可由 GitHub Actions 在 Windows / macOS / Linux 三个 runner 上分别本地编译，

@@ -37,6 +37,10 @@ func cmdStartupScript(root string) string {
 	return fmt.Sprintf("@rem VSM cmd activation; delete the VSM AutoRun entry to disable.\r\n"+
 		"@if \"!!\"==\"\" goto vsm_delayed\r\n"+
 		"@if not defined VSM_HOME set \"VSM_HOME=%%~dp0\"\r\n"+
+		"@if not defined PATHEXT set \"PATHEXT=.COM;.EXE;.BAT;.CMD\"\r\n"+
+		"@setlocal EnableDelayedExpansion\r\n"+
+		"@set \"_vsm_exts=;!PATHEXT!;\"\r\n"+
+		"@if /I \"!_vsm_exts:;.CMD;=;!\"==\"!_vsm_exts!\" (endlocal & set \"PATHEXT=%%PATHEXT%%;.CMD\") else (endlocal)\r\n"+
 		"@setlocal EnableDelayedExpansion\r\n"+
 		"@set \"_vsm_expected=%%~dp0shims;\"\r\n"+
 		"@if /I \"!PATH:~0,%d!\"==\"!_vsm_expected!\" (endlocal & exit /b 0)\r\n"+

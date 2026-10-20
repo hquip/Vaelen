@@ -120,6 +120,28 @@ let lastUpdateProgress = null;
 let updateProgressAt = 0;
 let updateProgressTimer = null;
 let activationBusy = false;
+let activationDiagnostic = "";
+function showActivationReport(result, failure) {
+  const check = result.check;
+  const problems = (check?.tools || []).filter(row => !row.passed);
+  const ok = !failure && result.verified !== false;
+  document.getElementById("activationReport").classList.remove("hidden");
+  document.getElementById("activationReportTitle").textContent = ok ? "终端激活已完成" : "版本切换仍需处理";
+  document.getElementById("activationReportMessage").textContent = failure
+    ? "这次激活没有完成，请查看详情后重试。"
+    : result.message || "终端配置已保存。";
+  const container = document.getElementById("activationReportProblems");
+  container.replaceChildren();
+  for (const row of problems) {
+    const item = document.createElement("p");
+    item.className = "activation-problem";
+    item.textContent = displayName(row.tool) + "：" + row.error + "\n" + (row.action || "请查看诊断详情，确认所选程序是否可用。");
+    container.appendChild(item);
+  }
+  activationDiagnostic = ["VSM " + document.getElementById("appVersion").textContent, result.message || "", failure || "", result.target ? "配置位置：" + result.target : "", check?.pathext ? "命令扩展名：" + check.pathext : "",
+    ...(check?.tools || []).map(row => [row.tool + "：" + (row.passed ? "验证通过" : "验证未通过"), "选择版本：" + row.version, "实际命中的程序：" + (row.command || "未找到"), "所选安装程序：" + (row.executable || "未找到"), "实际版本：" + (row.actual_version || "未取得"), row.code || "", row.error || "", row.action || ""].filter(Boolean).join("\n"))].filter(Boolean).join("\n\n");
+  document.getElementById("activationReportDetails").textContent = activationDiagnostic;
+}
 function downloadNetworkLabel(network) {
   return {"local-proxy":"本机代理", "configured-proxy":"已配置代理", "environment-proxy":"环境变量代理", "direct":"直连"}[network] || "";
 }
@@ -127,7 +149,7 @@ function downloadSourceLabel(source) {
   return {"cn-mirror":"国内下载源", "github-api":"GitHub 官方接口", "github-cdn":"GitHub 官方 CDN", "github":"GitHub 官方下载"}[source] || "";
 }
 function syncActivationButtons() {
-  document.querySelectorAll('[data-act="global"], #pathBtn').forEach(button => button.disabled = activationBusy);
+  document.querySelectorAll('[data-act="global"], #pathBtn, #activationReportRetry').forEach(button => button.disabled = activationBusy);
 }
 function renderCLIProgress(progress) {
   const panel = document.getElementById("cliPreparation");
@@ -1020,6 +1042,7 @@ async function onVerAction(tool, act, ver) {
       toast(`已设 ${tool} = ${ver}（${curDir}）`);
     } else if (act === "global") {
       await call("SetGlobal", tool, ver);
+      document.getElementById("activationReport").classList.add("hidden");
       toast(`已设置 ${tool} 全局默认 = ${ver}`);
     } else if (act === "uninstall") {
       await call("Uninstall", tool, ver);
@@ -1148,15 +1171,30 @@ document.getElementById("pathBtn").addEventListener("click", async () => {
   button.textContent = "正在配置并验证…";
   try {
     const res = (await call("PathInit")) || {};
-    toast(res.message || "终端激活已配置");
+    showActivationReport(res);
+    toast(res.verified === false ? "尚未切换成功，请查看页面中的原因和处理方法" : res.message || "终端激活已配置", res.verified === false);
     await load();
     if (selected) renderDetail(selected);
   } catch (e) {
-    toast(errMsg(e), true);
+    showActivationReport({}, errMsg(e));
+    toast("激活未完成，请查看页面中的诊断信息", true);
   } finally {
     activationBusy = false;
     syncActivationButtons();
     button.textContent = label;
+  }
+});
+
+document.getElementById("activationReportClose").addEventListener("click", () => document.getElementById("activationReport").classList.add("hidden"));
+document.getElementById("activationReportRetry").addEventListener("click", () => document.getElementById("pathBtn").click());
+document.getElementById("activationReportCopy").addEventListener("click", async () => {
+  try { await navigator.clipboard.writeText(activationDiagnostic); toast("诊断信息已复制"); }
+  catch (_) {
+    const details = document.getElementById("activationReportDetails");
+    details.parentElement.open = true;
+    const range = document.createRange(); range.selectNodeContents(details);
+    const selection = window.getSelection(); selection.removeAllRanges(); selection.addRange(range);
+    toast("请复制已选中的诊断信息");
   }
 });
 
