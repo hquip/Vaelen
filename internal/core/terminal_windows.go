@@ -48,14 +48,13 @@ func probeCmdLookupVersion(tool, name string, env []string, dir string) (string,
 	return probeVersionCommand(tool, namePath, env, dir)
 }
 
-// VerifyCmdActivation discovers all configured commands automatically. /D keeps
-// this probe from running unrelated user AutoRun commands; loading our exact
-// managed helper exercises the PATH setup without modifying user processes.
-func (a Activator) VerifyCmdActivation(dir string) (CmdActivationCheck, error) {
-	check := CmdActivationCheck{Passed: true, Tools: []CmdToolActivation{}}
+// cmdActivationEnvironment exercises the managed helper in either cmd mode.
+// /D avoids executing unrelated AutoRun commands; it does not test whether an
+// arbitrary terminal launcher will execute the user's AutoRun registration.
+func (a Activator) cmdActivationEnvironment(dir, mode string) ([]string, string, error) {
 	command, err := CmdActivationCommand(a.Paths.Root)
 	if err != nil {
-		return check, err
+		return nil, "", err
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -63,30 +62,51 @@ func (a Activator) VerifyCmdActivation(dir string) (CmdActivationCheck, error) {
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(), "VSM_HOME="+a.Paths.Root)
 	hideConsole(cmd)
-	cmd.SysProcAttr.CmdLine = `"` + windowsCmdPath() + `" /D /U /V:OFF /S /C "` + command + ` >nul & set PATH"`
+	cmd.SysProcAttr.CmdLine = `"` + windowsCmdPath() + `" /D /U /V:` + mode + ` /S /C "` + command + ` >nul & set PATH"`
 	cmd.WaitDelay = time.Second
 	out, err := cmd.Output()
 	if err != nil {
-		return check, fmt.Errorf("cmd 激活验证失败: %w", err)
+		return nil, "", fmt.Errorf("cmd /V:%s 激活验证失败: %w", mode, err)
 	}
 	if len(out)%2 != 0 {
-		return check, fmt.Errorf("cmd 返回无效的 Unicode PATH")
+		return nil, "", fmt.Errorf("cmd /V:%s 返回无效的 Unicode PATH", mode)
 	}
 	units := make([]uint16, len(out)/2)
 	for i := range units {
 		units[i] = binary.LittleEndian.Uint16(out[i*2:])
 	}
 	var dirs []string
+	var pathExt string
 	for _, line := range strings.Split(string(utf16.Decode(units)), "\n") {
 		if key, value, ok := strings.Cut(strings.TrimSuffix(line, "\r"), "="); ok && strings.EqualFold(key, "PATH") {
 			dirs = filepath.SplitList(value)
 		}
 		if key, value, ok := strings.Cut(strings.TrimSuffix(line, "\r"), "="); ok && strings.EqualFold(key, "PATHEXT") {
-			check.PathExt = value
+			pathExt = value
 		}
 	}
 	if len(dirs) == 0 || !sameDir(dirs[0], a.Paths.Shims()) {
-		return check, fmt.Errorf("cmd 激活后 VSM shims 仍未排在 PATH 最前面")
+		return nil, "", fmt.Errorf("cmd /V:%s 激活后 VSM shims 仍未排在 PATH 最前面", mode)
+	}
+	return dirs, pathExt, nil
+}
+
+// VerifyCmdActivation checks helper behavior in both delayed-expansion modes,
+// then executes configured commands using the resulting environment.
+func (a Activator) VerifyCmdActivation(dir string) (CmdActivationCheck, error) {
+	check := CmdActivationCheck{Passed: true, Tools: []CmdToolActivation{}}
+	var dirs []string
+	for _, mode := range []string{"OFF", "ON"} {
+		paths, extensions, err := a.cmdActivationEnvironment(dir, mode)
+		if err != nil {
+			return check, err
+		}
+		if dirs == nil {
+			dirs, check.PathExt = paths, extensions
+		} else if strings.Join(dirs, ";") != strings.Join(paths, ";") || check.PathExt != extensions {
+			return check, fmt.Errorf("cmd /V:OFF 与 /V:ON 的激活环境不一致")
+		}
+		check.CmdModes = append(check.CmdModes, mode)
 	}
 	extensions := windowsExecutableExts(check.PathExt)
 	check.PathExtRepaired = !hasCMDExtension(os.Getenv("PATHEXT")) && hasCMDExtension(check.PathExt)
@@ -107,6 +127,7 @@ func (a Activator) VerifyCmdActivation(dir string) (CmdActivationCheck, error) {
 		// cmd searches the working directory before PATH. A local java.exe must
 		// be reported as an override rather than a successful shim activation.
 		row.Command = findCmdCommand(append([]string{dir}, dirs...), names[0], extensions)
+		var err error
 		row.Executable, err = a.Which(tool, dir)
 		if err != nil {
 			row.Error = err.Error()

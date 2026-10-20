@@ -880,7 +880,7 @@ func (a *App) PathInit() (result PathInitResult, err error) {
 			if !row.Passed {
 				level, event = "warn", "path.command.failed"
 			}
-			logging.Record(level, "gui", event, logging.Fields{"tool": row.Tool, "selected": row.Version, "actual": row.ActualVersion, "command": row.Command, "executable": row.Executable, "code": row.Code, "error": row.Error, "action": row.Action, "pathext": check.PathExt, "cli": c.act.VsmExe})
+			logging.Record(level, "gui", event, logging.Fields{"tool": row.Tool, "selected": row.Version, "actual": row.ActualVersion, "command": row.Command, "executable": row.Executable, "code": row.Code, "error": row.Error, "action": row.Action, "pathext": check.PathExt, "cmd_modes": check.CmdModes, "cli": c.act.VsmExe})
 		}
 		result = activationResult(st, "用户级 PATH、cmd 用户启动配置、"+strings.Join(profiles.Paths, "、"), check, profiles.Warnings)
 		result.CurrentCmd, _ = core.CmdActivationCommand(c.paths.Root)

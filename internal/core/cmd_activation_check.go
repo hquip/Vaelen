@@ -7,6 +7,7 @@ type CmdActivationCheck struct {
 	Tools           []CmdToolActivation `json:"tools"`
 	PathExt         string              `json:"pathext,omitempty"`
 	PathExtRepaired bool                `json:"pathext_repaired,omitempty"`
+	CmdModes        []string            `json:"cmd_modes,omitempty"`
 }
 
 type CmdToolActivation struct {

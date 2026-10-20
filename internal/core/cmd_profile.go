@@ -29,27 +29,34 @@ func CmdActivationCommand(root string) (string, error) {
 }
 
 func cmdStartupScript(root string) string {
-	// Only compare the prefix, using delayed expansion while inside setlocal so
-	// quoted PATH entries do not become command syntax. Never trim unrelated PATH
-	// entries. The common /V:OFF session remains idempotent across nested cmds.
+	// Keep the caller's delayed-expansion mode. The ON branch must expand PATH
+	// late using !PATH!: percent expansion there would corrupt literal ! in
+	// existing entries. Helper paths containing ! are rejected before writing.
 	prefix := filepath.Join(root, "shims") + ";"
 	length := len(utf16.Encode([]rune(prefix)))
 	return fmt.Sprintf("@rem VSM cmd activation; delete the VSM AutoRun entry to disable.\r\n"+
-		"@if \"!!\"==\"\" goto vsm_delayed\r\n"+
 		"@if not defined VSM_HOME set \"VSM_HOME=%%~dp0\"\r\n"+
 		"@if not defined PATHEXT set \"PATHEXT=.COM;.EXE;.BAT;.CMD\"\r\n"+
+		"@if \"!!\"==\"\" goto vsm_delayed\r\n"+
 		"@setlocal EnableDelayedExpansion\r\n"+
 		"@set \"_vsm_exts=;!PATHEXT!;\"\r\n"+
-		"@if /I \"!_vsm_exts:;.CMD;=;!\"==\"!_vsm_exts!\" (endlocal & set \"PATHEXT=%%PATHEXT%%;.CMD\") else (endlocal)\r\n"+
+		"@if /I \"!_vsm_exts:;.CMD;=;!\"==\"!_vsm_exts!\" (for /f \"delims=\" %%%%E in (\"!PATHEXT!;.CMD\") do (endlocal & set \"PATHEXT=%%%%E\")) else (endlocal)\r\n"+
 		"@setlocal EnableDelayedExpansion\r\n"+
 		"@set \"_vsm_expected=%%~dp0shims;\"\r\n"+
 		"@if /I \"!PATH:~0,%d!\"==\"!_vsm_expected!\" (endlocal & exit /b 0)\r\n"+
-		"@endlocal\r\n"+
-		"@set \"PATH=%%~dp0shims;%%PATH%%\"\r\n"+
+		"@set \"_vsm_nextPath=%%~dp0shims;!PATH!\"\r\n"+
+		"@for /f \"delims=\" %%%%P in (\"!_vsm_nextPath!\") do (endlocal & set \"PATH=%%%%P\")\r\n"+
 		"@exit /b 0\r\n"+
 		":vsm_delayed\r\n"+
-		"@echo [VSM] cmd /V:ON: use the VSM activated terminal with /V:OFF. 1>&2\r\n"+
-		"@exit /b 1\r\n", length)
+		"@set \"_VSM_CMD_EXTS=;!PATHEXT!;\"\r\n"+
+		"@if /I \"!_VSM_CMD_EXTS:;.CMD;=;!\"==\"!_VSM_CMD_EXTS!\" set \"PATHEXT=!PATHEXT!;.CMD\"\r\n"+
+		"@set \"_VSM_CMD_EXTS=\"\r\n"+
+		"@set \"_VSM_CMD_EXPECTED=%%~dp0shims;\"\r\n"+
+		"@if /I \"!PATH:~0,%d!\"==\"!_VSM_CMD_EXPECTED!\" goto vsm_delayed_done\r\n"+
+		"@set \"PATH=%%~dp0shims;!PATH!\"\r\n"+
+		":vsm_delayed_done\r\n"+
+		"@set \"_VSM_CMD_EXPECTED=\"\r\n"+
+		"@exit /b 0\r\n", length, length)
 }
 
 // PersistCmdHook configures this user's cmd AutoRun, after preserving its prior

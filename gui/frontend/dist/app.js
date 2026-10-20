@@ -148,7 +148,7 @@ function showActivationReport(result, failure) {
   const message = failure
     ? "这次激活没有完成，请查看详情后重试。"
     : result.message || "终端配置已保存。";
-  const diagnostic = ["VSM " + document.getElementById("appVersion").textContent, result.message || "", failure || "", result.target ? "配置位置：" + result.target : "", result.current_cmd ? "已有 cmd 加载命令：" + result.current_cmd : "", check?.pathext ? "命令扩展名：" + check.pathext : "",
+  const diagnostic = ["VSM " + document.getElementById("appVersion").textContent, result.message || "", failure || "", result.target ? "配置位置：" + result.target : "", result.current_cmd ? "已有 cmd 加载命令：" + result.current_cmd : "", check?.pathext ? "命令扩展名：" + check.pathext : "", check?.cmd_modes?.length ? "已验证 cmd 延迟展开模式：" + check.cmd_modes.join(", ") : "",
     ...(check?.tools || []).map(row => [row.tool + "：" + (row.passed ? "验证通过" : "验证未通过"), "选择版本：" + row.version, "实际命中的程序：" + (row.command || "未找到"), "所选安装程序：" + (row.executable || "未找到"), "实际版本：" + (row.actual_version || "未取得"), row.code || "", row.error || "", row.action || ""].filter(Boolean).join("\n"))].filter(Boolean).join("\n\n");
   pendingActivationDiagnostic = ok ? "" : diagnostic;
   renderActivationReport(ok ? "终端启动配置已保存" : "版本切换仍需处理", message,

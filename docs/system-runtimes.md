@@ -40,7 +40,9 @@ GUI 会识别同目录的标准 CLI 文件名和 GitHub 原始下载文件名，
 
 全局设置与当前有效版本分别显示。若项目版本文件或 `VSM_JAVA_VERSION` 等环境变量指定其它版本，会继续优先采用它们；全局切换不会自动改写项目要求或其它终端的变量。诊断时可在原 cmd 执行 `vsm version`、`vsm current`、`vsm which java` 和 `where java`，对照配置来源与实际命令顺序。`vsm current` 当前不接受单个工具参数。
 
-`vsm path-init cmd` 只配置 cmd 与用户 PATH；不带 shell 时同时配置 PowerShell。cmd `/D` 会跳过 AutoRun；`/V:ON` 请使用 `/V:OFF`。cmd 数据目录不能包含 `%` 或 `!`。启动配置位于 `HKCU\Software\Microsoft\Command Processor`，原来的 AutoRun 字符串与类型保存在 `VSM.AutoRun.Previous` / `VSM.AutoRun.Kind`；若已被外部修改，VSM 会报错并保留现状。撤销时恢复原 AutoRun，再移除 `VSM.AutoRun.*` 值；不要删除其它程序的启动命令。
+`vsm path-init cmd` 只配置 cmd 与用户 PATH；不带 shell 时同时配置 PowerShell。cmd `/D` 会跳过 AutoRun。初始化脚本支持 `/V:ON` 和 `/V:OFF`，保留原来的延迟展开模式及 PATH 中的字面 `!`、引号和 `&`，执行验证覆盖两种模式。旧版初始化脚本在 `/V:ON` 下会直接退出，旧验证又固定使用 `/V:OFF`，因此会漏报这条激活失败路径；旧 `/V:OFF` 分支的百分号拼接也会误处理带引号和 `&` 的 PATH 项。修复后需重新点击「激活 PATH」生成新版脚本。
+
+cmd 数据目录不能包含 `%` 或 `!`。启动配置位于 `HKCU\Software\Microsoft\Command Processor`，原来的 AutoRun 字符串与类型保存在 `VSM.AutoRun.Previous` / `VSM.AutoRun.Kind`；若已被外部修改，VSM 会报错并保留现状。撤销时恢复原 AutoRun，再移除 `VSM.AutoRun.*` 值；不要删除其它程序的启动命令。
 
 ## Conda 的 Python 环境
 
