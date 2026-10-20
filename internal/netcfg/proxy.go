@@ -43,7 +43,7 @@ func ProxyFile() string {
 // ProxySetting 读取当前代理配置的原始字符串。
 // 优先级：环境变量 VSM_PROXY > <VSM_HOME>/proxy 文件。
 // 每次调用都重新读取，使 GUI 等长驻进程在运行时切换后即时生效。
-// 返回 "" 表示未配置（届时回退到系统环境变量 HTTP(S)_PROXY/NO_PROXY）。
+// 返回 "" 表示自动选择：环境变量、系统本机代理、常见本机代理端口。
 func ProxySetting() string {
 	if v := strings.TrimSpace(os.Getenv("VSM_PROXY")); v != "" {
 		return v
@@ -94,19 +94,10 @@ func Normalize(s string) (string, error) {
 }
 
 // proxyForRequest 实现 http.Transport.Proxy 的签名，按 vsm 配置决定每个请求的代理。
-// 每请求读取配置，因此运行时切换即时生效；配置非法时回退系统环境变量而非直接断网。
+// 每请求读取配置，因此运行时切换即时生效；本机探测结果短暂缓存。
 func proxyForRequest(req *http.Request) (*url.URL, error) {
-	if err := ValidateURL(req.URL.String()); err != nil {
-		return nil, err
-	}
-	stored, err := Normalize(ProxySetting())
-	if err != nil || stored == "" {
-		return http.ProxyFromEnvironment(req)
-	}
-	if stored == "off" {
-		return nil, nil
-	}
-	return url.Parse(stored)
+	proxy, _, err := resolveProxy(req)
+	return proxy, err
 }
 
 // Transport 返回带 vsm 代理配置的 http.Transport，克隆标准库默认值以保留连接池等行为。
@@ -132,6 +123,15 @@ func Client(timeout time.Duration) *http.Client {
 	}}
 }
 
+// DirectClient keeps the same redirect and TLS rules while bypassing proxies.
+func DirectClient(timeout time.Duration) *http.Client {
+	client := Client(timeout)
+	transport := Transport()
+	transport.Proxy = nil
+	client.Transport = diagnosticTransport{transport}
+	return client
+}
+
 // HTTPS is required for remote resources. Loopback HTTP supports local mirrors/tests.
 func ValidateURL(raw string) error {
 	u, err := url.Parse(raw)
@@ -150,7 +150,7 @@ func ValidateURL(raw string) error {
 }
 
 // Describe 返回适合展示的 (生效值, 来源) 二元组，供 CLI/GUI 呈现当前代理状态。
-// 生效值为空表示“未配置（跟随系统环境变量）”。
+// 生效值为空表示自动检测；RouteForURL 可查看实际选中的路径。
 func Describe() (value, source string) {
 	if v := strings.TrimSpace(os.Getenv("VSM_PROXY")); v != "" {
 		return v, "环境变量 VSM_PROXY"

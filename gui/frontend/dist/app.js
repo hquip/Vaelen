@@ -120,6 +120,12 @@ let lastUpdateProgress = null;
 let updateProgressAt = 0;
 let updateProgressTimer = null;
 let activationBusy = false;
+function downloadNetworkLabel(network) {
+  return {"local-proxy":"本机代理", "configured-proxy":"已配置代理", "environment-proxy":"环境变量代理", "direct":"直连"}[network] || "";
+}
+function downloadSourceLabel(source) {
+  return {"cn-mirror":"国内下载源", "github-api":"GitHub 官方接口", "github-cdn":"GitHub 官方 CDN", "github":"GitHub 官方下载"}[source] || "";
+}
 function syncActivationButtons() {
   document.querySelectorAll('[data-act="global"], #pathBtn').forEach(button => button.disabled = activationBusy);
 }
@@ -130,7 +136,7 @@ function renderCLIProgress(progress) {
     return;
   }
   panel.classList.remove("hidden");
-  const labels = {checking:"未找到同版本 CLI，正在查询 GitHub 官方发布",connecting:"正在连接 GitHub 下载运行组件",retrying:"下载停滞，保留已收数据后重试",parallel:"正在分块下载运行组件",fallback:"来源不支持分块，改用单连接",downloading:"正在下载配套 CLI",verifying:"正在校验运行组件 SHA256",validating:"正在验证运行组件版本",done:"运行组件已下载，正在验证"};
+  const labels = {checking:"未找到同版本 CLI，正在查询 GitHub 官方发布",routing:"正在检测本机代理与下载源",connecting:"正在连接下载源",retrying:"下载失败，保留已收数据后重试",parallel:"正在分块下载运行组件",fallback:"来源不支持分块，改用单连接","official-fallback":"国内源校验失败，回退官方文件",downloading:"正在下载配套 CLI",verifying:"正在校验运行组件 SHA256",validating:"正在验证运行组件版本",done:"运行组件已下载，正在验证"};
   let text = labels[progress.stage] || "正在准备配套 CLI";
   const bar = document.getElementById("cliPreparationBar");
   if (progress.total > 0) {
@@ -143,6 +149,8 @@ function renderCLIProgress(progress) {
   }
   if (progress.attempt > 1) text += ` · 第 ${progress.attempt}/3 次尝试`;
   if (progress.connections > 1) text += ` · ${progress.connections} 连接`;
+  if (progress.network) text += " · " + downloadNetworkLabel(progress.network);
+  if (progress.source) text += " · " + downloadSourceLabel(progress.source);
   document.getElementById("cliPreparationText").textContent = text + "\n准备完成后自动继续原操作，无需重复点击。";
 }
 function updateBytes(bytes) {
@@ -160,7 +168,7 @@ function renderUpdateProgress(progress, received = true) {
     if (progress.stage === "failed" && lastUpdateProgress) progress = {...lastUpdateProgress, stage: "failed"};
     lastUpdateProgress = progress;
   }
-  const labels = {checking:"检查发布版本",connecting:"连接 GitHub 下载源",retrying:"重试下载，保留已收数据",parallel:"分块下载更新包",fallback:"分块不可用，改为单连接",downloading:"下载更新包",verifying:"校验 SHA256",extracting:"解压应用",validating:"验证程序与签名",replacing:"备份并替换程序",done:"更新完成",failed:"更新失败"};
+  const labels = {checking:"检查发布版本",routing:"检测本机代理与下载源",connecting:"连接下载源",retrying:"重试下载，保留已收数据",parallel:"分块下载更新包",fallback:"分块不可用，改为单连接","official-fallback":"国内源校验失败，回退官方文件",downloading:"下载更新包",verifying:"校验 SHA256",extracting:"解压应用",validating:"验证程序与签名",replacing:"备份并替换程序",done:"更新完成",failed:"更新失败"};
   document.getElementById("updateProgress").classList.remove("hidden");
   document.getElementById("updateStage").textContent = labels[progress.stage] || "正在更新";
   const bar = document.getElementById("updateProgressBar");
@@ -182,7 +190,8 @@ function renderUpdateProgress(progress, received = true) {
     detail += idle >= 3 ? " · 等待网络数据 " + idle + " 秒" : " · " + updateBytes(progress.bytes_per_second) + "/s";
     if (progress.attempt > 1) detail += " · 第 " + progress.attempt + "/3 次尝试";
     if (progress.connections > 1) detail += " · " + progress.connections + " 连接分块";
-    if (progress.source) detail += progress.source === "github-api" ? " · GitHub 官方接口" : progress.source === "github-cdn" ? " · GitHub 官方 CDN" : " · GitHub 官方下载";
+    if (progress.network) detail += " · " + downloadNetworkLabel(progress.network);
+    if (progress.source) detail += " · " + downloadSourceLabel(progress.source);
     if (progress.stage === "connecting" || idle >= 3) detail += "\n连续 15 秒无数据会自动重试；支持分块时保留已收进度。";
   }
   document.getElementById("updateProgressDetails").textContent = detail;
@@ -1070,7 +1079,7 @@ document.getElementById("detectBtn").addEventListener("click", showDetectOvervie
 document.getElementById("mirrorSel").addEventListener("change", async (e) => {
   try {
     await call("SetMirror", e.target.value);
-    toast("下载镜像已设为 " + (e.target.value === "cn" ? "国内加速" : e.target.value === "custom" ? "自定义（使用 vsm mirror set 配置来源）" : "关闭"));
+    toast("下载镜像已设为 " + (e.target.value === "auto" ? "自动：优先代理，无代理时国内源" : e.target.value === "cn" ? "国内加速" : e.target.value === "custom" ? "自定义（使用 vsm mirror set 配置来源）" : "关闭"));
   } catch (err) {
     toast(err.message, true);
   }
@@ -1089,6 +1098,10 @@ function openProxyModal(cur) {
   const input = document.getElementById("proxyInput");
   input.value = /^(off|none|direct|no)$/i.test(cur) ? "" : cur;
   modal.classList.remove("hidden");
+  document.getElementById("proxyDetected").textContent = "正在检测生效的代理…";
+  call("DownloadNetwork").then(route => {
+    document.getElementById("proxyDetected").textContent = route.proxy ? "当前路径：" + downloadNetworkLabel(route.source) + " · " + route.proxy : "当前未使用代理；更新包将按镜像设置选择下载源。";
+  }).catch(() => { document.getElementById("proxyDetected").textContent = "可留空使用自动检测，或手动填写代理地址。"; });
   setTimeout(() => input.focus(), 30);
 }
 function closeProxyModal() {
@@ -1099,7 +1112,7 @@ async function applyProxy(value) {
     await call("SetProxy", value);
     await loadProxy();
     const v = (value || "").trim();
-    if (v === "") toast("代理已设为跟随系统环境变量");
+    if (v === "") toast("已启用代理自动检测");
     else if (/^(off|none|direct|no)$/i.test(v)) toast("代理已禁用（强制直连）");
     else toast("代理已设为 " + v);
     closeProxyModal();
@@ -1116,6 +1129,7 @@ document.getElementById("proxySaveBtn").addEventListener("click", () => {
   applyProxy(document.getElementById("proxyInput").value);
 });
 document.getElementById("proxyDirectBtn").addEventListener("click", () => applyProxy("off"));
+document.getElementById("proxyAutoBtn").addEventListener("click", () => applyProxy(""));
 document.getElementById("proxyCancelBtn").addEventListener("click", closeProxyModal);
 document.getElementById("proxyModal").addEventListener("click", (e) => {
   if (e.target.id === "proxyModal") closeProxyModal();
@@ -1188,7 +1202,7 @@ async function loadMirror() {
   try {
     const m = await call("GetMirror");
     const sel = document.getElementById("mirrorSel");
-    if (sel) sel.value = m === "cn" || m === "custom" ? m : "off";
+      if (sel) sel.value = ["auto", "cn", "custom", "off"].includes(m) ? m : "auto";
   } catch (e) {
     // 后端未就绪时忽略
   }
@@ -1208,8 +1222,9 @@ async function loadProxy() {
     const btn = document.getElementById("proxyBtn");
     if (!btn) return;
     if (p === "") {
-      btn.textContent = "🌐 代理";
-      btn.title = "网络代理: 跟随系统环境变量";
+      const route = await call("DownloadNetwork").catch(() => ({}));
+      btn.textContent = route.proxy ? "🌐 代理 ●" : "🌐 自动";
+      btn.title = route.proxy ? downloadNetworkLabel(route.source) + ": " + route.proxy : "自动检测本机代理；无代理时按镜像设置下载";
     } else if (/^(off|none|direct|no)$/i.test(p)) {
       btn.textContent = "🌐 直连";
       btn.title = "网络代理: 强制直连（忽略系统代理）";

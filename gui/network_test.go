@@ -31,6 +31,9 @@ func TestProjectGUIWritesEffectiveGlobalNetworkSettings(t *testing.T) {
 	if plugin.MirrorMode() != "custom" {
 		t.Fatal("GUI mirror does not reach transport")
 	}
+	if err := a.SetMirror("auto"); err != nil || a.GetMirror() != "auto" {
+		t.Fatalf("automatic mode was not persisted: %s %v", a.GetMirror(), err)
+	}
 	for _, name := range []string{"proxy", "mirror"} {
 		if _, err := os.Stat(filepath.Join(dir, ".vsm", "env", name)); !os.IsNotExist(err) {
 			t.Fatal("network settings stored in unused project location")

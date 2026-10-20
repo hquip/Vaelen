@@ -43,13 +43,14 @@ func (c Client) assetConfig() assetDownloadConfig {
 // Callbacks are serialized across range workers. Byte counts include retained
 // partial segments; a source that ignores Range explicitly resets that data.
 type assetProgress struct {
-	mu            sync.Mutex
-	client        Client
-	asset         Asset
-	received      int64
-	started, last time.Time
-	connections   int
-	resolvedURL   string
+	mu             sync.Mutex
+	client         Client
+	asset          Asset
+	received       int64
+	started, last  time.Time
+	connections    int
+	resolvedURL    string
+	resolvedSource string
 }
 
 func (p *assetProgress) emit(stage string, delta int64, attempt int, source string, force bool) {
@@ -81,6 +82,18 @@ func (r *assetResponse) failure(err error) error {
 }
 
 func (c Client) assetRoute(a Asset, attempt int) (string, string) {
+	if len(a.mirrors) > 0 {
+		if attempt == 1 && a.resolvedURL != "" {
+			return a.resolvedURL, a.resolvedSource
+		}
+		if attempt <= len(a.mirrors) {
+			return a.mirrors[attempt-1], "cn-mirror"
+		}
+		if a.ID > 0 {
+			return c.api + "/assets/" + strconv.FormatInt(a.ID, 10), "github-api"
+		}
+		return a.URL, "github"
+	}
 	raw, source := a.URL, "github"
 	if a.resolvedURL != "" {
 		raw, source = a.resolvedURL, "github-cdn"
@@ -218,13 +231,14 @@ func (c Client) fetchAssetSegment(ctx context.Context, a Asset, data []byte, sta
 			}
 			if start == 0 && allowFull && resp.Request != nil && resp.Request.URL != nil {
 				p.resolvedURL = resp.Request.URL.String()
+				p.resolvedSource = source
 			}
 			return whole, nil
 		}
 		if ctx.Err() != nil {
 			return false, ctx.Err()
 		}
-		if !retryAsset(last) {
+		if !retryAsset(last) && source != "cn-mirror" {
 			return false, last
 		}
 		logging.Record("warn", "updater", "download.retry", logging.Fields{"asset": a.Name, "attempt": attempt, "source": source, "stalled": errors.Is(last, errAssetIdle), "retained_bytes": pos - start})
@@ -261,6 +275,7 @@ func (c Client) downloadAsset(ctx context.Context, a Asset) ([]byte, error) {
 		return data, nil
 	}
 	a.resolvedURL = p.resolvedURL
+	a.resolvedSource = p.resolvedSource
 	count := int(min(int64(cfg.connections), a.Size-1))
 	logging.Record("info", "updater", "download.parallel", logging.Fields{"asset": a.Name, "connections": count, "bytes": a.Size})
 	p.connections = count

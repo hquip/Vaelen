@@ -1,12 +1,14 @@
 package plugin
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 	"vsm/internal/netcfg"
 )
 
@@ -67,7 +69,7 @@ func NPMRegistry() string {
 // - go.dev/dl/      → golang.google.cn/dl/      （官方中国镜像，元数据与二进制都覆盖）
 // - nodejs.org/dist → npmmirror.com/mirrors/node（index.json 与发行包都覆盖）
 // - Temurin JDK     → TUNA Adoptium 镜像（具体文件名由官方元数据固定）
-// - github.com/     → ghproxy 加速（deno/bun/python 等基于 GitHub Release 的下载）
+// - github.com/     → ghfast 下载（deno/bun/python 等基于 GitHub Release 的下载）
 //
 // 注意：api.github.com、api.adoptium.net 等“API 端点”不在此重写（结构不一致），
 // 仅二进制下载与可整体替换的元数据走镜像。
@@ -75,7 +77,7 @@ var mirrorRules = map[string][][2]string{
 	"cn": {
 		{"https://go.dev/dl/", "https://golang.google.cn/dl/"},
 		{"https://nodejs.org/dist/", "https://npmmirror.com/mirrors/node/"},
-		{"https://github.com/", "https://ghproxy.com/https://github.com/"},
+		{"https://github.com/", "https://ghfast.top/https://github.com/"},
 	},
 }
 
@@ -103,6 +105,15 @@ func mirrorMode() string {
 // MirrorURL 按当前镜像设置重写下载 / 元数据 URL；未启用或无匹配规则时原样返回。
 func MirrorURL(url string) string {
 	mode := mirrorMode()
+	if mode == "" || mode == "auto" {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		route, err := netcfg.RouteForURL(ctx, url)
+		cancel()
+		if err == nil && route.Proxy != "" {
+			return url
+		}
+		mode = "cn"
+	}
 	javaPath, javaURL := temurinMirrorPath(url)
 	// An explicit off (including VSM_MIRROR=off) overrides custom sources.
 	if mode != "off" {
@@ -142,5 +153,5 @@ func MirrorURL(url string) string {
 	return url
 }
 
-// MirrorMode 返回当前镜像模式（"" / "off" / "cn"），供 doctor 等命令展示状态。
+// MirrorMode 返回保存的镜像模式；空值与 auto 都使用自动选择。
 func MirrorMode() string { return mirrorMode() }

@@ -6,6 +6,29 @@ import (
 	"testing"
 )
 
+func TestAutomaticMirrorsPreferProxyThenDomesticSource(t *testing.T) {
+	t.Setenv("VSM_HOME", t.TempDir())
+	t.Setenv("VSM_MIRROR", "auto")
+	t.Setenv("VSM_PROXY", "http://127.0.0.1:7897")
+	urls := []string{"https://github.com/a/b/releases/download/v/file.zip", "https://nodejs.org/dist/index.json"}
+	for _, raw := range urls {
+		if got := MirrorURL(raw); got != raw {
+			t.Fatalf("proxy did not take priority: %s", got)
+		}
+	}
+	t.Setenv("VSM_PROXY", "off")
+	if got := MirrorURL(urls[0]); got != "https://ghfast.top/"+urls[0] {
+		t.Fatalf("missing automatic domestic source: %s", got)
+	}
+	if candidates := DownloadURLs(urls[0]); len(candidates) != 2 || candidates[1] != urls[0] {
+		t.Fatalf("official fallback missing: %v", candidates)
+	}
+	t.Setenv("VSM_MIRROR", "off")
+	if got := MirrorURL(urls[0]); got != urls[0] {
+		t.Fatalf("explicit off ignored: %s", got)
+	}
+}
+
 func TestCustomMirrorsArePerSourceAndOffOverrides(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("VSM_HOME", home)
@@ -40,7 +63,7 @@ func TestMirrorURLCN(t *testing.T) {
 	cases := map[string]string{
 		"https://go.dev/dl/go1.22.0.windows-amd64.zip":              "https://golang.google.cn/dl/go1.22.0.windows-amd64.zip",
 		"https://nodejs.org/dist/index.json":                        "https://npmmirror.com/mirrors/node/index.json",
-		"https://github.com/astral-sh/x/releases/download/a.tar.gz": "https://ghproxy.com/https://github.com/astral-sh/x/releases/download/a.tar.gz",
+		"https://github.com/astral-sh/x/releases/download/a.tar.gz": "https://ghfast.top/https://github.com/astral-sh/x/releases/download/a.tar.gz",
 		"https://api.github.com/repos/x/y/releases":                 "https://api.github.com/repos/x/y/releases", // 不重写
 	}
 	for in, want := range cases {
