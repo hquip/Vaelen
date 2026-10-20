@@ -14,9 +14,9 @@ import (
 	"vsm/internal/plugin"
 )
 
-func findCmdCommand(dirs []string, name string) string {
+func findCmdCommand(dirs []string, name string, extensions []string) string {
 	for _, dir := range dirs {
-		for _, ext := range executableExts() {
+		for _, ext := range extensions {
 			file := filepath.Join(dir, name+ext)
 			if fileExists(file) {
 				return file
@@ -80,12 +80,16 @@ func (a Activator) VerifyCmdActivation(dir string) (CmdActivationCheck, error) {
 	for _, line := range strings.Split(string(utf16.Decode(units)), "\n") {
 		if key, value, ok := strings.Cut(strings.TrimSuffix(line, "\r"), "="); ok && strings.EqualFold(key, "PATH") {
 			dirs = filepath.SplitList(value)
-			break
+		}
+		if key, value, ok := strings.Cut(strings.TrimSuffix(line, "\r"), "="); ok && strings.EqualFold(key, "PATHEXT") {
+			check.PathExt = value
 		}
 	}
 	if len(dirs) == 0 || !sameDir(dirs[0], a.Paths.Shims()) {
 		return check, fmt.Errorf("cmd 激活后 VSM shims 仍未排在 PATH 最前面")
 	}
+	extensions := windowsExecutableExts(check.PathExt)
+	check.PathExtRepaired = !hasCMDExtension(os.Getenv("PATHEXT")) && hasCMDExtension(check.PathExt)
 	for _, tool := range plugin.Names() {
 		if plugin.IsServiceTool(tool) {
 			continue
@@ -102,19 +106,20 @@ func (a Activator) VerifyCmdActivation(dir string) (CmdActivationCheck, error) {
 		row.Before, _ = exec.LookPath(names[0])
 		// cmd searches the working directory before PATH. A local java.exe must
 		// be reported as an override rather than a successful shim activation.
-		row.Command = findCmdCommand(append([]string{dir}, dirs...), names[0])
+		row.Command = findCmdCommand(append([]string{dir}, dirs...), names[0], extensions)
 		row.Executable, err = a.Which(tool, dir)
 		if err != nil {
 			row.Error = err.Error()
 		}
-		row.Passed = row.Error == "" && row.Command != "" && (sameDir(filepath.Dir(row.Command), a.Paths.Shims()) || sameCommandFile(row.Command, row.Executable))
+		shim := filepath.Join(a.Paths.Shims(), names[0]+".cmd")
+		row.Passed = row.Error == "" && row.Command != "" && (sameCommandFile(row.Command, shim) || sameCommandFile(row.Command, row.Executable))
 		if row.Passed {
 			row.ExpectedVersion, err = probeVersion(tool, row.Executable)
 			if err != nil {
 				row.Error = "无法执行所选程序读取版本: " + err.Error()
 				row.Passed = false
 			} else {
-				env := append(os.Environ(), "VSM_HOME="+a.Paths.Root, "PATH="+strings.Join(dirs, string(os.PathListSeparator)))
+				env := append(os.Environ(), "VSM_HOME="+a.Paths.Root, "PATH="+strings.Join(dirs, string(os.PathListSeparator)), "PATHEXT="+check.PathExt)
 				row.ActualVersion, err = probeCmdLookupVersion(tool, names[0], env, dir)
 				if err != nil {
 					row.Error = "经 shim 执行失败: " + err.Error()
@@ -126,10 +131,40 @@ func (a Activator) VerifyCmdActivation(dir string) (CmdActivationCheck, error) {
 			}
 		}
 		if !row.Passed && row.Error == "" {
-			row.Error = "命令未经过 VSM，请检查 shim 或当前目录中的同名程序"
+			switch {
+			case row.Command != "" && sameDir(filepath.Dir(row.Command), dir):
+				row.Code = "current-directory-override"
+				row.Error = "当前工作目录中的同名程序优先于版本管理器，版本尚未切换"
+				row.Action = "在不含该程序的项目目录执行命令，或确认用途后自行移动该同名文件。VSM 不会删除原程序。"
+			case row.Command != "" && sameDir(filepath.Dir(row.Command), a.Paths.Shims()):
+				row.Code = "shim-shadowed"
+				row.Error = "VSM 入口目录中存在优先级更高的同名程序，版本尚未切换"
+				row.Action = "确认实际命中的文件用途后移出该入口目录，再点击「激活 PATH」。VSM 不会删除该文件。"
+			case !fileExists(shim):
+				row.Code = "shim-missing"
+				row.Error = "版本管理器的命令入口没有生成，版本尚未切换"
+				row.Action = "检查安全软件是否拦截写入，允许 VSM 写入数据目录后重试「激活 PATH」。"
+			default:
+				row.Code = "command-bypassed"
+				row.Error = "系统仍优先运行原来的程序，版本尚未切换"
+				row.Action = "点击「重新验证」；若仍失败，可复制下方诊断详情反馈，包含实际命中的程序和所选程序。"
+			}
+		}
+		if !row.Passed && row.Code == "" {
+			row.Code = "runtime-failed"
+			row.Action = "检查下方所选程序是否可以运行；可重新检测并纳管正确版本后重试。"
 		}
 		check.Passed = check.Passed && row.Passed
 		check.Tools = append(check.Tools, row)
 	}
 	return check, nil
+}
+
+func hasCMDExtension(value string) bool {
+	for _, extension := range strings.Split(value, ";") {
+		if strings.EqualFold(strings.TrimSpace(extension), ".CMD") {
+			return true
+		}
+	}
+	return false
 }

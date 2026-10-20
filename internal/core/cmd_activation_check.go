@@ -3,8 +3,10 @@ package core
 // CmdActivationCheck describes a controlled cmd activation test, not the state
 // of an arbitrary terminal that was already running when the GUI was started.
 type CmdActivationCheck struct {
-	Passed bool                `json:"passed"`
-	Tools  []CmdToolActivation `json:"tools"`
+	Passed          bool                `json:"passed"`
+	Tools           []CmdToolActivation `json:"tools"`
+	PathExt         string              `json:"pathext,omitempty"`
+	PathExtRepaired bool                `json:"pathext_repaired,omitempty"`
 }
 
 type CmdToolActivation struct {
@@ -18,4 +20,6 @@ type CmdToolActivation struct {
 	ExpectedVersion string `json:"expected_version,omitempty"`
 	Passed          bool   `json:"passed"`
 	Error           string `json:"error,omitempty"`
+	Code            string `json:"code,omitempty"`
+	Action          string `json:"action,omitempty"`
 }

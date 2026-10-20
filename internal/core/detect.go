@@ -189,6 +189,10 @@ func executableExts() []string {
 		return []string{""}
 	}
 	raw := os.Getenv("PATHEXT")
+	return windowsExecutableExts(raw)
+}
+
+func windowsExecutableExts(raw string) []string {
 	if raw == "" {
 		raw = ".COM;.EXE;.BAT;.CMD"
 	}

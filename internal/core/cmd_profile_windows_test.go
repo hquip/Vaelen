@@ -171,6 +171,39 @@ func TestCmdHookRejectsExpansionBeforeWriting(t *testing.T) {
 	}
 }
 
+func TestCmdStartupRepairsPATHEXTOnce(t *testing.T) {
+	root := t.TempDir()
+	helper := filepath.Join(root, "vsm-cmd-init.cmd")
+	if err := config.WriteFileAtomic(helper, []byte(cmdStartupScript(root)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := config.WriteFileAtomic(filepath.Join(root, "shims", "vsm-fixture.cmd"), []byte("@echo SHIM_OK\r\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct{ name, before, after string }{
+		{"missing", ".EXE;.PY", ".EXE;.PY;.CMD"},
+		{"lowercase", ".EXE;.cmd;.PY", ".EXE;.cmd;.PY"},
+		{"unset", "", ".COM;.EXE;.BAT;.CMD"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// cmd can populate an absent PATHEXT at process startup. Clear it
+			// inside the test session to also exercise our own unset fallback.
+			batch := "@echo off\r\nset \"PATHEXT=%VSM_TEST_EXTS%\"\r\ncall \"%VSM_TEST_INIT%\"\r\ncall \"%VSM_TEST_INIT%\"\r\nset PATHEXT\r\ncall vsm-fixture\r\n"
+			file := filepath.Join(t.TempDir(), "extensions.cmd")
+			if err := os.WriteFile(file, []byte(batch), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			cmd := exec.Command(windowsCmdPath(), "/D", "/V:OFF", "/C", file)
+			// Already-prefixed PATH exercises the helper's early-return branch.
+			cmd.Env = append(os.Environ(), "VSM_TEST_INIT="+helper, "PATH="+filepath.Join(root, "shims")+";"+os.Getenv("PATH"), "VSM_TEST_EXTS="+tc.before)
+			out, err := cmd.CombinedOutput()
+			if err != nil || !strings.Contains(string(out), "PATHEXT="+tc.after+"\r\n") || !strings.Contains(string(out), "SHIM_OK") {
+				t.Fatalf("PATHEXT repair must preserve extensions and be idempotent: %v\n%s", err, out)
+			}
+		})
+	}
+}
+
 func TestCmdActivationDiscoversAllConfiguredTools(t *testing.T) {
 	a, data := executingActivationFixture(t)
 	if err := a.SetGlobalVersion("java", "17.0.12"); err != nil {
@@ -207,6 +240,35 @@ func TestCmdActivationDiscoversAllConfiguredTools(t *testing.T) {
 	localCheck, err := a.VerifyCmdActivation(local)
 	if err != nil || localCheck.Passed {
 		t.Fatalf("local command override missed: %+v %v", localCheck, err)
+	}
+	for _, row := range localCheck.Tools {
+		if row.Tool == "java" && (row.Code != "current-directory-override" || row.Action == "" || !sameCommandFile(row.Command, filepath.Join(local, "java.exe"))) {
+			t.Fatalf("missing actionable local override diagnosis: %+v", row)
+		}
+	}
+	if data, err := os.ReadFile(filepath.Join(local, "java.exe")); err != nil || string(data) != "local override" {
+		t.Fatalf("local program modified: %q %v", data, err)
+	}
+	// A real executable inside shims wins over java.cmd. Its location alone
+	// must not be accepted as evidence of a managed dispatcher.
+	shadow := filepath.Join(a.Paths.Shims(), "java.exe")
+	if err := os.WriteFile(shadow, data, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	shadowCheck, err := a.VerifyCmdActivation(t.TempDir())
+	if err != nil || shadowCheck.Passed {
+		t.Fatalf("shadowing executable accepted as managed dispatcher: %+v %v", shadowCheck, err)
+	}
+	for _, row := range shadowCheck.Tools {
+		if row.Tool == "java" && (row.Code != "shim-shadowed" || row.Action == "" || !sameCommandFile(row.Command, shadow)) {
+			t.Fatalf("missing actionable shim override diagnosis: %+v", row)
+		}
+	}
+	if _, err := os.Stat(shadow); err != nil {
+		t.Fatalf("shadowing program removed: %v", err)
+	}
+	if err := os.Remove(shadow); err != nil {
+		t.Fatal(err)
 	}
 	// A broken selection produces an explicit per-tool failure. Other tools and
 	// the managed PATH are still reported, rather than a blanket success message.
@@ -249,7 +311,7 @@ func TestCmdActivationRejectsWrongRuntimeBehindShim(t *testing.T) {
 	}
 }
 
-func TestCmdActivationDoesNotIgnorePATHEXT(t *testing.T) {
+func TestCmdActivationRepairsMissingCMDExtension(t *testing.T) {
 	a, _ := executingActivationFixture(t)
 	if err := a.SetGlobalVersion("java", "17.0.12"); err != nil {
 		t.Fatal(err)
@@ -263,7 +325,31 @@ func TestCmdActivationDoesNotIgnorePATHEXT(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if check.Passed || len(check.Tools) != 1 || !sameDir(filepath.Dir(check.Tools[0].Command), filepath.Join(a.Paths.InstallDir("java", "21.0.1"), "bin")) {
-		t.Fatalf("cmd skipped .CMD but validation passed: %+v", check)
+	if !check.Passed || !check.PathExtRepaired || len(check.Tools) != 1 || check.Tools[0].ActualVersion != "17.0.12" || !sameDir(filepath.Dir(check.Tools[0].Command), a.Paths.Shims()) {
+		t.Fatalf("activation did not repair .CMD before executing Java: %+v", check)
+	}
+	// Keep one cmd process alive through 17 -> 21 -> 17, loading the activation
+	// helper only once. No user PATH, profile or actual installation is changed.
+	dir := t.TempDir()
+	batch := "@echo off\r\ncall \"%VSM_TEST_INIT%\"\r\ncall java -version\r\n\"%VSM_TEST_CLI%\" use -g java 21.0.1\r\ncall java -version\r\n\"%VSM_TEST_CLI%\" use -g java 17.0.12\r\ncall java -version\r\n"
+	file := filepath.Join(dir, "same-session.cmd")
+	if err := os.WriteFile(file, []byte(batch), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(windowsCmdPath(), "/D", "/V:OFF", "/C", file)
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), "VSM_HOME="+a.Paths.Root, "VSM_TEST_INIT="+filepath.Join(a.Paths.Root, "vsm-cmd-init.cmd"), "VSM_TEST_CLI="+a.VsmExe, "VSM_PROJECT_BOUNDARY="+dir)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("same-session switch: %v %s", err, out)
+	}
+	var versions []string
+	for _, line := range strings.Split(strings.ReplaceAll(string(out), "\r\n", "\n"), "\n") {
+		if strings.HasPrefix(line, "java version ") {
+			versions = append(versions, strings.TrimPrefix(line, "java version "))
+		}
+	}
+	if strings.Join(versions, ",") != `"17.0.12","21.0.1","17.0.12"` {
+		t.Fatalf("versions did not change in the same cmd after repairing PATHEXT: %s", out)
 	}
 }
