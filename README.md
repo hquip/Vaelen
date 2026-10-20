@@ -15,6 +15,14 @@
 > 镜像切换、网络代理设置、安装进度条、当前目录 local 设置、一键写入用户级 PATH。
 > **macOS 版为 Universal 通用二进制**（Apple Silicon + Intel），隐藏式标题栏 + 原生菜单，内置 CLI，一个 `.app` 开箱即用。
 
+## v1.1.9 cmd 激活修复与详细日志
+
+- **cmd 兼容修复**：支持延迟变量展开开启和关闭两种模式，修复带引号与 `&` 的 PATH 项被拼坏的问题；执行验证同时覆盖两种模式。
+- **清楚显示切换结果**：区分全局默认保存、项目/环境变量覆盖与受控验证；保留失败详情，并提供已有 cmd 的一次性加载命令。
+- **详细诊断**：记录配置写入、入口生成、启动配置读回、初始化前后和实际运行程序；`vsm logs diagnose java` 可只读采集原终端状态，GUI 支持导出。
+
+下载 [v1.1.9 正式版](https://github.com/hquip/Vaelen/releases/tag/v1.1.9)，或使用 GUI「检查 VSM 更新」/ `vsm update --gui`。**升级并重启后，点击一次「激活 PATH」生成新版初始化脚本。**详见[发布说明](docs/releases/v1.1.9.md)。
+
 ## v1.1.8 Windows 激活修复与可操作诊断
 
 修复 Windows `PATHEXT` 缺少 `.CMD` 时跳过 VSM 命令入口的问题，自动补齐并保留已有扩展名。激活结果会持续显示在页面中，区分当前目录同名程序、入口被其它程序遮挡、入口缺失和实际执行失败，并可复制实际命中路径等诊断信息。
@@ -216,7 +224,7 @@ sudo ln -sf /Applications/VSM.app/Contents/MacOS/vsm /usr/local/bin/vsm
 自行打包（需在 Mac 上，产出与 Release 相同的通用版 zip）：
 
 ```bash
-bash scripts/package-macos.sh 1.1.8 dist
+bash scripts/package-macos.sh 1.1.9 dist
 ```
 
 > 打 `v*` tag 即可由 GitHub Actions 在 Windows / macOS / Linux 三个 runner 上分别本地编译，
