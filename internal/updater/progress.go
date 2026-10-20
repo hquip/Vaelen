@@ -18,6 +18,8 @@ type Progress struct {
 	Attempt           int     `json:"attempt,omitempty"`
 	FileIndex         int     `json:"file_index,omitempty"`
 	FileCount         int     `json:"file_count,omitempty"`
+	Source            string  `json:"source,omitempty"`
+	Connections       int     `json:"connections,omitempty"`
 }
 
 // WithProgress returns a client configured for one operation. Callbacks run

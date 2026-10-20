@@ -30,10 +30,12 @@ const repository = "https://github.com/hquip/Vaelen"
 var stableVersion = regexp.MustCompile(`^v?[0-9]+\.[0-9]+\.[0-9]+$`)
 
 type Asset struct {
-	Name   string `json:"name"`
-	URL    string `json:"browser_download_url"`
-	Size   int64  `json:"size"`
-	Digest string `json:"digest"`
+	ID          int64  `json:"id,omitempty"`
+	Name        string `json:"name"`
+	URL         string `json:"browser_download_url"`
+	Size        int64  `json:"size"`
+	Digest      string `json:"digest"`
+	resolvedURL string
 }
 type Info struct {
 	Current   string  `json:"current"`
@@ -56,6 +58,7 @@ type Client struct {
 	fileIndex, fileCount                    int
 	currentAsset                            string
 	currentSize, totalBytes, completedBytes int64
+	downloadConfig                          *assetDownloadConfig
 }
 
 func New() Client {
@@ -238,7 +241,7 @@ func (c Client) download(ctx context.Context, info Info, name, dest string) erro
 			return fmt.Errorf("发布方未提供 %s 的 SHA256；停止更新", name)
 		}
 	}
-	data, err := c.getWithProgress(ctx, a.URL, a.Size, name)
+	data, err := c.downloadAsset(ctx, a)
 	if err != nil {
 		return err
 	}
@@ -249,6 +252,9 @@ func (c Client) download(ctx context.Context, info Info, name, dest string) erro
 	hash := sha256.Sum256(data)
 	if hex.EncodeToString(hash[:]) != sum {
 		return fmt.Errorf("%s SHA256 校验失败，旧程序未更改", name)
+	}
+	if ctx.Err() != nil {
+		return ctx.Err()
 	}
 	return os.WriteFile(dest, data, 0755)
 }
