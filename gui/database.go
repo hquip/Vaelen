@@ -41,7 +41,7 @@ func (a *App) DatabaseNativeVersions(engine string) ([]string, error) {
 }
 func (a *App) databaseAction(action func(context.Context, *database.Manager) (database.Status, error)) (database.Status, error) {
 	if !a.mu.TryLock() {
-		return database.Status{}, errBusy
+		return database.Status{}, a.busyError()
 	}
 	defer a.mu.Unlock()
 	m, err := a.databaseManager()
@@ -92,7 +92,7 @@ func (a *App) DatabaseConnection(name string) (database.Connection, error) {
 }
 func (a *App) DatabaseAdoptNative(engine, path string) ([]string, error) {
 	if !a.mu.TryLock() {
-		return nil, errBusy
+		return nil, a.busyError()
 	}
 	defer a.mu.Unlock()
 	paths, err := core.DefaultPaths()

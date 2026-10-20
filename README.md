@@ -15,6 +15,14 @@
 > 镜像切换、网络代理设置、安装进度条、当前目录 local 设置、一键写入用户级 PATH。
 > **macOS 版为 Universal 通用二进制**（Apple Silicon + Intel），隐藏式标题栏 + 原生菜单，内置 CLI，一个 `.app` 开箱即用。
 
+## v1.1.5 全局切换进度与忙碌提示修复
+
+- **组件准备可见**：全局切换或激活 PATH 自动补装配套 CLI 时，底部持续显示连接、下载大小、速度、重试、分块与校验进度，完成后自动继续原操作。
+- **避免重复操作**：切换与激活期间暂时禁用这两类按钮，界面重新渲染后仍保留进行中的状态，完成或失败后恢复。
+- **准确提示**：不再把所有写操作误称为“安装/纳管任务”；配套 CLI 准备期间明确说明实际任务，日志新增 `cli.prepare` 起止与失败记录。
+
+下载 [v1.1.5 正式版](https://github.com/hquip/Vaelen/releases/tag/v1.1.5)，或使用 GUI「检查 VSM 更新」/ `vsm update --gui`。Windows 手动下载时将同版本 CLI 与 GUI 放在同一目录；macOS Universal 应用内置 CLI。详见[发布说明](docs/releases/v1.1.5.md)。
+
 ## v1.1.4 更新下载优化
 
 - **停滞重试**：更新包连接或响应体连续 15 秒无数据就重试；有官方资产 ID 时交替尝试官方下载地址与 GitHub 官方 API。
@@ -188,7 +196,7 @@ sudo ln -sf /Applications/VSM.app/Contents/MacOS/vsm /usr/local/bin/vsm
 自行打包（需在 Mac 上，产出与 Release 相同的通用版 zip）：
 
 ```bash
-bash scripts/package-macos.sh 1.1.4 dist
+bash scripts/package-macos.sh 1.1.5 dist
 ```
 
 > 打 `v*` tag 即可由 GitHub Actions 在 Windows / macOS / Linux 三个 runner 上分别本地编译，

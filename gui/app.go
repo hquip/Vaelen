@@ -80,10 +80,19 @@ type App struct {
 	dirMu          sync.RWMutex
 	projectDir     string // 「设为本目录」写入 .tool-versions 的目标目录；空表示尚未选择
 	cliInstaller   func(context.Context, string, string) (string, error)
+	cliPreparing   atomic.Bool
+	cliProgress    func(updater.Progress)
 }
 
 // errBusy 在已有写操作进行中时返回给前端。
-var errBusy = errors.New("有安装/纳管任务正在进行，请等它完成后再试")
+var errBusy = errors.New("另一项操作正在进行，请等当前操作完成后再试")
+
+func (a *App) busyError() error {
+	if a.cliPreparing.Load() {
+		return fmt.Errorf("%w：正在下载或校验配套 CLI，请查看底部的运行组件进度", errBusy)
+	}
+	return errBusy
+}
 
 // errNoProjectDir 提示前端需要先让用户选择项目目录（前端据此弹出目录选择框）。
 var errNoProjectDir = errors.New("请先选择项目目录：版本会写入该目录的 .tool-versions")
@@ -103,7 +112,7 @@ func (a *App) begin() (func(), error) {
 		return nil, err
 	}
 	if !a.mu.TryLock() {
-		return nil, errBusy
+		return nil, a.busyError()
 	}
 	return a.mu.Unlock, nil
 }
@@ -214,7 +223,7 @@ func (a *App) CheckUpdate() (updater.Info, error) {
 
 func (a *App) ApplyUpdate() (updater.Result, error) {
 	if !a.mu.TryLock() {
-		return updater.Result{}, errBusy
+		return updater.Result{}, a.busyError()
 	}
 	defer a.mu.Unlock()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
@@ -582,7 +591,7 @@ func (a *App) ProjectDir() string {
 func (a *App) SetProjectDir(dir string) (err error) {
 	defer logGUI("project.select", logging.Fields{}, &err)()
 	if !a.mu.TryLock() {
-		return errBusy
+		return a.busyError()
 	}
 	defer a.mu.Unlock()
 	dir = strings.TrimSpace(dir)
