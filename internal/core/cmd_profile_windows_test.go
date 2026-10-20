@@ -14,6 +14,7 @@ import (
 	"unicode/utf16"
 
 	"vsm/internal/config"
+	"vsm/internal/logging"
 )
 
 func executingActivationFixture(t *testing.T) (Activator, []byte) {
@@ -61,6 +62,7 @@ func runRegistryScript(t *testing.T, script string) string {
 
 func TestCmdHookPreservesAutoRunAndRefusesExternalChanges(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "已有环境 & tools")
+	t.Setenv("VSM_HOME", root)
 	key := `Software\VSM\Tests\` + filepath.Base(t.TempDir())
 	// Always use a private test key; never touch the real Command Processor key.
 	t.Cleanup(func() {
@@ -162,6 +164,7 @@ func TestCmdStartupOverridesSystemPATHWithoutCodePageOrDuplicates(t *testing.T) 
 }
 
 func TestCmdHookRejectsExpansionBeforeWriting(t *testing.T) {
+	t.Setenv("VSM_HOME", t.TempDir())
 	for _, name := range []string{"%TEMP%", "!value!"} {
 		root := filepath.Join(t.TempDir(), name)
 		if _, err := persistCmdHookAt(root, `Software\VSM\Tests\unused`); err == nil {
@@ -414,6 +417,7 @@ func TestCmdActivationRepairsMissingCMDExtension(t *testing.T) {
 
 func TestCmdExistingSessionWithSystemJavaBeforeShims(t *testing.T) {
 	a, data := executingActivationFixture(t)
+	t.Setenv("VSM_LOG_LEVEL", "info")
 	if err := a.SetGlobalVersion("java", "17.0.12"); err != nil {
 		t.Fatal(err)
 	}
@@ -459,5 +463,69 @@ func TestCmdExistingSessionWithSystemJavaBeforeShims(t *testing.T) {
 	command, err := CmdActivationCommand(a.Paths.Root)
 	if err != nil || status.CurrentCmd != command {
 		t.Fatalf("copied command uses the wrong home: %+v %v", status, err)
+	}
+	store, _ := logging.Default()
+	snapshot, err := store.Read(1000, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, after, dispatched := false, false, false
+	sessions := map[string]bool{}
+	for _, entry := range snapshot.Entries {
+		fields := entry.Fields
+		if entry.Event == "environment.snapshot" && fields["scope"] == "cmd-session" {
+			if fields["phase"] == "before" && fields["shims_index"] == float64(2) {
+				before = true
+				sessions[fields["helper_session"].(string)] = true
+			}
+			if fields["phase"] == "after" && fields["shims_index"] == float64(0) && sessions[fields["helper_session"].(string)] {
+				after = true
+			}
+		}
+		if entry.Event == "runtime.dispatch.started" && fields["selected_version"] == "17.0.12" {
+			dispatched = true
+		}
+	}
+	if !before || !after || !dispatched {
+		t.Fatalf("missing real-session before/after or final dispatch evidence: before=%t after=%t dispatched=%t", before, after, dispatched)
+	}
+}
+
+func TestCmdStartupLoggingFailureDoesNotBlockActivation(t *testing.T) {
+	a, _ := executingActivationFixture(t)
+	if err := a.SetGlobalVersion("java", "17.0.12"); err != nil {
+		t.Fatal(err)
+	}
+	helper := filepath.Join(a.Paths.Root, "vsm-cmd-init.cmd")
+	if err := os.WriteFile(helper, []byte(cmdStartupScript(a.Paths.Root)), 0644); err != nil {
+		t.Fatal(err)
+	}
+	logs := filepath.Join(a.Paths.Root, "logs")
+	if _, err := os.Stat(logs); err == nil {
+		if err := os.Rename(logs, filepath.Join(a.Paths.Root, "saved-logs")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(logs, []byte("blocked diagnostic directory"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	file := filepath.Join(dir, "logging-blocked.cmd")
+	if err := os.WriteFile(file, []byte("@echo off\r\ncall \"%VSM_TEST_INIT%\"\r\ncall java -version\r\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	for _, level := range []string{"info", "off", "info"} {
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		cmd := exec.CommandContext(ctx, windowsCmdPath(), "/D", "/V:ON", "/C", file)
+		cmd.Dir = dir
+		cmd.Env = append(os.Environ(), "VSM_HOME="+a.Paths.Root, "VSM_TEST_INIT="+helper, "VSM_PROJECT_BOUNDARY="+dir, "VSM_LOG_LEVEL="+level,
+			"PATH="+filepath.Join(a.Paths.InstallDir("java", "21.0.1"), "bin")+";"+os.Getenv("PATH"))
+		started := time.Now()
+		out, err := cmd.CombinedOutput()
+		cancel()
+		t.Logf("same cmd startup + Java with log level %s: %s", level, time.Since(started).Round(time.Millisecond))
+		if err != nil || strings.TrimSpace(string(out)) != `java version "17.0.12"` {
+			t.Fatalf("diagnostics broke command routing or printed output: %v %q", err, out)
+		}
 	}
 }

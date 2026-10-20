@@ -14,6 +14,7 @@ func activationFixture(t *testing.T) Activator {
 	t.Helper()
 	t.Setenv("VSM_JAVA_VERSION", "")
 	paths := Paths{Root: t.TempDir()}
+	t.Setenv("VSM_HOME", paths.Root)
 	if err := paths.EnsureDirs(); err != nil {
 		t.Fatal(err)
 	}

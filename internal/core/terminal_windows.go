@@ -11,6 +11,7 @@ import (
 	"time"
 	"unicode/utf16"
 
+	"vsm/internal/logging"
 	"vsm/internal/plugin"
 )
 
@@ -51,7 +52,11 @@ func probeCmdLookupVersion(tool, name string, env []string, dir string) (string,
 // cmdActivationEnvironment exercises the managed helper in either cmd mode.
 // /D avoids executing unrelated AutoRun commands; it does not test whether an
 // arbitrary terminal launcher will execute the user's AutoRun registration.
-func (a Activator) cmdActivationEnvironment(dir, mode string) ([]string, string, error) {
+func (a Activator) cmdActivationEnvironment(dir, mode string) (dirs []string, pathExt string, err error) {
+	fields := a.activationFields()
+	fields["scope"], fields["cmd_mode"], fields["directory"] = "controlled-cmd", mode, dir
+	finish := logging.Start("activation", "cmd.verify.environment", fields)
+	defer func() { finish(err) }()
 	command, err := CmdActivationCommand(a.Paths.Root)
 	if err != nil {
 		return nil, "", err
@@ -60,7 +65,7 @@ func (a Activator) cmdActivationEnvironment(dir, mode string) ([]string, string,
 	defer cancel()
 	cmd := exec.CommandContext(ctx, windowsCmdPath())
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), "VSM_HOME="+a.Paths.Root)
+	cmd.Env = append(os.Environ(), "VSM_HOME="+a.Paths.Root, "_VSM_CMD_SCOPE=controlled-cmd", "VSM_ACTIVATION_OPERATION="+a.TraceID)
 	hideConsole(cmd)
 	cmd.SysProcAttr.CmdLine = `"` + windowsCmdPath() + `" /D /U /V:` + mode + ` /S /C "` + command + ` >nul & set PATH"`
 	cmd.WaitDelay = time.Second
@@ -75,8 +80,6 @@ func (a Activator) cmdActivationEnvironment(dir, mode string) ([]string, string,
 	for i := range units {
 		units[i] = binary.LittleEndian.Uint16(out[i*2:])
 	}
-	var dirs []string
-	var pathExt string
 	for _, line := range strings.Split(string(utf16.Decode(units)), "\n") {
 		if key, value, ok := strings.Cut(strings.TrimSuffix(line, "\r"), "="); ok && strings.EqualFold(key, "PATH") {
 			dirs = filepath.SplitList(value)
@@ -88,12 +91,16 @@ func (a Activator) cmdActivationEnvironment(dir, mode string) ([]string, string,
 	if len(dirs) == 0 || !sameDir(dirs[0], a.Paths.Shims()) {
 		return nil, "", fmt.Errorf("cmd /V:%s 激活后 VSM shims 仍未排在 PATH 最前面", mode)
 	}
+	logging.Record("info", "activation", "cmd.verify.environment.result", logging.Fields{"operation_id": a.TraceID, "scope": "controlled-cmd", "cmd_mode": mode, "path_head": dirs[:min(len(dirs), 12)], "pathext": pathExt, "shims_first": true})
 	return dirs, pathExt, nil
 }
 
 // VerifyCmdActivation checks helper behavior in both delayed-expansion modes,
 // then executes configured commands using the resulting environment.
 func (a Activator) VerifyCmdActivation(dir string) (CmdActivationCheck, error) {
+	if a.TraceID == "" {
+		a.TraceID = logging.NewOperationID()
+	}
 	check := CmdActivationCheck{Passed: true, Tools: []CmdToolActivation{}}
 	var dirs []string
 	for _, mode := range []string{"OFF", "ON"} {
@@ -140,7 +147,7 @@ func (a Activator) VerifyCmdActivation(dir string) (CmdActivationCheck, error) {
 				row.Error = "无法执行所选程序读取版本: " + err.Error()
 				row.Passed = false
 			} else {
-				env := append(os.Environ(), "VSM_HOME="+a.Paths.Root, "PATH="+strings.Join(dirs, string(os.PathListSeparator)), "PATHEXT="+check.PathExt)
+				env := append(os.Environ(), "VSM_HOME="+a.Paths.Root, "PATH="+strings.Join(dirs, string(os.PathListSeparator)), "PATHEXT="+check.PathExt, "_VSM_CMD_SCOPE=controlled-cmd", "VSM_ACTIVATION_OPERATION="+a.TraceID)
 				row.ActualVersion, err = probeCmdLookupVersion(tool, names[0], env, dir)
 				if err != nil {
 					row.Error = "经 shim 执行失败: " + err.Error()
@@ -176,6 +183,16 @@ func (a Activator) VerifyCmdActivation(dir string) (CmdActivationCheck, error) {
 			row.Action = "检查下方所选程序是否可以运行；可重新检测并纳管正确版本后重试。"
 		}
 		check.Passed = check.Passed && row.Passed
+		fields := a.activationFields()
+		fields["scope"], fields["tool"], fields["selected_version"] = "controlled-cmd", row.Tool, row.Version
+		fields["passed"], fields["command"], fields["selected_executable"] = row.Passed, row.Command, row.Executable
+		fields["expected_version"], fields["actual_version"], fields["source"] = row.ExpectedVersion, row.ActualVersion, row.Source
+		fields["code"], fields["error"], fields["action"] = row.Code, row.Error, row.Action
+		level := "info"
+		if !row.Passed {
+			level = "warn"
+		}
+		logging.Record(level, "activation", "cmd.verify.tool", fields)
 		check.Tools = append(check.Tools, row)
 	}
 	return check, nil

@@ -44,6 +44,32 @@ GUI 会识别同目录的标准 CLI 文件名和 GitHub 原始下载文件名，
 
 cmd 数据目录不能包含 `%` 或 `!`。启动配置位于 `HKCU\Software\Microsoft\Command Processor`，原来的 AutoRun 字符串与类型保存在 `VSM.AutoRun.Previous` / `VSM.AutoRun.Kind`；若已被外部修改，VSM 会报错并保留现状。撤销时恢复原 AutoRun，再移除 `VSM.AutoRun.*` 值；不要删除其它程序的启动命令。
 
+## 用详细日志定位切换失败
+
+更新配套 CLI / GUI 后，先点击「激活 PATH」生成新版初始化脚本。默认 `info` 级别即可记录详细诊断；`VSM_LOG_LEVEL=off` 会关闭新记录。GUI 导出时还会补充一份明确标记为 `gui-process` 的快照。
+
+| 日志事件 | 可以判断的内容 |
+| --- | --- |
+| `activation · global.config.write.*` | 全局版本文件路径、请求版本、写入是否成功 |
+| `activation · shims.generate.*` | 实际 CLI、入口目录及生成失败原因 |
+| `activation · user-path.*` | 用户 PATH 是否写入；明确标记没有改写其它进程 |
+| `activation · cmd.hook.readback` | AutoRun 写入后的匹配结果、原设置保留状态、注册表类型及指纹、用户默认延迟展开配置 |
+| `activation · environment.snapshot` | PATH 前 12 项、VSM 入口位置（索引从 0 开始，-1 表示未找到）、PATHEXT、当前目录和数据目录 |
+| `activation · command.route` | 全局默认与当前有效版本、覆盖来源、首个命中的命令、所选程序、Java/Go HOME；手动诊断和 GUI 导出含最多 16 个候选程序 |
+| `activation · cmd.verify.*` | 受控 cmd 的 ON/OFF 验证、实际版本与预期版本、失败分类 |
+| `activation · runtime.dispatch.*` | 已进入 VSM 执行链后最终启动的程序及成功/失败结果 |
+
+`scope=controlled-cmd` 只表示受控测试；`cmd-session` 是初始化脚本实际运行时记录的 PATH 调整前后，按 `helper_session` 关联；GUI 和核心步骤按 `operation_id` 关联。AutoRun 原始命令不写入日志，只保留指纹和匹配结果。不会记录完整环境、任意命令参数或子进程输出。
+
+没有用户会话记录只能说明日志未观察到脚本执行，也可能是脚本未加载、配套 CLI 不可用、日志被关闭或写入失败，不能仅凭缺少记录断言根因。此时在原终端执行：
+
+```cmd
+vsm logs diagnose java
+vsm logs export vsm-diagnostics.jsonl
+```
+
+`diagnose` 只读取当前进程继承的配置与命令顺序，不运行语言程序、不修改 PATH，并确认诊断已实际写入。若配置读取失败，会保留 `capture.failed`；自动初始化中的日志失败保持静默，不阻断原有命令。日志沿用本地时间显示、敏感内容脱敏、2 MiB × 4 文件轮换及新文件导出机制。
+
 ## Conda 的 Python 环境
 
 支持纳管已经存在的 Conda / Miniconda / Anaconda / Miniforge Python 环境。自动发现读取 `~/.conda/environments.txt`、`CONDA_PREFIX` / `CONDA_EXE` 和常见 `envs` 目录；自定义位置可手动添加。

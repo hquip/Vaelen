@@ -462,11 +462,16 @@ GUI 左下角「日志」支持筛选、导出和清理。
 ```bash
 vsm logs --tail 100
 vsm logs --level error
+vsm logs diagnose java
 vsm logs export vsm-report.jsonl
 vsm logs clear
 ```
 
 默认保存在 `~/.vsm/logs`（或 `VSM_HOME/logs`），通过 `VSM_LOG_LEVEL=debug|info|warn|error|off` 控制记录级别。
+
+版本切换诊断默认以 `info` 记录配置写入、入口生成、cmd AutoRun 读回结果、两种延迟展开模式的验证，以及运行时实际启动的程序。cmd 初始化脚本自动记录 PATH 调整前后；`scope` 区分 GUI、受控 cmd 和用户会话，`operation_id` / `helper_session` 关联同次操作。
+
+已有终端仍无法切换时，在那个终端运行 `vsm logs diagnose java`，再从 GUI「日志 → 导出」或 `vsm logs export` 导出。诊断不会运行语言程序或修改环境；自动记录 PATH 前 12 项、首个命中的命令、运行时 HOME 与版本覆盖变量；手动诊断和 GUI 导出补充最多 16 个候选命令，沿用脱敏和轮换。更新程序后需点击一次「激活 PATH」生成带诊断的新脚本；脚本未被加载时无法产生用户会话记录。
 日志保存在本地，代理凭据、URL 查询参数与常见密钥会脱敏。详见[日志说明](docs/logging.md)。
 
 ## 许可证

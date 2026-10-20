@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"vsm/internal/config"
+	"vsm/internal/logging"
 	"vsm/internal/plugin"
 )
 
@@ -78,7 +79,14 @@ func sameCommandFile(a, b string) bool {
 // SetGlobalVersion updates the config only after shim generation succeeds. The
 // shim must point to this CLI, rather than a previously moved or outdated copy.
 // CLI callers may select an uninstalled version and receive a separate warning.
-func (a Activator) SetGlobalVersion(tool, version string) error {
+func (a Activator) SetGlobalVersion(tool, version string) (err error) {
+	if a.TraceID == "" {
+		a.TraceID = logging.NewOperationID()
+	}
+	fields := a.activationFields()
+	fields["tool"], fields["requested_version"] = tool, version
+	finish := logging.Start("activation", "global.save", fields)
+	defer func() { finish(err) }()
 	if a.Paths.ProjectMode == "local" || a.Paths.ProjectMode == "docker" {
 		return fmt.Errorf("隔离项目请设置项目版本，不使用全局默认")
 	}
@@ -94,8 +102,14 @@ func (a Activator) SetGlobalVersion(tool, version string) error {
 	if a.VsmExe == "" {
 		return fmt.Errorf("未找到配套 VSM CLI，请将新版 CLI 与 GUI 放在同一目录后重试")
 	}
-	if err := a.GenerateShims(); err != nil {
-		return fmt.Errorf("生成激活 shim 失败，全局配置未修改: %w", err)
+	shimFinish := logging.Start("activation", "shims.generate", fields)
+	shimErr := a.GenerateShims()
+	shimFinish(shimErr)
+	if shimErr != nil {
+		return fmt.Errorf("生成激活 shim 失败，全局配置未修改: %w", shimErr)
 	}
-	return config.SetIn(a.Paths.GlobalToolVersions(), tool, version)
+	configFinish := logging.Start("activation", "global.config.write", fields)
+	err = config.SetIn(a.Paths.GlobalToolVersions(), tool, version)
+	configFinish(err)
+	return err
 }

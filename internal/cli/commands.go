@@ -12,6 +12,7 @@ import (
 	"vsm/internal/config"
 	"vsm/internal/core"
 	"vsm/internal/database"
+	"vsm/internal/logging"
 	"vsm/internal/netcfg"
 	"vsm/internal/plugin"
 )
@@ -219,6 +220,8 @@ func (a *app) cmdUse(args []string) error {
 	tv.Set(tool, version)
 	var saveErr error
 	if global {
+		a.act.TraceID = logging.NewOperationID()
+		a.act.LogActivationSnapshot("cli-process", "before-global-save", "", a.cwd, []string{tool})
 		saveErr = a.act.SetGlobalVersion(tool, version)
 	} else {
 		saveErr = tv.Save(target)
@@ -228,6 +231,7 @@ func (a *app) cmdUse(args []string) error {
 	}
 	fmt.Printf("已设置 %s = %s （%s）\n", tool, version, target)
 	if global {
+		a.act.LogActivationSnapshot("cli-process", "after-global-save", "", a.cwd, []string{tool})
 		for _, warning := range a.act.ActivationStatus(tool, a.cwd).Warnings {
 			fmt.Println("提示:", warning)
 		}
@@ -466,13 +470,15 @@ func (a *app) cmdPathInit(args []string) error {
 		return err
 	}
 	if runtime.GOOS == "windows" {
-		res, err := core.PersistShimsPath(a.paths.Shims())
+		a.act.TraceID = logging.NewOperationID()
+		a.act.LogActivationSnapshot("cli-process", "before-path-init", "", a.cwd, nil)
+		res, err := core.PersistShimsPath(a.paths.Shims(), a.act.TraceID)
 		if err != nil {
 			return err
 		}
 		fmt.Println("用户 PATH（"+res+"）:", a.paths.Shims())
 		if len(args) == 0 || args[0] == "cmd" {
-			if _, err := core.PersistCmdHook(a.paths.Root); err != nil {
+			if _, err := core.PersistCmdHook(a.paths.Root, a.act.TraceID); err != nil {
 				return fmt.Errorf("用户 PATH 已写入，但 cmd 自动激活失败: %w", err)
 			}
 			command, err := core.CmdActivationCommand(a.paths.Root)
