@@ -6,8 +6,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"vsm/internal/core"
 )
 
 func TestCmdGlobalSelectionChangesInSameRunningSession(t *testing.T) {
@@ -61,19 +59,5 @@ func main(){exe,_:=os.Executable();fmt.Println(filepath.Base(filepath.Dir(filepa
 	}
 	if strings.Join(actual, ",") != "17.0.14,21.0.1,17.0.14" {
 		t.Fatalf("same-session switch: %s", out)
-	}
-	// The new visible terminal uses the same dynamic shims, not a static version
-	// bin ahead of them that would pin subsequent global selections.
-	paths := core.Paths{Root: home}
-	reg := core.Registry{Paths: paths}
-	act := core.Activator{Paths: paths, Registry: reg, Resolver: core.Resolver{Paths: paths, Registry: reg}, VsmExe: bin}
-	env, err := act.ActivatedTerminalEnvironment(project)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, entry := range env {
-		if strings.HasPrefix(strings.ToUpper(entry), "PATH=") && !strings.HasPrefix(entry[5:], paths.Shims()+";") {
-			t.Fatalf("terminal pinned static runtime: %s", entry)
-		}
 	}
 }

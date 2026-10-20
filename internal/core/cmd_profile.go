@@ -113,16 +113,4 @@ try {
 	return status, nil
 }
 
-// ActivatedTerminalEnvironment prepares a new session without changing the GUI
-// or an existing terminal. Shims stay before system tools and choose versions on
-// every invocation, including after a later global selection from the GUI.
-func (a Activator) ActivatedTerminalEnvironment(dir string) ([]string, error) {
-	plan, err := a.PlanEnvironment(dir)
-	if err != nil {
-		return nil, err
-	}
-	plan.Variables["VSM_HOME"] = a.Paths.Root
-	return buildEnv([]string{a.Paths.Shims(), filepath.Dir(a.VsmExe)}, plan.Variables), nil
-}
-
 func windowsCmdPath() string { return filepath.Join(os.Getenv("SystemRoot"), "System32", "cmd.exe") }

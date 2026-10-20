@@ -79,6 +79,7 @@ type App struct {
 	databaseCancel context.CancelFunc
 	dirMu          sync.RWMutex
 	projectDir     string // 「设为本目录」写入 .tool-versions 的目标目录；空表示尚未选择
+	cliInstaller   func(context.Context, string, string) (string, error)
 }
 
 // errBusy 在已有写操作进行中时返回给前端。
@@ -140,46 +141,66 @@ func samePath(a, b string) bool {
 	return a == b
 }
 
-// locateVsmCLI 尽力定位 vsm CLI 可执行文件，供 GUI 生成的 shim 用绝对路径调用：
-// 优先 GUI 同目录（macOS 即 VSM.app/Contents/MacOS，发行包已内置 CLI），
-// 其次 .app 同级目录与 PATH；都找不到返回空。
+// locateVsmCLI accepts only a matching release. A stale canonical name must not
+// hide an unrenamed official download beside the GUI or later on PATH.
 func locateVsmCLI() string {
-	name := "vsm"
-	if runtime.GOOS == "windows" {
-		name = "vsm.exe"
-	}
-	if exe, err := os.Executable(); err == nil {
-		dir := filepath.Dir(exe)
-		cands := []string{filepath.Join(dir, name)}
-		if runtime.GOOS == "darwin" {
-			if app := filepath.Dir(filepath.Dir(dir)); strings.HasSuffix(app, ".app") {
-				cands = append(cands, filepath.Join(filepath.Dir(app), name))
-			}
-		}
-		for _, cand := range cands {
-			if fi, err := os.Stat(cand); err == nil && !fi.IsDir() {
-				return cand
-			}
-		}
-	}
-	if p, err := exec.LookPath(name); err == nil {
-		return p
-	}
-	// 从 Finder/Dock 启动的 macOS 应用拿不到 shell 的 PATH，补查常见安装位置
-	if runtime.GOOS == "darwin" {
-		home, _ := os.UserHomeDir()
-		for _, cand := range []string{
-			"/opt/homebrew/bin/vsm",
-			"/usr/local/bin/vsm",
-			filepath.Join(home, ".local", "bin", "vsm"),
-			filepath.Join(home, "bin", "vsm"),
-		} {
-			if fi, err := os.Stat(cand); err == nil && !fi.IsDir() {
-				return cand
-			}
+	for _, cand := range vsmCLICandidates() {
+		if err := checkActivationCLI(cand); err == nil {
+			return cand
 		}
 	}
 	return ""
+}
+
+func vsmCLICandidates() []string {
+	name := "vsm"
+	ext := ""
+	if runtime.GOOS == "windows" {
+		name = "vsm.exe"
+		ext = ".exe"
+	}
+	names := []string{name, "vsm-" + runtime.GOOS + "-" + runtime.GOARCH + ext}
+	var dirs []string
+	if exe, err := os.Executable(); err == nil {
+		dir := filepath.Dir(exe)
+		dirs = append(dirs, dir)
+		if runtime.GOOS == "darwin" {
+			if app := filepath.Dir(filepath.Dir(dir)); strings.HasSuffix(app, ".app") {
+				dirs = append(dirs, filepath.Dir(app))
+			}
+		}
+	}
+	if paths, err := core.DefaultPaths(); err == nil {
+		dirs = append(dirs, filepath.Join(paths.Root, "runtime", "cli", buildinfo.DisplayVersion()))
+	}
+	dirs = append(dirs, filepath.SplitList(os.Getenv("PATH"))...)
+	// 从 Finder/Dock 启动的 macOS 应用拿不到 shell 的 PATH，补查常见安装位置
+	if runtime.GOOS == "darwin" {
+		home, _ := os.UserHomeDir()
+		dirs = append(dirs, "/opt/homebrew/bin", "/usr/local/bin", filepath.Join(home, ".local", "bin"), filepath.Join(home, "bin"))
+	}
+	var found []string
+	seen := map[string]bool{}
+	for _, dir := range dirs {
+		if dir == "" {
+			continue
+		}
+		for _, name := range names {
+			cand := filepath.Join(strings.Trim(dir, `"`), name)
+			key := cand
+			if runtime.GOOS == "windows" {
+				key = strings.ToLower(key)
+			}
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			if fi, err := os.Stat(cand); err == nil && fi.Mode().IsRegular() {
+				found = append(found, cand)
+			}
+		}
+	}
+	return found
 }
 
 // Platform 返回运行平台（windows / darwin / linux），前端据此做平台适配
@@ -221,7 +242,7 @@ func (a *App) emitUpdateProgress(progress updater.Progress) {
 
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
-	logging.Record("info", "gui", "app.started", logging.Fields{"platform": runtime.GOOS})
+	logging.Record("info", "gui", "app.started", logging.Fields{"platform": runtime.GOOS, "version": buildinfo.DisplayVersion(), "cli": a.c().act.VsmExe})
 	if err := a.c().initErr; err != nil {
 		logging.Record("error", "gui", "initialization.failed", logging.Fields{"error": err.Error()})
 	}
@@ -431,13 +452,27 @@ func (a *App) SetGlobal(tool, version string) (err error) {
 		return err
 	}
 	defer done()
-	c := a.c()
-	if err := checkActivationCLI(c.act.VsmExe); err != nil {
+	c, err := a.activationComponents()
+	if err != nil {
 		return err
+	}
+	selection := c.act
+	selection.Resolver.Pinned = map[string]string{tool: version}
+	executable, err := selection.Which(tool, a.resolveDir())
+	if err != nil {
+		return fmt.Errorf("所选安装不可用，全局默认未修改: %w", err)
+	}
+	actual, err := core.InspectToolPath(tool, executable)
+	if err != nil {
+		return fmt.Errorf("所选程序无法运行，全局默认未修改: %w", err)
+	}
+	if version != "" && strings.Trim(version, "0123456789.") == "" && core.BestMatch(version, []string{actual.Version}) == "" {
+		return fmt.Errorf("安装记录为 %s %s，程序实际报告 %s；请重新检测并纳管，全局默认未修改", tool, version, actual.Version)
 	}
 	if err := c.act.SetGlobalVersion(tool, version); err != nil {
 		return err
 	}
+	logging.Record("info", "gui", "version.global.selected", logging.Fields{"tool": tool, "version": version, "actual": actual.Version, "executable": executable, "cli": c.act.VsmExe})
 	status := c.act.ActivationStatus(tool, a.resolveDir())
 	for _, warning := range status.Warnings {
 		logging.Record("warn", "gui", "version.global.activation", logging.Fields{"tool": tool, "version": version, "warning": warning})
@@ -754,12 +789,9 @@ func (a *App) SetProxy(input string) (err error) {
 
 // PathInitResult 描述「激活 PATH」的结果。
 type PathInitResult struct {
-	Status     string                   `json:"status"` // added | exists
-	Target     string                   `json:"target"` // 写入位置：Windows 为「用户级 PATH」，其它平台为 shell 配置文件路径
-	Message    string                   `json:"message"`
-	Command    string                   `json:"command,omitempty"`
-	CmdCommand string                   `json:"cmd_command,omitempty"`
-	Check      *core.CmdActivationCheck `json:"check,omitempty"`
+	Status  string `json:"status"` // added | exists
+	Target  string `json:"target"` // 写入位置：Windows 为「用户级 PATH」，其它平台为 shell 配置文件路径
+	Message string `json:"message"`
 }
 
 func checkActivationCLI(path string) error {
@@ -802,11 +834,11 @@ func (a *App) PathInit() (result PathInitResult, err error) {
 		return PathInitResult{}, err
 	}
 	defer done()
-	c := a.c()
-	if err := c.paths.EnsureDirs(); err != nil {
+	c, err := a.activationComponents()
+	if err != nil {
 		return PathInitResult{}, err
 	}
-	if err := checkActivationCLI(c.act.VsmExe); err != nil {
+	if err := c.paths.EnsureDirs(); err != nil {
 		return PathInitResult{}, err
 	}
 	if err := c.act.GenerateShims(); err != nil {
@@ -824,48 +856,30 @@ func (a *App) PathInit() (result PathInitResult, err error) {
 		if _, err := core.PersistCmdHook(c.paths.Root); err != nil {
 			return PathInitResult{}, fmt.Errorf("用户 PATH 和 PowerShell 已配置，但 cmd 自动激活失败: %w", err)
 		}
-		cmdCommand, err := core.CmdActivationCommand(c.paths.Root)
-		if err != nil {
-			return PathInitResult{}, err
-		}
 		check, err := c.act.VerifyCmdActivation(a.resolveDir())
 		if err != nil {
 			return PathInitResult{}, fmt.Errorf("启动配置已写入，但 cmd 验证未通过: %w", err)
 		}
-		message := "已配置 cmd 和 PowerShell 自动激活。已通过 VSM 的 cmd，后续全局版本切换立即生效，无需反复激活或重开。尚未加载 VSM 的已有 cmd，可执行下方命令加载一次；新开的 cmd 自动配置。也可点击「打开已激活 cmd」直接使用。cmd /D 跳过启动配置，/V:ON 需使用 /V:OFF。"
+		message := "已配置终端激活，并执行验证了已选择的工具"
 		if len(profiles.Warnings) > 0 {
 			message += "\n" + strings.Join(profiles.Warnings, "\n")
 		}
 		if !check.Passed {
-			message = "cmd 启动配置已写入，但部分工具验证未通过，请查看自动检测结果。"
+			var problems []string
+			for _, row := range check.Tools {
+				if !row.Passed {
+					problems = append(problems, row.Tool+": "+row.Error)
+				}
+			}
+			return PathInitResult{}, fmt.Errorf("终端配置已写入，但实际执行验证失败: %s", strings.Join(problems, "；"))
 		}
-		logging.Record("info", "gui", "path.init.verified", logging.Fields{"shell": "cmd", "passed": check.Passed, "tools": len(check.Tools)})
-		return PathInitResult{Status: st, Target: "用户级 PATH、cmd 用户启动配置、" + strings.Join(profiles.Paths, "、"), Message: message, Command: core.PowerShellActivationCommand(c.act.VsmExe), CmdCommand: cmdCommand, Check: &check}, nil
+		for _, row := range check.Tools {
+			logging.Record("info", "gui", "path.command.verified", logging.Fields{"tool": row.Tool, "selected": row.Version, "actual": row.ActualVersion, "cli": c.act.VsmExe})
+		}
+		return PathInitResult{Status: st, Target: "用户级 PATH、cmd 用户启动配置、" + strings.Join(profiles.Paths, "、"), Message: message}, nil
 	}
 	rc, st, err := core.PersistShellHook(core.DefaultShell(), core.VsmCommand(c.act.VsmExe))
 	return PathInitResult{Status: st, Target: rc}, err
-}
-
-// OpenActivatedTerminal is explicitly requested by a GUI button. It starts a
-// visible, already configured cmd; it cannot mutate an existing terminal.
-func (a *App) OpenActivatedTerminal() (err error) {
-	defer logGUI("terminal.open", logging.Fields{"shell": "cmd"}, &err)()
-	done, err := a.begin()
-	if err != nil {
-		return err
-	}
-	defer done()
-	c := a.c()
-	if c.paths.ProjectMode == "local" || c.paths.ProjectMode == "docker" {
-		return fmt.Errorf("隔离项目请使用 vsm run")
-	}
-	if err := checkActivationCLI(c.act.VsmExe); err != nil {
-		return err
-	}
-	if err := c.act.GenerateShims(); err != nil {
-		return err
-	}
-	return c.act.OpenActivatedCmd(a.resolveDir())
 }
 
 // AdoptAll 纳管系统检测到的全部版本（跳过已纳管/已装），返回成功纳管数量。

@@ -22,7 +22,7 @@
 - 自动显示版本、来源、命令入口和所选程序；缺失安装、当前目录的同名程序会明确提示。
 - GUI 的旧 PATH 不再被当成其它终端的实际状态；配套 CLI 的超时、启动失败和版本不一致分别报告。
 
-下载 [v1.1.2 正式版](https://github.com/hquip/Vaelen/releases/tag/v1.1.2)，已有版本执行 `vsm update --gui`。更新后点击一次「激活 PATH」配置 cmd 自动激活。**从未加载 VSM 的已有 cmd 仍须加载一次弹窗中的 cmd 命令**；GUI 无法直接改写其它进程的环境。详见[发布说明](docs/releases/v1.1.2.md)。
+下载 [v1.1.2 正式版](https://github.com/hquip/Vaelen/releases/tag/v1.1.2)，已有版本执行 `vsm update --gui`。更新后点击一次「激活 PATH」配置 cmd 自动激活。**从未加载 VSM 的已有 cmd 仍须加载一次初始化脚本**；GUI 无法直接改写其它进程的环境。详见[Windows 激活说明](docs/system-runtimes.md#windows-全局切换与-cmd)。
 
 ## v1.1.1 数据库实例与已有环境修复
 
@@ -297,7 +297,7 @@ vsm path-init powershell  # 自动发现 Windows PowerShell / pwsh 配置位置�
 vsm activate powershell | Out-String | Invoke-Expression # 立即激活已有 PowerShell
 ```
 
-Windows 的系统 PATH 排在用户 PATH 前面；只写用户 PATH，可能仍命中系统 Java 等旧版本。「激活 PATH」/ `path-init` 会配置 cmd 和 PowerShell 启动钩子，把 VSM 放在系统工具之前，并自动验证已配置工具的命令入口。已经通过 VSM 的 cmd 后续全局切换即时生效，无需重开；从未加载 VSM 的已有 cmd 需执行弹窗中的 cmd 命令一次。PowerShell 随提示符刷新；不修改执行策略。GUI 的 PATH 不代表其它终端；IDE 需单独配置工具链。详见[Windows 激活说明](docs/system-runtimes.md#windows-全局切换与-cmd)。
+Windows 的系统 PATH 排在用户 PATH 前面；只写用户 PATH，可能仍命中系统 Java 等旧版本。「激活 PATH」/ `path-init` 会配置 cmd 和 PowerShell 启动钩子，把 VSM 放在系统工具之前，并实际执行工具核对版本。已经通过 VSM 的 cmd 后续全局切换即时生效，无需重开；从未加载 VSM 的已有 cmd 需加载一次初始化脚本。PowerShell 随提示符刷新；不修改执行策略。GUI 自动选择匹配的 CLI，缺少时下载同版本官方组件；不会直接使用 PATH 中的旧 CLI。详见[Windows 激活说明](docs/system-runtimes.md#windows-全局切换与-cmd)。
 
 全局默认是兜底设置：项目的 `vsm.json` / `.tool-versions` 和 `VSM_<TOOL>_VERSION` 仍有更高优先级。GUI 详情会分别显示全局默认、VSM 选择和 GUI 进程 PATH 命中位置，不代表所有终端都已切换。CLI 与 GUI 应使用同一版本，并放在同一目录；切换全局版本会更新 shim，避免继续调用旧 CLI。
 

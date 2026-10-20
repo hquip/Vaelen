@@ -18,7 +18,11 @@ import (
 func newTestApp(t *testing.T) *App {
 	t.Helper()
 	t.Setenv("VSM_HOME", t.TempDir())
-	return NewApp()
+	a := NewApp()
+	// Unit tests never fetch binaries from the public network. Tests of recovery
+	// install a deterministic matching-CLI provider explicitly.
+	a.cliInstaller = func(context.Context, string, string) (string, error) { return "", errors.New("test CLI unavailable") }
+	return a
 }
 
 // TestSetLocalRequiresProjectDir macOS 从 Finder 启动时工作目录是 "/"，
@@ -145,6 +149,14 @@ func TestSetGlobalRequiresMatchingCLIAndRefreshesShim(t *testing.T) {
 	if err := os.MkdirAll(toolDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
+	runtimeName, runtimeScript := "java", "#!/bin/sh\nprintf 'java version \"21.0.1\"\\n'\n"
+	if runtime.GOOS == "windows" {
+		runtimeName = "java.cmd"
+		runtimeScript = "@echo off\r\n@echo java version \"21.0.1\"\r\n"
+	}
+	if err := os.WriteFile(filepath.Join(toolDir, runtimeName), []byte(runtimeScript), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	if err := c.paths.EnsureDirs(); err != nil {
 		t.Fatal(err)
 	}
@@ -163,6 +175,21 @@ func TestSetGlobalRequiresMatchingCLIAndRefreshesShim(t *testing.T) {
 	if strings.Contains(string(data), "old-vsm") || !strings.Contains(string(data), bin) {
 		t.Fatalf("stale shim: %s", data)
 	}
+	// A directory label is not proof of the runtime's version. Preserve the old
+	// default when a "17" record actually contains Java 21.
+	badDir := filepath.Join(c.paths.InstallDir("java", "17"), "bin")
+	if err := os.MkdirAll(badDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(badDir, runtimeName), []byte(runtimeScript), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.SetGlobal("java", "17"); err == nil || !strings.Contains(err.Error(), "实际报告") {
+		t.Fatalf("mislabelled runtime accepted: %v", err)
+	}
+	if cfg, err := os.ReadFile(c.paths.GlobalToolVersions()); err != nil || !strings.Contains(string(cfg), "java 21") {
+		t.Fatalf("mismatch changed default: %s %v", cfg, err)
+	}
 	// The same helper must refuse a previous build before changing activation state.
 	old := filepath.Join(t.TempDir(), filepath.Base(bin))
 	cmd = exec.Command("go", "build", "-ldflags", "-X vsm/internal/buildinfo.Version=0.1.0", "-o", old, "vsm")
@@ -170,6 +197,7 @@ func TestSetGlobalRequiresMatchingCLIAndRefreshesShim(t *testing.T) {
 		t.Fatalf("build legacy CLI: %v %s", err, out)
 	}
 	c.act.VsmExe = old
+	a.cliInstaller = func(context.Context, string, string) (string, error) { return old, nil }
 	if err := a.SetGlobal("java", "17"); err == nil || !strings.Contains(err.Error(), "版本不一致") {
 		t.Fatalf("legacy CLI accepted: %v", err)
 	}

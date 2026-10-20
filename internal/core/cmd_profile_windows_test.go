@@ -14,6 +14,36 @@ import (
 	"vsm/internal/config"
 )
 
+func executingActivationFixture(t *testing.T) (Activator, []byte) {
+	t.Helper()
+	a := activationFixture(t)
+	source := filepath.Join(t.TempDir(), "runtime.go")
+	program := `package main
+import("fmt";"os";"path/filepath";"strings")
+func main(){exe,_:=os.Executable();name:=strings.ToLower(filepath.Base(exe));version:=filepath.Base(filepath.Dir(exe));if name=="java.exe"{version=filepath.Base(filepath.Dir(filepath.Dir(exe)));fmt.Printf("java version %q\n",version)}else if name=="python.exe"{fmt.Println("Python "+version)}else{fmt.Println("v"+version)}}`
+	if err := os.WriteFile(source, []byte(program), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	native := filepath.Join(t.TempDir(), "fixture.exe")
+	if out, err := exec.Command("go", "build", "-o", native, source).CombinedOutput(); err != nil {
+		t.Fatalf("runtime fixture: %v %s", err, out)
+	}
+	data, err := os.ReadFile(native)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, version := range []string{"17.0.12", "21.0.1"} {
+		if err := os.WriteFile(filepath.Join(a.Paths.InstallDir("java", version), "bin", "java.exe"), data, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	a.VsmExe = filepath.Join(t.TempDir(), "vsm.exe")
+	if out, err := exec.Command("go", "build", "-o", a.VsmExe, "vsm").CombinedOutput(); err != nil {
+		t.Fatalf("CLI fixture: %v %s", err, out)
+	}
+	return a, data
+}
+
 func runRegistryScript(t *testing.T, script string) string {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -142,13 +172,13 @@ func TestCmdHookRejectsExpansionBeforeWriting(t *testing.T) {
 }
 
 func TestCmdActivationDiscoversAllConfiguredTools(t *testing.T) {
-	a := activationFixture(t)
+	a, data := executingActivationFixture(t)
 	if err := a.SetGlobalVersion("java", "17.0.12"); err != nil {
 		t.Fatal(err)
 	}
 	for _, tool := range []string{"node", "python"} {
 		file := filepath.Join(a.Paths.InstallDir(tool, "1.2.3"), tool+".exe")
-		if err := config.WriteFileAtomic(file, []byte("fixture"), 0o755); err != nil {
+		if err := config.WriteFileAtomic(file, data, 0o755); err != nil {
 			t.Fatal(err)
 		}
 		if err := a.SetGlobalVersion(tool, "1.2.3"); err != nil {
@@ -191,5 +221,30 @@ func TestCmdActivationDiscoversAllConfiguredTools(t *testing.T) {
 		if row.Tool == "python" && row.Error == "" {
 			t.Fatal("missing explanation")
 		}
+	}
+}
+
+func TestCmdActivationRejectsWrongRuntimeBehindShim(t *testing.T) {
+	a, _ := executingActivationFixture(t)
+	if err := a.SetGlobalVersion("java", "17.0.12"); err != nil {
+		t.Fatal(err)
+	}
+	if err := config.WriteFileAtomic(filepath.Join(a.Paths.Root, "vsm-cmd-init.cmd"), []byte(cmdStartupScript(a.Paths.Root)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// The path is a perfectly valid VSM shim, but its dispatcher returns the
+	// wrong runtime. Checking only its location must not count as success.
+	if err := os.WriteFile(filepath.Join(a.Paths.Shims(), "java.cmd"), []byte("@echo off\r\n@echo java version \"21.0.1\"\r\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	check, err := a.VerifyCmdActivation(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if check.Passed {
+		t.Fatalf("false success for Java 17 selection executing Java 21: %+v", check)
+	}
+	if len(check.Tools) != 1 || !strings.Contains(check.Tools[0].Error, "21.0.1") || !strings.Contains(check.Tools[0].Error, "17.0.12") {
+		t.Fatalf("did not compare actual versions: %+v", check)
 	}
 }

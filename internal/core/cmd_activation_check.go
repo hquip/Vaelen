@@ -8,12 +8,14 @@ type CmdActivationCheck struct {
 }
 
 type CmdToolActivation struct {
-	Tool       string `json:"tool"`
-	Version    string `json:"version"`
-	Source     string `json:"source"`
-	Before     string `json:"before"`
-	Command    string `json:"command"`
-	Executable string `json:"executable"`
-	Passed     bool   `json:"passed"`
-	Error      string `json:"error,omitempty"`
+	Tool            string `json:"tool"`
+	Version         string `json:"version"`
+	Source          string `json:"source"`
+	Before          string `json:"before"`
+	Command         string `json:"command"`
+	Executable      string `json:"executable"`
+	ActualVersion   string `json:"actual_version,omitempty"`
+	ExpectedVersion string `json:"expected_version,omitempty"`
+	Passed          bool   `json:"passed"`
+	Error           string `json:"error,omitempty"`
 }

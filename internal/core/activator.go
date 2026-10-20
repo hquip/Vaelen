@@ -120,6 +120,21 @@ func (a Activator) GenerateShims() error {
 	if err := os.MkdirAll(a.Paths.Shims(), 0o755); err != nil {
 		return err
 	}
+	// Keep the vsm command on the same dispatcher as the language shims. An old
+	// vsm.exe elsewhere on PATH must not regenerate them back to an older CLI.
+	if a.VsmExe != "" {
+		name, content := "vsm", "#!/bin/sh\nexec "+quotePOSIX(a.VsmExe)+" \"$@\"\n"
+		if runtime.GOOS == "windows" {
+			name = "vsm.cmd"
+			content = "@echo off\r\n\"" + quoteCmd(a.VsmExe) + "\" %*\r\n"
+		}
+		if sameDir(filepath.Dir(a.VsmExe), a.Paths.Shims()) {
+			return fmt.Errorf("CLI 不能位于 shims 目录，否则会递归调用自身")
+		}
+		if err := a.saveShim(name, content, 0o755); err != nil {
+			return err
+		}
+	}
 	tools, err := a.Registry.Tools()
 	if err != nil {
 		return err

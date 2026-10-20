@@ -249,7 +249,16 @@ func probeVersion(tool, bin string) (version string, err error) {
 			return version, nil
 		}
 	}
+	return probeVersionCommand(tool, bin, nil, "")
+}
+
+// probeVersionCommand always executes the supplied command. Activation checks
+// must exercise the shim/dispatcher chain instead of reading target metadata.
+func probeVersionCommand(tool, bin string, env []string, dir string) (string, error) {
 	flags := []string{"--version", "version", "-version"}
+	if tool == "go" {
+		flags = []string{"version"}
+	}
 	if tool == "maven" {
 		flags = []string{"--version", "-version"}
 	}
@@ -270,13 +279,22 @@ func probeVersion(tool, bin string) (version string, err error) {
 			probeArgs = []string{"--no-defaults", flag}
 		}
 		c := exec.CommandContext(ctx, bin, probeArgs...)
+		c.Dir = dir
+		c.Env = env
 		mcpserver.ConfigureProcess(c)
 		c.WaitDelay = 250 * time.Millisecond
 		if err := configureVersionProbe(c, bin, flag); err != nil {
 			cancel()
 			return "", err
 		}
-		if tool == "python" {
+		if tool == "go" {
+			base := env
+			if base == nil {
+				base = os.Environ()
+			}
+			c.Env = goProbeEnv(base)
+		}
+		if tool == "python" && env == nil {
 			root := filepath.Dir(bin)
 			if filepath.Base(root) == "bin" || strings.EqualFold(filepath.Base(root), "Scripts") {
 				root = filepath.Dir(root)

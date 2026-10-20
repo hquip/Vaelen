@@ -573,7 +573,7 @@ function renderDetail(tool) {
   const hint = projectMode === "local" || projectMode === "docker"
     ? `<p class="act-hint">项目隔离模式：在项目目录使用 <code>vsm run -- &lt;命令&gt;</code>，不会修改系统 PATH。可在「隔离环境 / MCP」生成 AI 客户端配置。</p>`
     : installedCount
-    ? `<p class="act-hint">终端需执行激活脚本：PowerShell 用 <code>vsm activate powershell | Out-String | Invoke-Expression</code>；bash/zsh 用 <code>eval &quot;$(vsm activate bash)&quot;</code>（zsh 替换 shell 名）。点击「激活 PATH」配置后续终端；已打开的终端需重新激活。全局默认不会覆盖项目或环境变量。</p>`
+    ? `<p class="act-hint">全局默认用于未指定项目版本的目录；项目配置和环境变量仍优先。</p>`
     : "";
 
   let versHtml;
@@ -603,7 +603,7 @@ function renderDetail(tool) {
     ${cards}
     ${databaseTool ? `<div class="section"><p class="project-hint">本页管理数据库程序与命令路径。运行中的服务版本、端口和独立数据，请通过数据库实例入口切换。</p><button id="openDatabaseTool" class="primary-btn">管理 ${escapeHtml(tool)} 实例与版本</button></div>` : ""}
     ${hint}
-    ${s.activation ? `<div class="act-hint"><strong>全局默认：</strong>${escapeHtml(s.activation.global || "未设置")}<br /><strong>VSM 选择的程序：</strong><code>${escapeHtml(s.activation.executable || "未找到")}</code><br /><strong>GUI 进程 PATH 命中：</strong><code>${escapeHtml(s.activation.command || "未找到")}</code>${(s.activation.warnings || []).map(w => `<p>${escapeHtml(w)}</p>`).join("")}</div>` : ""}
+    ${s.activation ? `<details class="act-hint"><summary>版本来源与命令路径</summary><strong>全局默认：</strong>${escapeHtml(s.activation.global || "未设置")}<br /><strong>VSM 选择的程序：</strong><code>${escapeHtml(s.activation.executable || "未找到")}</code><br /><strong>GUI 启动时的 PATH：</strong><code>${escapeHtml(s.activation.command || "未找到")}</code>${(s.activation.warnings || []).map(w => `<p>${escapeHtml(w)}</p>`).join("")}</details>` : ""}
 
     ${projectMode === "docker" ? `
     <div class="section">
@@ -962,6 +962,8 @@ async function pickProjectDir(tool) {
 }
 
 async function onVerAction(tool, act, ver) {
+  const buttons = act === "global" ? [...document.querySelectorAll('[data-act="global"]')] : [];
+  buttons.forEach(button => button.disabled = true);
   try {
     if (act === "local") {
       try {
@@ -975,7 +977,7 @@ async function onVerAction(tool, act, ver) {
       toast(`已设 ${tool} = ${ver}（${curDir}）`);
     } else if (act === "global") {
       await call("SetGlobal", tool, ver);
-      toast(`已保存 ${tool} 全局默认 = ${ver}；终端需激活，项目配置仍优先`);
+      toast(`已设置 ${tool} 全局默认 = ${ver}`);
     } else if (act === "uninstall") {
       await call("Uninstall", tool, ver);
       toast(`已卸载 ${tool} ${ver}`);
@@ -984,11 +986,20 @@ async function onVerAction(tool, act, ver) {
     renderDetail(tool);
   } catch (e) {
     toast(errMsg(e), true);
+  } finally {
+    buttons.forEach(button => button.disabled = false);
   }
 }
 
 function bindEvents() {
   if (window.runtime && typeof window.runtime.EventsOn === "function") {
+    window.runtime.EventsOn("path:progress", progress => {
+      const button = document.getElementById("pathBtn");
+      if (button.disabled && progress.stage === "downloading") {
+        const percent = progress.total > 0 ? Math.floor(100 * progress.downloaded / progress.total) : 0;
+        button.textContent = `准备运行组件 ${percent}%`;
+      }
+    });
     window.runtime.EventsOn("update:progress", progress => { if (updateRunning) renderUpdateProgress(progress); });
     window.runtime.EventsOn("install:progress", (msg) => {
       const log = document.getElementById("installLog");
@@ -1083,78 +1094,23 @@ document.getElementById("proxyInput").addEventListener("keydown", (e) => {
   else if (e.key === "Escape") closeProxyModal();
 });
 document.getElementById("pathBtn").addEventListener("click", async () => {
-  const modal = document.getElementById("activationModal");
-  const message = document.getElementById("activationMessage");
-  const error = document.getElementById("activationError");
   const button = document.getElementById("pathBtn");
+  const label = button.textContent;
   button.disabled = true;
-  modal.classList.remove("hidden");
-  message.textContent = "正在配置终端激活…";
-  error.textContent = "";
-  error.classList.add("hidden");
-  document.getElementById("activationTarget").textContent = "";
-  document.getElementById("activationCommandWrap").classList.add("hidden");
-  document.getElementById("activationCopy").disabled = true;
-  document.getElementById("activationOpen").disabled = true;
-  document.getElementById("activationOpen").classList.add("hidden");
-  document.getElementById("activationCmdWrap").classList.add("hidden");
-  document.getElementById("activationReport").textContent = "";
-  document.getElementById("activationReport").classList.add("hidden");
+  button.textContent = "正在配置并验证…";
   try {
     const res = (await call("PathInit")) || {};
-    message.textContent = res.message || (res.status === "added"
-      ? `已写入 ${res.target}，新开终端生效`
-      : `${res.target || "PATH"} 中已配置 vsm`);
-    document.getElementById("activationTarget").textContent = res.target ? "配置位置：" + res.target : "";
-    document.getElementById("activationCommand").value = res.command || "";
-    document.getElementById("activationCommandWrap").classList.toggle("hidden", !res.command);
-    document.getElementById("activationCopy").disabled = !res.command;
-    document.getElementById("activationCmdCommand").value = res.cmd_command || "";
-    document.getElementById("activationCmdWrap").classList.toggle("hidden", !res.cmd_command);
-    document.getElementById("activationOpen").classList.toggle("hidden", !res.cmd_command);
-    document.getElementById("activationOpen").disabled = !res.cmd_command;
-    if (res.check) {
-      const report = document.getElementById("activationReport");
-      report.classList.remove("hidden");
-      report.textContent = (res.check.passed ? "cmd 自动激活验证通过" : "cmd 自动激活验证发现问题") + "（独立测试进程）";
-      for (const tool of res.check.tools || []) {
-        const row = document.createElement("p");
-        row.textContent = `${tool.passed ? "✓" : "✗"} ${tool.tool} ${tool.version || "未匹配版本"} · ${tool.source || "未设置"}\n命令入口：${tool.command || "未找到"}\n所选程序：${tool.executable || "未找到"}${tool.error ? "\n原因：" + tool.error : ""}`;
-        row.style.whiteSpace = "pre-wrap";
-        report.appendChild(row);
-      }
-    }
+    toast(res.message || "终端激活已配置");
+    await load();
+    if (selected) renderDetail(selected);
   } catch (e) {
-    message.textContent = "激活未完成，请按下面的原因处理后重试。";
-    error.textContent = errMsg(e);
-    error.classList.remove("hidden");
+    toast(errMsg(e), true);
   } finally {
     button.disabled = false;
+    button.textContent = label;
   }
 });
-document.getElementById("activationClose").addEventListener("click", () => {
-  document.getElementById("activationModal").classList.add("hidden");
-});
-document.getElementById("activationCopy").addEventListener("click", async () => {
-  const input = document.getElementById("activationCommand");
-  try { await navigator.clipboard.writeText(input.value); toast("激活命令已复制，请在 PowerShell 中执行"); }
-  catch (_) { input.focus(); input.select(); toast("请按 Ctrl+C（macOS 用 ⌘C）复制激活命令"); }
-});
 
-document.getElementById("activationCmdCopy").addEventListener("click", async () => {
-  const input = document.getElementById("activationCmdCommand");
-  try { await navigator.clipboard.writeText(input.value); toast("cmd 激活命令已复制"); }
-  catch (_) { input.focus(); input.select(); toast("请按 Ctrl+C 复制 cmd 激活命令"); }
-});
-
-document.getElementById("activationOpen").addEventListener("click", async e => {
-  e.target.disabled = true;
-  const error = document.getElementById("activationError");
-  error.classList.add("hidden");
-  try { await call("OpenActivatedTerminal"); toast("已打开激活的 cmd，可直接运行 java -version"); }
-  catch (err) { error.textContent = errMsg(err); error.classList.remove("hidden"); }
-  finally { e.target.disabled = false; }
-});
 document.getElementById("setRootBtn").addEventListener("click", async (e) => {
   e.stopPropagation();
   try {
