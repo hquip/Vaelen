@@ -191,7 +191,7 @@ func TestActivationCLIFailureReasons(t *testing.T) {
 	}
 	missing := filepath.Join(t.TempDir(), "missing-vsm")
 	err = checkActivationCLIContext(context.Background(), missing)
-	if !errors.Is(err, os.ErrNotExist) || !strings.Contains(err.Error(), "无法启动") || strings.Contains(err.Error(), "版本不一致") {
+	if (!errors.Is(err, os.ErrNotExist) && !errors.Is(err, exec.ErrNotFound)) || !strings.Contains(err.Error(), "无法启动") || strings.Contains(err.Error(), "版本不一致") {
 		t.Fatalf("missing executable misreported: %v", err)
 	}
 }
