@@ -15,6 +15,15 @@
 > 镜像切换、网络代理设置、安装进度条、当前目录 local 设置、一键写入用户级 PATH。
 > **macOS 版为 Universal 通用二进制**（Apple Silicon + Intel），隐藏式标题栏 + 原生菜单，内置 CLI，一个 `.app` 开箱即用。
 
+## v1.1.3 CLI 配套与版本执行修复
+
+- **修复旧 CLI 误选**：识别同目录标准名和 GitHub 原始下载文件名，校验版本后使用，跳过 PATH 中的旧副本。缺少组件时，自动下载与 GUI 同版本的官方 CLI，校验后放到 GUI 旁边。
+- **统一命令入口**：`vsm` 与语言 shim 使用同一份 CLI，避免旧 `vsm` 将 shim 写回旧路径。
+- **验证实际执行**：全局设置前读取目标程序版本；激活检查实际执行未限定路径的命令，按 cmd / PATHEXT 规则对比输出，不再只凭 shim 文件存在报告成功。
+- **简化界面**：移除终端激活弹窗和新开 cmd 按钮；点击后显示简短结果，路径详情默认折叠，日志保留 CLI 来源与实际版本。
+
+下载 [v1.1.3 正式版](https://github.com/hquip/Vaelen/releases/tag/v1.1.3)；已有版本执行 `vsm update --gui`。Windows 手动下载时，将 GUI 和对应 CLI 放在同一目录，CLI 保持官方文件名也可使用；升级后点击一次「激活 PATH」更新命令入口。详见[发布说明](docs/releases/v1.1.3.md)。
+
 ## v1.1.2 Windows 终端自动激活
 
 - 点击「激活 PATH」自动配置 cmd、PowerShell，按已配置工具生成 shims 并验证命令入口，无需手填安装路径。
@@ -22,7 +31,7 @@
 - 自动显示版本、来源、命令入口和所选程序；缺失安装、当前目录的同名程序会明确提示。
 - GUI 的旧 PATH 不再被当成其它终端的实际状态；配套 CLI 的超时、启动失败和版本不一致分别报告。
 
-下载 [v1.1.2 正式版](https://github.com/hquip/Vaelen/releases/tag/v1.1.2)，已有版本执行 `vsm update --gui`。更新后点击一次「激活 PATH」配置 cmd 自动激活。**从未加载 VSM 的已有 cmd 仍须加载一次初始化脚本**；GUI 无法直接改写其它进程的环境。详见[Windows 激活说明](docs/system-runtimes.md#windows-全局切换与-cmd)。
+**从未加载 VSM 的已有 cmd 仍须加载一次初始化脚本**；GUI 无法直接改写其它进程的环境。详见[Windows 激活说明](docs/system-runtimes.md#windows-全局切换与-cmd)。
 
 ## v1.1.1 数据库实例与已有环境修复
 
@@ -169,7 +178,7 @@ sudo ln -sf /Applications/VSM.app/Contents/MacOS/vsm /usr/local/bin/vsm
 自行打包（需在 Mac 上，产出与 Release 相同的通用版 zip）：
 
 ```bash
-bash scripts/package-macos.sh 1.1.2 dist
+bash scripts/package-macos.sh 1.1.3 dist
 ```
 
 > 打 `v*` tag 即可由 GitHub Actions 在 Windows / macOS / Linux 三个 runner 上分别本地编译，
