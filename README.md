@@ -15,6 +15,12 @@
 > 镜像切换、网络代理设置、安装进度条、当前目录 local 设置、一键写入用户级 PATH。
 > **macOS 版为 Universal 通用二进制**（Apple Silicon + Intel），隐藏式标题栏 + 原生菜单，内置 CLI，一个 `.app` 开箱即用。
 
+## v1.1.7 Redis 版本输出后的超时修复
+
+修复 Redis 已输出完整版本、等待进程退出超时后仍显示「版本读取失败」的问题。只读系统检测和手动添加路径会保留完整版本，超时仍终止探测进程并记录诊断；实际命令执行验证仍要求正常结束。
+
+下载 [v1.1.7 正式版](https://github.com/hquip/Vaelen/releases/tag/v1.1.7)，或使用 GUI「检查 VSM 更新」/ `vsm update --gui`。升级后点击「系统检测 → 重新检测」。详见[发布说明](docs/releases/v1.1.7.md)。
+
 ## v1.1.6 自动代理与国内下载源
 
 - **优先本机代理**：自动读取 Windows/macOS 系统本机代理，并检查常见 HTTP/SOCKS5 端口，验证隧道可用后使用，保留手动设置。
@@ -204,7 +210,7 @@ sudo ln -sf /Applications/VSM.app/Contents/MacOS/vsm /usr/local/bin/vsm
 自行打包（需在 Mac 上，产出与 Release 相同的通用版 zip）：
 
 ```bash
-bash scripts/package-macos.sh 1.1.6 dist
+bash scripts/package-macos.sh 1.1.7 dist
 ```
 
 > 打 `v*` tag 即可由 GitHub Actions 在 Windows / macOS / Linux 三个 runner 上分别本地编译，

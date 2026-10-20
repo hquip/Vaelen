@@ -250,12 +250,16 @@ func probeVersion(tool, bin string) (version string, err error) {
 			return version, nil
 		}
 	}
-	return probeVersionCommand(tool, bin, nil, "")
+	return runVersionProbe(tool, bin, nil, "", true)
 }
 
 // probeVersionCommand always executes the supplied command. Activation checks
 // must exercise the shim/dispatcher chain instead of reading target metadata.
 func probeVersionCommand(tool, bin string, env []string, dir string) (string, error) {
+	return runVersionProbe(tool, bin, env, dir, false)
+}
+
+func runVersionProbe(tool, bin string, env []string, dir string, discovery bool) (string, error) {
 	flags := []string{"--version", "version", "-version"}
 	if tool == "go" {
 		flags = []string{"version"}
@@ -321,10 +325,21 @@ func probeVersionCommand(tool, bin string, env []string, dir string) (string, er
 		var output probeOutput
 		c.Stdout, c.Stderr = &output, &output
 		err := c.Run()
-		if ctx.Err() != nil {
+		timedOut := ctx.Err() != nil
+		if timedOut {
 			err = fmt.Errorf("版本探测超时")
 		}
 		cancel()
+		// Some Windows Redis probes print their version but do not complete
+		// before the deadline. The timeout still terminates the probe process;
+		// discovery can use its complete banner without waiting for a second
+		// identical timeout. Command execution verification stays strict.
+		if discovery && tool == "redis" && timedOut {
+			if version := completeRedisVersionBanner(output.text); version != "" {
+				logging.Record("warn", "detect", "redis.exit_timeout", logging.Fields{"path": bin, "version": version, "flag": flag, "detail": "已读取完整版本；探测进程退出超时并已终止"})
+				return version, nil
+			}
+		}
 		message := strings.Join(strings.Fields(output.text), " ")
 		if len(message) > 512 {
 			message = message[:512]
@@ -365,6 +380,19 @@ var specificProbePatterns = map[string]*regexp.Regexp{
 	"maven":  regexp.MustCompile(`(?m)^Apache Maven\s+(\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?)`),
 	"python": regexp.MustCompile(`(?m)^Python\s+(\d+\.\d+(?:\.\d+)?(?:(?:a|b|rc)\d+)?)`),
 	"redis":  regexp.MustCompile(`(?im)^Redis server\s+v=(\d+(?:\.\d+)+(?:[-+][0-9A-Za-z.-]+)?)(?:\s|$)`),
+}
+
+// Timeout recovery requires a complete Redis server banner ending in a line
+// break. A truncated version, allocator/OS diagnostic, or client version is
+// insufficient. Successful commands retain the ordinary version parser above.
+var completeRedisBanner = regexp.MustCompile(`(?im)^Redis server[ \t]+v=(\d+(?:\.\d+)+(?:[-+][0-9A-Za-z.-]+)?)[ \t]+sha=\S+[ \t]+malloc=\S+[ \t]+bits=(?:32|64)(?:[ \t]+build=\S+)?[ \t]*\r?\n`)
+
+func completeRedisVersionBanner(output string) string {
+	text := probeANSIEscape.ReplaceAllString(output, "")
+	if match := completeRedisBanner.FindStringSubmatch(text); match != nil {
+		return match[1]
+	}
+	return ""
 }
 
 type probeOutput struct{ text string }
