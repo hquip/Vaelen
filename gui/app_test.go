@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"os"
 	"os/exec"
@@ -9,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"vsm/internal/core"
 )
@@ -174,6 +176,23 @@ func TestSetGlobalRequiresMatchingCLIAndRefreshesShim(t *testing.T) {
 	data, _ = os.ReadFile(c.paths.GlobalToolVersions())
 	if !strings.Contains(string(data), "java 21") {
 		t.Fatalf("failed switch changed default: %s", data)
+	}
+}
+
+func TestActivationCLIFailureReasons(t *testing.T) {
+	// An actual deadline remains distinguishable from a mismatched binary. The
+	// pre-expired context makes this deterministic without sleeping or launching
+	// an unbounded child process on a busy Windows runner.
+	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+	defer cancel()
+	err := checkActivationCLIContext(ctx, os.Args[0])
+	if !errors.Is(err, context.DeadlineExceeded) || !strings.Contains(err.Error(), "超时") || strings.Contains(err.Error(), "版本不一致") {
+		t.Fatalf("timeout misreported: %v", err)
+	}
+	missing := filepath.Join(t.TempDir(), "missing-vsm")
+	err = checkActivationCLIContext(context.Background(), missing)
+	if (!errors.Is(err, os.ErrNotExist) && !errors.Is(err, exec.ErrNotFound)) || !strings.Contains(err.Error(), "无法启动") || strings.Contains(err.Error(), "版本不一致") {
+		t.Fatalf("missing executable misreported: %v", err)
 	}
 }
 

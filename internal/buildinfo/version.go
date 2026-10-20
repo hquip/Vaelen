@@ -4,6 +4,6 @@ package buildinfo
 import "strings"
 
 // Version is overridden by release builds using -ldflags -X.
-var Version = "1.1.1"
+var Version = "1.1.2"
 
 func DisplayVersion() string { return "v" + strings.TrimPrefix(Version, "v") }

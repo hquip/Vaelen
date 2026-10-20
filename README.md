@@ -15,6 +15,15 @@
 > 镜像切换、网络代理设置、安装进度条、当前目录 local 设置、一键写入用户级 PATH。
 > **macOS 版为 Universal 通用二进制**（Apple Silicon + Intel），隐藏式标题栏 + 原生菜单，内置 CLI，一个 `.app` 开箱即用。
 
+## v1.1.2 Windows 终端自动激活
+
+- 点击「激活 PATH」自动配置 cmd、PowerShell，按已配置工具生成 shims 并验证命令入口，无需手填安装路径。
+- 已通过 VSM 的同一 cmd，后续全局切换无需重开；cmd 原有启动命令会保留，重复配置不累积。
+- 自动显示版本、来源、命令入口和所选程序；缺失安装、当前目录的同名程序会明确提示。
+- GUI 的旧 PATH 不再被当成其它终端的实际状态；配套 CLI 的超时、启动失败和版本不一致分别报告。
+
+下载 [v1.1.2 正式版](https://github.com/hquip/Vaelen/releases/tag/v1.1.2)，已有版本执行 `vsm update --gui`。更新后点击一次「激活 PATH」配置 cmd 自动激活。**从未加载 VSM 的已有 cmd 仍须加载一次弹窗中的 cmd 命令**；GUI 无法直接改写其它进程的环境。详见[发布说明](docs/releases/v1.1.2.md)。
+
 ## v1.1.1 数据库实例与已有环境修复
 
 - **数据库版本切换**：PostgreSQL、MySQL、MariaDB、Redis、Valkey，支持 Docker 官方镜像和已安装原生程序；GUI 左侧新增「数据库版本 / 实例」。
@@ -31,8 +40,6 @@ vsm db list --json
 ```
 
 数据库切换会短暂重启服务，新版本使用独立数据；跨版本数据迁移需要另行备份、导入。原生方式需要完整的服务端与客户端程序；Docker 方式需要已启动的 Docker。详见[数据库说明](docs/databases.md)和[发布说明](docs/releases/v1.1.1.md)。
-
-下载 [v1.1.1 正式版](https://github.com/hquip/Vaelen/releases/tag/v1.1.1)；已有版本可运行 `vsm update --gui` 同步更新 CLI 和 GUI。
 
 ## v1.1.0 项目工作台
 
@@ -162,7 +169,7 @@ sudo ln -sf /Applications/VSM.app/Contents/MacOS/vsm /usr/local/bin/vsm
 自行打包（需在 Mac 上，产出与 Release 相同的通用版 zip）：
 
 ```bash
-bash scripts/package-macos.sh 1.1.1 dist
+bash scripts/package-macos.sh 1.1.2 dist
 ```
 
 > 打 `v*` tag 即可由 GitHub Actions 在 Windows / macOS / Linux 三个 runner 上分别本地编译，

@@ -763,17 +763,28 @@ type PathInitResult struct {
 }
 
 func checkActivationCLI(path string) error {
+	// Fresh downloads may be held briefly by the platform's first-run scanner.
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	return checkActivationCLIContext(ctx, path)
+}
+
+func checkActivationCLIContext(ctx context.Context, path string) error {
 	if path == "" {
 		return fmt.Errorf("未找到配套 CLI，请将新版 vsm 与 GUI 放在同一目录")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
 	cmd := exec.CommandContext(ctx, path, "version")
 	mcpserver.ConfigureProcess(cmd)
 	cmd.WaitDelay = time.Second
 	out, err := cmd.Output()
-	if err != nil || strings.TrimSpace(string(out)) != "vsm "+buildinfo.DisplayVersion() {
-		return fmt.Errorf("CLI 与 GUI 版本不一致或无法读取：%s；请同时更新 CLI 和 GUI（GUI %s），并放在同一目录", path, buildinfo.DisplayVersion())
+	if err != nil {
+		if ctx.Err() != nil {
+			return fmt.Errorf("读取配套 CLI 版本超时或已取消：%s；请稍后重试: %w", path, ctx.Err())
+		}
+		return fmt.Errorf("无法启动配套 CLI：%s；请检查文件是否可执行或仍被占用: %w", path, err)
+	}
+	if strings.TrimSpace(string(out)) != "vsm "+buildinfo.DisplayVersion() {
+		return fmt.Errorf("CLI 与 GUI 版本不一致：%s；请同时更新 CLI 和 GUI（GUI %s），并放在同一目录", path, buildinfo.DisplayVersion())
 	}
 	return nil
 }
