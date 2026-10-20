@@ -22,9 +22,13 @@ vsm use -g python office-python
 
 点击 GUI「激活 PATH」会配置用户 PATH、cmd AutoRun 和 PowerShell 启动钩子。新开的 cmd 自动把 VSM shims 放到系统 Java 等工具之前，不修改系统 PATH 或原安装。
 
+GUI 会识别同目录的标准 CLI 文件名和 GitHub 原始下载文件名，并校验与 GUI 的版本一致；PATH 中的旧版本会被跳过。缺少匹配组件时，从对应的官方 Release 下载并校验 CLI，以官方文件名保存在 GUI 旁边，不覆盖其它位置或同目录标准名的旧 CLI。程序目录需要可写。激活后 `vsm` 和语言命令使用同一份 CLI。
+
+点击后只显示简短结果。验证会实际执行命令、对比所选程序与 shim 的版本输出；结果、CLI 来源和失败原因保存在日志中，路径详情可在语言页展开。仅存在 shim 文件不会被视为验证通过。
+
 已经通过 VSM shim 的 cmd，GUI 切换全局默认后，下次 `java -version` 即使用所选版本，无需重新激活或重开。`where java` 的第一项应位于 VSM 数据目录的 `shims` 下；后面的系统 Java 可以保留。项目版本和 `VSM_JAVA_VERSION` 环境覆盖仍优先于全局默认。
 
-若原有 cmd 的 PATH 从未包含 VSM，GUI 无法直接改写那个进程的环境。可在原 cmd 加载弹窗中的 cmd 命令一次，或使用「打开已激活 cmd」。GUI 显示的是它自身启动时的 PATH，不能据此断言其它终端仍在使用旧版本。
+若原有 cmd 的 PATH 从未包含 VSM，GUI 无法直接改写那个进程的环境。可在原 cmd 执行 `call "%VSM_HOME%\vsm-cmd-init.cmd"` 加载一次；未自定义 VSM_HOME 时使用 `call "%USERPROFILE%\.vsm\vsm-cmd-init.cmd"`。GUI 显示的是它自身启动时的 PATH，不能据此断言其它终端仍在使用旧版本。
 
 `vsm path-init cmd` 只配置 cmd 与用户 PATH；不带 shell 时同时配置 PowerShell。cmd `/D` 会跳过 AutoRun；`/V:ON` 请使用 `/V:OFF`。cmd 数据目录不能包含 `%` 或 `!`。启动配置位于 `HKCU\Software\Microsoft\Command Processor`，原来的 AutoRun 字符串与类型保存在 `VSM.AutoRun.Previous` / `VSM.AutoRun.Kind`；若已被外部修改，VSM 会报错并保留现状。撤销时恢复原 AutoRun，再移除 `VSM.AutoRun.*` 值；不要删除其它程序的启动命令。
 

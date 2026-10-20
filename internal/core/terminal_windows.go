@@ -4,15 +4,49 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"time"
 	"unicode/utf16"
 
 	"vsm/internal/plugin"
 )
+
+func findCmdCommand(dirs []string, name string) string {
+	for _, dir := range dirs {
+		for _, ext := range executableExts() {
+			file := filepath.Join(dir, name+ext)
+			if fileExists(file) {
+				return file
+			}
+		}
+	}
+	return ""
+}
+
+func probeCmdLookupVersion(tool, name string, env []string, dir string) (string, error) {
+	if name == "" || strings.Trim(name, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._+-") != "" {
+		return "", fmt.Errorf("无法安全验证 cmd 命令名")
+	}
+	file, err := os.CreateTemp("", "vsm-command-check-*.cmd")
+	if err != nil {
+		return "", err
+	}
+	namePath := file.Name()
+	defer os.Remove(namePath)
+	if _, err = file.WriteString("@echo off\r\n@call " + name + " %*\r\n"); err != nil {
+		file.Close()
+		return "", err
+	}
+	if err = file.Close(); err != nil {
+		return "", err
+	}
+	// Deliberately invoke the unqualified command as the user does. Executing a
+	// full java.cmd path would bypass cmd's current-directory/PATHEXT lookup.
+	return probeVersionCommand(tool, namePath, env, dir)
+}
 
 // VerifyCmdActivation discovers all configured commands automatically. /D keeps
 // this probe from running unrelated user AutoRun commands; loading our exact
@@ -27,6 +61,7 @@ func (a Activator) VerifyCmdActivation(dir string) (CmdActivationCheck, error) {
 	defer cancel()
 	cmd := exec.CommandContext(ctx, windowsCmdPath())
 	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), "VSM_HOME="+a.Paths.Root)
 	hideConsole(cmd)
 	cmd.SysProcAttr.CmdLine = `"` + windowsCmdPath() + `" /D /U /V:OFF /S /C "` + command + ` >nul & set PATH"`
 	cmd.WaitDelay = time.Second
@@ -67,12 +102,29 @@ func (a Activator) VerifyCmdActivation(dir string) (CmdActivationCheck, error) {
 		row.Before, _ = exec.LookPath(names[0])
 		// cmd searches the working directory before PATH. A local java.exe must
 		// be reported as an override rather than a successful shim activation.
-		row.Command = findExecutable(append([]string{dir}, dirs...), names[0])
+		row.Command = findCmdCommand(append([]string{dir}, dirs...), names[0])
 		row.Executable, err = a.Which(tool, dir)
 		if err != nil {
 			row.Error = err.Error()
 		}
 		row.Passed = row.Error == "" && row.Command != "" && (sameDir(filepath.Dir(row.Command), a.Paths.Shims()) || sameCommandFile(row.Command, row.Executable))
+		if row.Passed {
+			row.ExpectedVersion, err = probeVersion(tool, row.Executable)
+			if err != nil {
+				row.Error = "无法执行所选程序读取版本: " + err.Error()
+				row.Passed = false
+			} else {
+				env := append(os.Environ(), "VSM_HOME="+a.Paths.Root, "PATH="+strings.Join(dirs, string(os.PathListSeparator)))
+				row.ActualVersion, err = probeCmdLookupVersion(tool, names[0], env, dir)
+				if err != nil {
+					row.Error = "经 shim 执行失败: " + err.Error()
+					row.Passed = false
+				} else if row.ActualVersion != row.ExpectedVersion {
+					row.Error = fmt.Sprintf("经 shim 返回 %s，所选程序返回 %s", row.ActualVersion, row.ExpectedVersion)
+					row.Passed = false
+				}
+			}
+		}
 		if !row.Passed && row.Error == "" {
 			row.Error = "命令未经过 VSM，请检查 shim 或当前目录中的同名程序"
 		}
@@ -80,20 +132,4 @@ func (a Activator) VerifyCmdActivation(dir string) (CmdActivationCheck, error) {
 		check.Tools = append(check.Tools, row)
 	}
 	return check, nil
-}
-
-func (a Activator) OpenActivatedCmd(dir string) error {
-	env, err := a.ActivatedTerminalEnvironment(dir)
-	if err != nil {
-		return fmt.Errorf("准备终端环境失败: %w", err)
-	}
-	cmd := exec.Command(windowsCmdPath(), "/D", "/V:OFF", "/K")
-	cmd.Dir, cmd.Env = dir, env
-	// This is an explicit user request for an interactive window. No pipes or
-	// console hiding: the shell owns its own console after the GUI exits.
-	cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: 0x00000010}
-	if err := cmd.Start(); err != nil {
-		return err
-	}
-	return cmd.Process.Release()
 }
