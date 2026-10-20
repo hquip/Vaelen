@@ -801,11 +801,12 @@ func (a *App) SetProxy(input string) (err error) {
 
 // PathInitResult 描述「激活 PATH」的结果。
 type PathInitResult struct {
-	Status   string                   `json:"status"` // added | exists
-	Target   string                   `json:"target"` // 写入位置：Windows 为「用户级 PATH」，其它平台为 shell 配置文件路径
-	Message  string                   `json:"message"`
-	Verified bool                     `json:"verified"`
-	Check    *core.CmdActivationCheck `json:"check,omitempty"`
+	Status     string                   `json:"status"` // added | exists
+	Target     string                   `json:"target"` // 写入位置：Windows 为「用户级 PATH」，其它平台为 shell 配置文件路径
+	Message    string                   `json:"message"`
+	Verified   bool                     `json:"verified"`
+	Check      *core.CmdActivationCheck `json:"check,omitempty"`
+	CurrentCmd string                   `json:"current_cmd,omitempty"`
 }
 
 func checkActivationCLI(path string) error {
@@ -881,14 +882,16 @@ func (a *App) PathInit() (result PathInitResult, err error) {
 			}
 			logging.Record(level, "gui", event, logging.Fields{"tool": row.Tool, "selected": row.Version, "actual": row.ActualVersion, "command": row.Command, "executable": row.Executable, "code": row.Code, "error": row.Error, "action": row.Action, "pathext": check.PathExt, "cli": c.act.VsmExe})
 		}
-		return activationResult(st, "用户级 PATH、cmd 用户启动配置、"+strings.Join(profiles.Paths, "、"), check, profiles.Warnings), nil
+		result = activationResult(st, "用户级 PATH、cmd 用户启动配置、"+strings.Join(profiles.Paths, "、"), check, profiles.Warnings)
+		result.CurrentCmd, _ = core.CmdActivationCommand(c.paths.Root)
+		return result, nil
 	}
 	rc, st, err := core.PersistShellHook(core.DefaultShell(), core.VsmCommand(c.act.VsmExe))
 	return PathInitResult{Status: st, Target: rc, Message: "终端启动配置已保存", Verified: err == nil}, err
 }
 
 func activationResult(status, target string, check core.CmdActivationCheck, warnings []string) PathInitResult {
-	message := "终端激活已配置，所选版本已通过执行验证"
+	message := "终端启动配置已保存，所选版本已在受控 cmd 中通过执行验证"
 	if len(check.Tools) == 0 {
 		message = "终端激活已配置；选择工具版本后即可验证"
 	}

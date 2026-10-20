@@ -127,6 +127,7 @@ body { display: flex; flex-direction: column; height: 100vh; }
 .activation-report summary { cursor: pointer; color: var(--muted); }
 .activation-report pre { white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; -webkit-user-select: text; }
 .activation-report .activation-problem { border-top: 1px solid var(--border); padding-top: 5px; }
+#activationCurrentCmd code { display: block; white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; -webkit-user-select: text; margin-bottom: 6px; }
 .layout { flex: 1 1 auto; display: flex; min-height: 0; }
 
 .sidebar {

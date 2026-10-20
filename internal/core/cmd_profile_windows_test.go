@@ -353,3 +353,49 @@ func TestCmdActivationRepairsMissingCMDExtension(t *testing.T) {
 		t.Fatalf("versions did not change in the same cmd after repairing PATHEXT: %s", out)
 	}
 }
+
+func TestCmdExistingSessionWithSystemJavaBeforeShims(t *testing.T) {
+	a, data := executingActivationFixture(t)
+	if err := a.SetGlobalVersion("java", "17.0.12"); err != nil {
+		t.Fatal(err)
+	}
+	helper := filepath.Join(a.Paths.Root, "vsm-cmd-init.cmd")
+	if err := config.WriteFileAtomic(helper, []byte(cmdStartupScript(a.Paths.Root)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	oracle := filepath.Join(t.TempDir(), "Oracle javapath")
+	if err := config.WriteFileAtomic(filepath.Join(oracle, "java.exe"), data, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	// Match the customer's screenshot: system Java 21, Oracle javapath, then
+	// VSM shims. Keep the very same cmd alive before and after loading once.
+	batch := "@echo off\r\ncall java -version\r\ncall \"%VSM_TEST_INIT%\"\r\ncall java -version\r\n\"%VSM_TEST_CLI%\" use -g java 21.0.1\r\ncall java -version\r\n\"%VSM_TEST_CLI%\" use -g java 17.0.12\r\ncall java -version\r\n"
+	file := filepath.Join(dir, "customer-session.cmd")
+	if err := os.WriteFile(file, []byte(batch), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(windowsCmdPath(), "/D", "/V:OFF", "/C", file)
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), "VSM_HOME="+a.Paths.Root, "VSM_TEST_INIT="+helper, "VSM_TEST_CLI="+a.VsmExe, "VSM_PROJECT_BOUNDARY="+dir,
+		"PATH="+filepath.Join(a.Paths.InstallDir("java", "21.0.1"), "bin")+";"+oracle+";"+a.Paths.Shims()+";"+os.Getenv("PATH"))
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("customer cmd fixture: %v %s", err, out)
+	}
+	var versions []string
+	for _, line := range strings.Split(strings.ReplaceAll(string(out), "\r\n", "\n"), "\n") {
+		if strings.HasPrefix(line, "java version ") {
+			versions = append(versions, strings.TrimPrefix(line, "java version "))
+		}
+	}
+	if strings.Join(versions, ",") != `"21.0.1","17.0.12","21.0.1","17.0.12"` {
+		t.Fatalf("same cmd did not recover after a single initialization: %s", out)
+	}
+	// The copied command must target the same helper, including custom homes.
+	status := a.ActivationStatus("java", dir)
+	command, err := CmdActivationCommand(a.Paths.Root)
+	if err != nil || status.CurrentCmd != command {
+		t.Fatalf("copied command uses the wrong home: %+v %v", status, err)
+	}
+}

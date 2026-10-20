@@ -22,11 +22,15 @@ type ActivationStatus struct {
 	Source     string   `json:"source"`
 	Executable string   `json:"executable"`
 	Command    string   `json:"command"`
+	CurrentCmd string   `json:"current_cmd,omitempty"`
 	Warnings   []string `json:"warnings"`
 }
 
 func (a Activator) ActivationStatus(tool, dir string) ActivationStatus {
 	status := ActivationStatus{Warnings: []string{}}
+	if runtime.GOOS == "windows" && fileExists(filepath.Join(a.Paths.Root, "vsm-cmd-init.cmd")) {
+		status.CurrentCmd, _ = CmdActivationCommand(a.Paths.Root)
+	}
 	if tv, err := config.Load(a.Paths.GlobalToolVersions()); err == nil {
 		status.Global, _ = tv.Get(tool)
 	}

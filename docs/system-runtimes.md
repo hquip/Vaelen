@@ -30,11 +30,15 @@ GUI 会识别同目录的标准 CLI 文件名和 GitHub 原始下载文件名，
 
 全局切换也可能触发上述准备。下载期间底部会持续显示「正在准备 VSM 运行组件」、字节数、速度与重试信息，完成后自动继续原操作。全局切换和 PATH 激活按钮在操作结束前暂时禁用；其它写操作若被拦截，会说明正在准备配套 CLI。失败后可重试，查看日志中的 `cli.prepare` 与原操作记录定位原因。
 
-点击后只显示简短结果。验证会实际执行命令、对比所选程序与 shim 的版本输出；结果、CLI 来源和失败原因保存在日志中，路径详情可在语言页展开。仅存在 shim 文件不会被视为验证通过。
+激活结果保留在页面中。验证会实际执行命令、对比所选程序与 shim 的版本输出；结果、CLI 来源和失败原因保存在日志中，路径详情可在语言页展开。仅存在 shim 文件不会被视为验证通过。受控 cmd 验证通过表示启动配置可用，不代表其它已打开 cmd 的 PATH 已改变。
 
 已经通过 VSM shim 的 cmd，GUI 切换全局默认后，下次 `java -version` 即使用所选版本，无需重新激活或重开。`where java` 的第一项应位于 VSM 数据目录的 `shims` 下；后面的系统 Java 可以保留。项目版本和 `VSM_JAVA_VERSION` 环境覆盖仍优先于全局默认。
 
 若原有 cmd 的 PATH 从未包含 VSM，GUI 无法直接改写那个进程的环境。可在原 cmd 执行 `call "%VSM_HOME%\vsm-cmd-init.cmd"` 加载一次；未自定义 VSM_HOME 时使用 `call "%USERPROFILE%\.vsm\vsm-cmd-init.cmd"`。GUI 显示的是它自身启动时的 PATH，不能据此断言其它终端仍在使用旧版本。
+
+已有 cmd 也可能包含 VSM 目录，但顺序仍是系统 Java、Oracle `javapath`、VSM。此时 `vsm which java` 会正确显示所选 Java 17，而 `java -version` 仍运行排在前面的 Java 21。点击「激活 PATH」保存启动配置后，在这个原 cmd 中加载一次初始化命令，即可前置 VSM 并继续在同一终端切换，不需要重装 JDK 或删除 Oracle 的文件。GUI 的结果区提供按当前数据目录生成的可复制命令；这条命令不会自行在其它终端执行。
+
+全局设置与当前有效版本分别显示。若项目版本文件或 `VSM_JAVA_VERSION` 等环境变量指定其它版本，会继续优先采用它们；全局切换不会自动改写项目要求或其它终端的变量。诊断时可在原 cmd 执行 `vsm version`、`vsm current`、`vsm which java` 和 `where java`，对照配置来源与实际命令顺序。`vsm current` 当前不接受单个工具参数。
 
 `vsm path-init cmd` 只配置 cmd 与用户 PATH；不带 shell 时同时配置 PowerShell。cmd `/D` 会跳过 AutoRun；`/V:ON` 请使用 `/V:OFF`。cmd 数据目录不能包含 `%` 或 `!`。启动配置位于 `HKCU\Software\Microsoft\Command Processor`，原来的 AutoRun 字符串与类型保存在 `VSM.AutoRun.Previous` / `VSM.AutoRun.Kind`；若已被外部修改，VSM 会报错并保留现状。撤销时恢复原 AutoRun，再移除 `VSM.AutoRun.*` 值；不要删除其它程序的启动命令。
 
