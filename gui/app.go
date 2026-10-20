@@ -170,9 +170,6 @@ func vsmCLICandidates() []string {
 			}
 		}
 	}
-	if paths, err := core.DefaultPaths(); err == nil {
-		dirs = append(dirs, filepath.Join(paths.Root, "runtime", "cli", buildinfo.DisplayVersion()))
-	}
 	dirs = append(dirs, filepath.SplitList(os.Getenv("PATH"))...)
 	// 从 Finder/Dock 启动的 macOS 应用拿不到 shell 的 PATH，补查常见安装位置
 	if runtime.GOOS == "darwin" {

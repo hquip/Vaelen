@@ -22,7 +22,7 @@ vsm use -g python office-python
 
 点击 GUI「激活 PATH」会配置用户 PATH、cmd AutoRun 和 PowerShell 启动钩子。新开的 cmd 自动把 VSM shims 放到系统 Java 等工具之前，不修改系统 PATH 或原安装。
 
-GUI 会识别同目录的标准 CLI 文件名和 GitHub 原始下载文件名，并校验与 GUI 的版本一致；PATH 中的旧版本会被跳过。缺少匹配组件时，从对应的官方 Release 下载并校验 CLI，保存到全局数据目录的 `runtime/cli/<版本>/`，不覆盖其它位置的旧 CLI。激活后 `vsm` 和语言命令使用同一份 CLI。
+GUI 会识别同目录的标准 CLI 文件名和 GitHub 原始下载文件名，并校验与 GUI 的版本一致；PATH 中的旧版本会被跳过。缺少匹配组件时，从对应的官方 Release 下载并校验 CLI，以官方文件名保存在 GUI 旁边，不覆盖其它位置或同目录标准名的旧 CLI。程序目录需要可写。激活后 `vsm` 和语言命令使用同一份 CLI。
 
 点击后只显示简短结果。验证会实际执行命令、对比所选程序与 shim 的版本输出；结果、CLI 来源和失败原因保存在日志中，路径详情可在语言页展开。仅存在 shim 文件不会被视为验证通过。
 

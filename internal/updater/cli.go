@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 )
 
 // InstallCLI repairs a missing GUI companion from the exact official release.
@@ -18,7 +17,7 @@ func (c Client) InstallCLI(ctx context.Context, version, directory string) (stri
 	if err := os.MkdirAll(directory, 0o700); err != nil {
 		return "", err
 	}
-	lock, err := os.OpenFile(filepath.Join(directory, ".install.lock"), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	lock, err := os.OpenFile(filepath.Join(directory, ".vsm-cli-install.lock"), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 	if err != nil {
 		return "", fmt.Errorf("配套 CLI 正在准备或目录不可写: %w", err)
 	}
@@ -29,10 +28,9 @@ func (c Client) InstallCLI(ctx context.Context, version, directory string) (stri
 		return "", err
 	}
 	defer os.RemoveAll(stage)
-	name := "vsm"
-	if runtime.GOOS == "windows" {
-		name += ".exe"
-	}
+	// Use the official asset name beside the GUI. A stale canonical vsm.exe is
+	// preserved, and later `vsm update --gui` still updates the adjacent pair.
+	name := cliAsset()
 	file := filepath.Join(stage, name)
 	asset, err := info.asset(cliAsset())
 	if err != nil {

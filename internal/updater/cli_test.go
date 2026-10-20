@@ -29,7 +29,7 @@ func TestInstallMatchingCLILeavesUnrelatedOldCopyUntouched(t *testing.T) {
 	if err := os.WriteFile(old, []byte("old 0.1.0 copy"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	installed, err := client.InstallCLI(context.Background(), "v1.0.5", filepath.Join(root, "runtime", "cli", "v1.0.5"))
+	installed, err := client.InstallCLI(context.Background(), "v1.0.5", root)
 	if err != nil {
 		t.Fatal(err)
 	}

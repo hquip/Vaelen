@@ -3,12 +3,12 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"time"
 
 	wruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 	"vsm/internal/buildinfo"
-	"vsm/internal/core"
 	"vsm/internal/logging"
 	"vsm/internal/updater"
 )
@@ -22,13 +22,13 @@ func (a *App) activationComponents() (*components, error) {
 	}
 	path := locateVsmCLI()
 	if path == "" {
-		global, err := core.DefaultPaths()
+		executable, err := os.Executable()
 		if err != nil {
 			return nil, err
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 		defer cancel()
-		directory := filepath.Join(global.Root, "runtime", "cli", buildinfo.DisplayVersion())
+		directory := filepath.Dir(executable)
 		if a.cliInstaller != nil {
 			path, err = a.cliInstaller(ctx, buildinfo.DisplayVersion(), directory)
 		} else {
