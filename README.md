@@ -15,6 +15,15 @@
 > 镜像切换、网络代理设置、安装进度条、当前目录 local 设置、一键写入用户级 PATH。
 > **macOS 版为 Universal 通用二进制**（Apple Silicon + Intel），隐藏式标题栏 + 原生菜单，内置 CLI，一个 `.app` 开箱即用。
 
+## v1.1.4 更新下载优化
+
+- **停滞重试**：更新包连接或响应体连续 15 秒无数据就重试；有官方资产 ID 时交替尝试官方下载地址与 GitHub 官方 API。
+- **分块与续传**：8 MiB 以上资产探测 Range，支持时最多 4 连接下载，复用解析出的 CDN 地址；分块断流只补剩余字节。
+- **明确进度**：GUI / CLI 显示连接、保留数据重试、并发数、官方接口及单连接回退，日志保留停滞原因。
+- **完整性**：区间、长度和官方 SHA256 均须通过检查，校验失败或取消不替换旧程序。
+
+下载 [v1.1.4 正式版](https://github.com/hquip/Vaelen/releases/tag/v1.1.4)，或使用 GUI「检查 VSM 更新」/ `vsm update --gui`。旧版执行本次升级仍使用旧更新器；若卡在下载，可从发布页手动下载 CLI 与 GUI，放在同一目录。详见[发布说明](docs/releases/v1.1.4.md)。
+
 ## v1.1.3 CLI 配套与版本执行修复
 
 - **修复旧 CLI 误选**：识别同目录标准名和 GitHub 原始下载文件名，校验版本后使用，跳过 PATH 中的旧副本。缺少组件时，自动下载与 GUI 同版本的官方 CLI，校验后放到 GUI 旁边。
@@ -22,7 +31,7 @@
 - **验证实际执行**：全局设置前读取目标程序版本；激活检查实际执行未限定路径的命令，按 cmd / PATHEXT 规则对比输出，不再只凭 shim 文件存在报告成功。
 - **简化界面**：移除终端激活弹窗和新开 cmd 按钮；点击后显示简短结果，路径详情默认折叠，日志保留 CLI 来源与实际版本。
 
-下载 [v1.1.3 正式版](https://github.com/hquip/Vaelen/releases/tag/v1.1.3)；已有版本执行 `vsm update --gui`。Windows 手动下载时，将 GUI 和对应 CLI 放在同一目录，CLI 保持官方文件名也可使用；升级后点击一次「激活 PATH」更新命令入口。详见[发布说明](docs/releases/v1.1.3.md)。
+Windows 手动下载时，将 GUI 和对应 CLI 放在同一目录，CLI 保持官方文件名也可使用；升级后点击一次「激活 PATH」更新命令入口。详见[发布说明](docs/releases/v1.1.3.md)。
 
 ## v1.1.2 Windows 终端自动激活
 
@@ -178,7 +187,7 @@ sudo ln -sf /Applications/VSM.app/Contents/MacOS/vsm /usr/local/bin/vsm
 自行打包（需在 Mac 上，产出与 Release 相同的通用版 zip）：
 
 ```bash
-bash scripts/package-macos.sh 1.1.3 dist
+bash scripts/package-macos.sh 1.1.4 dist
 ```
 
 > 打 `v*` tag 即可由 GitHub Actions 在 Windows / macOS / Linux 三个 runner 上分别本地编译，
