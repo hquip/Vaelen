@@ -92,7 +92,13 @@ func TestShimsUseTheirOwningHomeInAnExistingTerminal(t *testing.T) {
 			} else {
 				cmd = exec.Command(shell, file)
 			}
-			cmd.Dir = t.TempDir()
+			// macOS exposes /var temporary paths through /private/var. The
+			// project boundary must use the physical cwd seen by the child CLI.
+			var err error
+			cmd.Dir, err = filepath.EvalSymlinks(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
 			cmd.Env = append(os.Environ(), "VSM_HOME="+other.Root, "VSM_JAVA_VERSION=", "VSM_PROJECT_BOUNDARY="+cmd.Dir, "PATH="+a.Paths.Shims()+string(os.PathListSeparator)+os.Getenv("PATH"))
 			out, err := cmd.CombinedOutput()
 			if err != nil {
