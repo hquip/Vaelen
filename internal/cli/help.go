@@ -278,7 +278,7 @@ var commandHelpTopics = map[string]commandHelp{
 	},
 	"install-root": {
 		Summary: "查看或设置全局安装根目录", Usage: []string{"vsm install-root [目录|default]"},
-		Notes:    []string{"省略参数查看设置；default 恢复默认目录。此命令不搬迁已安装工具。"},
+		Notes:    []string{"省略参数查看设置；default 恢复默认目录。此命令不搬迁已安装工具。", "目标目录缺少当前可用的全局版本时拒绝更改；先准备对应版本，或保留原查找目录。已失效的查找目录可恢复到包含原版本的目录。"},
 		Examples: []string{"vsm install-root", `vsm install-root "D:\sdk"`, "vsm install-root default"},
 	},
 	"doctor": {

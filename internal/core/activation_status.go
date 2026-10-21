@@ -45,7 +45,7 @@ func (a Activator) ActivationStatus(tool, dir string) ActivationStatus {
 	}
 	if r.Version == "" {
 		if r.Spec != "" && r.Error == "" {
-			status.Warnings = append(status.Warnings, "版本要求 "+r.Spec+" 没有匹配的已安装版本")
+			status.Warnings = append(status.Warnings, a.unavailableVersion(tool, r).Error())
 		}
 		return status
 	}

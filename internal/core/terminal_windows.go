@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -117,6 +118,14 @@ func (a Activator) VerifyCmdActivation(dir string) (CmdActivationCheck, error) {
 	}
 	extensions := windowsExecutableExts(check.PathExt)
 	check.PathExtRepaired = !hasCMDExtension(os.Getenv("PATHEXT")) && hasCMDExtension(check.PathExt)
+	// A helper working under a forced, matching VSM_HOME does not prove its
+	// shims will work in an older terminal with another home. Challenge the
+	// dispatcher with a private empty home; a correctly owned shim overrides it.
+	probeHome, err := os.MkdirTemp("", "vsm-shim-home-check-")
+	if err != nil {
+		return check, fmt.Errorf("创建命令入口验证环境失败: %w", err)
+	}
+	defer os.RemoveAll(probeHome)
 	for _, tool := range plugin.Names() {
 		if plugin.IsServiceTool(tool) {
 			continue
@@ -125,7 +134,8 @@ func (a Activator) VerifyCmdActivation(dir string) (CmdActivationCheck, error) {
 		if r.Spec == "" && r.Error == "" {
 			continue
 		}
-		row := CmdToolActivation{Tool: tool, Version: r.Version, Source: r.Source, Error: r.Error}
+		row := CmdToolActivation{Tool: tool, Version: r.Version, RequestedVersion: r.Spec, InstallRoot: a.Paths.Installs(), Source: r.Source, Error: r.Error}
+		row.InstalledVersions, _ = a.Registry.Installed(tool)
 		names := plugin.DetectCommands()[tool]
 		if len(names) == 0 {
 			names = []string{tool}
@@ -138,6 +148,11 @@ func (a Activator) VerifyCmdActivation(dir string) (CmdActivationCheck, error) {
 		row.Executable, err = a.Which(tool, dir)
 		if err != nil {
 			row.Error = err.Error()
+			var unavailable *VersionUnavailableError
+			if errors.As(err, &unavailable) {
+				row.Code = "version-not-installed"
+				row.Action = "在当前安装目录安装或纳管所需版本。若刚更改过安装目录，请恢复原目录；更改目录不会迁移已有安装。"
+			}
 		}
 		shim := filepath.Join(a.Paths.Shims(), names[0]+".cmd")
 		row.Passed = row.Error == "" && row.Command != "" && (sameCommandFile(row.Command, shim) || sameCommandFile(row.Command, row.Executable))
@@ -147,10 +162,12 @@ func (a Activator) VerifyCmdActivation(dir string) (CmdActivationCheck, error) {
 				row.Error = "无法执行所选程序读取版本: " + err.Error()
 				row.Passed = false
 			} else {
-				env := append(os.Environ(), "VSM_HOME="+a.Paths.Root, "PATH="+strings.Join(dirs, string(os.PathListSeparator)), "PATHEXT="+check.PathExt, "_VSM_CMD_SCOPE=controlled-cmd", "VSM_ACTIVATION_OPERATION="+a.TraceID)
+				env := append(os.Environ(), "VSM_HOME="+probeHome, "PATH="+strings.Join(dirs, string(os.PathListSeparator)), "PATHEXT="+check.PathExt, "_VSM_CMD_SCOPE=controlled-cmd", "VSM_ACTIVATION_OPERATION="+a.TraceID)
 				row.ActualVersion, err = probeCmdLookupVersion(tool, names[0], env, dir)
 				if err != nil {
 					row.Error = "经 shim 执行失败: " + err.Error()
+					row.Code = "shim-dispatch-failed"
+					row.Action = "命令入口未能使用所属配置运行程序；请点击「激活 PATH」重建入口，仍失败时复制诊断信息反馈。"
 					row.Passed = false
 				} else if row.ActualVersion != row.ExpectedVersion {
 					row.Error = fmt.Sprintf("经 shim 返回 %s，所选程序返回 %s", row.ActualVersion, row.ExpectedVersion)
@@ -186,7 +203,9 @@ func (a Activator) VerifyCmdActivation(dir string) (CmdActivationCheck, error) {
 		fields := a.activationFields()
 		fields["scope"], fields["tool"], fields["selected_version"] = "controlled-cmd", row.Tool, row.Version
 		fields["passed"], fields["command"], fields["selected_executable"] = row.Passed, row.Command, row.Executable
+		fields["owner_home_verified"] = row.Passed
 		fields["expected_version"], fields["actual_version"], fields["source"] = row.ExpectedVersion, row.ActualVersion, row.Source
+		fields["requested_version"], fields["installed_versions"] = row.RequestedVersion, row.InstalledVersions
 		fields["code"], fields["error"], fields["action"] = row.Code, row.Error, row.Action
 		level := "info"
 		if !row.Passed {

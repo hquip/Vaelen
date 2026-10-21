@@ -425,26 +425,8 @@ func (a *App) SetInstallRoot(dir string) (err error) {
 	if err := c.paths.EnsureDirs(); err != nil {
 		return err
 	}
-	path := c.paths.InstallRootFile()
-	if dir = strings.TrimSpace(dir); dir == "" {
-		// 删除失败时不能谎报「已恢复默认」，否则之后的安装仍落在旧目录
-		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-			return fmt.Errorf("恢复默认安装目录失败: %w", err)
-		}
-	} else {
-		abs, err := filepath.Abs(dir)
-		if err != nil {
-			return err
-		}
-		if err := c.paths.ValidateInstallRoot(abs); err != nil {
-			return err
-		}
-		if err := os.MkdirAll(abs, 0o755); err != nil {
-			return err
-		}
-		if err := config.WriteFileAtomic(path, []byte(abs+"\n"), 0o644); err != nil {
-			return err
-		}
+	if _, err := c.paths.SetInstallRoot(dir); err != nil {
+		return err
 	}
 	a.st.Store(newComponentsForDir(a.ProjectDir()))
 	return nil

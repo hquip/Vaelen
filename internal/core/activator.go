@@ -37,7 +37,7 @@ func (a Activator) Which(tool, startDir string) (string, error) {
 		return "", fmt.Errorf("%s", res.Error)
 	}
 	if res.Version == "" {
-		return "", fmt.Errorf("%s 未找到可用版本", tool)
+		return "", a.unavailableVersion(tool, res)
 	}
 	installDir := a.Paths.InstallDir(tool, res.Version)
 	exe := ""
@@ -137,16 +137,27 @@ func (e exitCodeError) ExitCode() int { return e.code }
 
 // GenerateShims 为所有已安装工具生成 shim（无 shell hook 环境下的兜底激活）。
 func (a Activator) GenerateShims() error {
+	// Each entry belongs to the configuration directory that generated it.
+	// Never let an unrelated VSM_HOME inherited by a long-running terminal
+	// silently redirect that entry to another configuration and version set.
+	root, err := filepath.Abs(a.Paths.Root)
+	if err != nil {
+		return err
+	}
+	if a.Paths.Root == "" {
+		return fmt.Errorf("生成 shim 需要明确的 VSM 数据目录")
+	}
+	a.Paths.Root = root
 	if err := os.MkdirAll(a.Paths.Shims(), 0o755); err != nil {
 		return err
 	}
 	// Keep the vsm command on the same dispatcher as the language shims. An old
 	// vsm.exe elsewhere on PATH must not regenerate them back to an older CLI.
 	if a.VsmExe != "" {
-		name, content := "vsm", "#!/bin/sh\nexec "+quotePOSIX(a.VsmExe)+" \"$@\"\n"
+		name, content := "vsm", a.shimPreamble()+"exec "+quotePOSIX(a.VsmExe)+" \"$@\"\n"
 		if runtime.GOOS == "windows" {
 			name = "vsm.cmd"
-			content = "@echo off\r\n\"" + quoteCmd(a.VsmExe) + "\" %*\r\n"
+			content = a.shimPreamble() + "\"" + quoteCmd(a.VsmExe) + "\" %*\r\n"
 		}
 		if sameDir(filepath.Dir(a.VsmExe), a.Paths.Shims()) {
 			return fmt.Errorf("CLI 不能位于 shims 目录，否则会递归调用自身")
@@ -237,11 +248,11 @@ func (a Activator) writeShim(tool string) error {
 	}
 	if runtime.GOOS == "windows" {
 		// .cmd 里 % 会被展开，路径中的 % 需写成 %%
-		content := "@echo off\r\n\"" + quoteCmd(vsm) + "\" exec " + tool + " %*\r\n"
+		content := a.shimPreamble() + "\"" + quoteCmd(vsm) + "\" exec " + tool + " %*\r\n"
 		return a.saveShim(tool+".cmd", content, 0o644)
 	}
 	// 单引号字面量：路径里的 $、反引号、空格都不会被 shell 解释
-	content := "#!/bin/sh\nexec " + quotePOSIX(vsm) + " exec " + tool + " \"$@\"\n"
+	content := a.shimPreamble() + "exec " + quotePOSIX(vsm) + " exec " + tool + " \"$@\"\n"
 	return a.saveShim(tool, content, 0o755)
 }
 
@@ -279,11 +290,18 @@ func (a Activator) writeCommandShim(tool, command string) error {
 		vsm = "vsm"
 	}
 	if runtime.GOOS == "windows" {
-		content := "@echo off\r\n\"" + quoteCmd(vsm) + "\" exec " + tool + " -- " + command + " %*\r\n"
+		content := a.shimPreamble() + "\"" + quoteCmd(vsm) + "\" exec " + tool + " -- " + command + " %*\r\n"
 		return a.saveShim(command+".cmd", content, 0o644)
 	}
-	content := "#!/bin/sh\nexec " + quotePOSIX(vsm) + " exec " + tool + " -- " + quotePOSIX(command) + " \"$@\"\n"
+	content := a.shimPreamble() + "exec " + quotePOSIX(vsm) + " exec " + tool + " -- " + quotePOSIX(command) + " \"$@\"\n"
 	return a.saveShim(command, content, 0o755)
+}
+
+func (a Activator) shimPreamble() string {
+	if runtime.GOOS == "windows" {
+		return "@echo off\r\nsetlocal DisableDelayedExpansion\r\nset \"VSM_HOME=" + quoteCmd(a.Paths.Root) + "\"\r\n"
+	}
+	return "#!/bin/sh\nexport VSM_HOME=" + quotePOSIX(a.Paths.Root) + "\n"
 }
 
 func (a Activator) saveShim(name, content string, mode os.FileMode) error {
