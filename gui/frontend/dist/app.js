@@ -144,15 +144,16 @@ function renderActivationReport(title, message, problems, diagnostic, currentCmd
 function showActivationReport(result, failure) {
   const check = result.check;
   const problems = (check?.tools || []).filter(row => !row.passed);
+  const missingVersions = problems.length > 0 && problems.every(row => row.code === "version-not-installed");
   const ok = !failure && result.verified !== false;
   const message = failure
     ? "这次激活没有完成，请查看详情后重试。"
-    : result.message || "终端配置已保存。";
+    : missingVersions ? "终端配置已保存，但当前安装目录没有匹配的版本；请恢复原目录或准备对应版本。" : result.message || "终端配置已保存。";
   const diagnostic = ["VSM " + document.getElementById("appVersion").textContent, result.message || "", failure || "", result.target ? "配置位置：" + result.target : "", result.current_cmd ? "已有 cmd 加载命令：" + result.current_cmd : "", check?.pathext ? "命令扩展名：" + check.pathext : "", check?.cmd_modes?.length ? "已验证 cmd 延迟展开模式：" + check.cmd_modes.join(", ") : "",
     ...(check?.tools || []).map(row => [row.tool + "：" + (row.passed ? "验证通过" : "验证未通过"), "版本要求：" + (row.requested_version || row.version || "未设置"), "解析版本：" + (row.version || "未匹配"), row.source ? "配置来源：" + row.source : "", row.install_root ? "查找安装目录：" + row.install_root : "", row.installed_versions ? "目录中的版本：" + (row.installed_versions.join("、") || "无") : "", "实际命中的程序：" + (row.command || "未找到"), "所选安装程序：" + (row.executable || "未找到"), "实际版本：" + (row.actual_version || "未取得"), row.code || "", row.error || "", row.action || ""].filter(Boolean).join("\n"))].filter(Boolean).join("\n\n");
   pendingActivationDiagnostic = ok ? "" : diagnostic;
-  renderActivationReport(ok ? "终端启动配置已保存" : "版本切换仍需处理", message,
-    problems.map(row => displayName(row.tool) + "：" + row.error + "\n" + (row.action || "请查看诊断详情，确认所选程序是否可用。")), diagnostic, result.current_cmd);
+  renderActivationReport(ok ? "终端启动配置已保存" : missingVersions ? "安装目录中缺少所需版本" : "版本切换仍需处理", message,
+    problems.map(row => displayName(row.tool) + "：" + row.error + "\n" + (row.action || "请查看诊断详情，确认所选程序是否可用。")), diagnostic, missingVersions ? "" : result.current_cmd);
 }
 function showGlobalSelectionReport(tool, version, status) {
   const activation = status?.activation;
