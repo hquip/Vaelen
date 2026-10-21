@@ -15,6 +15,14 @@
 > 镜像切换、网络代理设置、安装进度条、当前目录 local 设置、一键写入用户级 PATH。
 > **macOS 版为 Universal 通用二进制**（Apple Silicon + Intel），隐藏式标题栏 + 原生菜单，内置 CLI，一个 `.app` 开箱即用。
 
+## v1.1.11 版本识别与安装目录修复
+
+- **Go / Lua 版本识别**：Go 支持发行版后缀、实验标记和 gccgo 附加构建信息；Lua / LuaJIT 使用正确的 `-v` 参数。
+- **修复重复版本条目**：安装目录下的 `go`、`java` 存储文件夹不再被误列为版本；已有嵌套安装保持可用，并保护其中其它版本免遭整体误卸载。
+- **清楚显示安装位置**：GUI 预览实际路径，CLI / GUI 统一校验安装父目录，避免生成多余的工具目录层级。
+
+下载 [v1.1.11 正式版](https://github.com/hquip/Vaelen/releases/tag/v1.1.11)，或使用 GUI「检查 VSM 更新」/ `vsm update --gui`。GUI 更新会同时处理配套 CLI。升级后点击「系统检测 → 重新检测」。详见[发布说明](docs/releases/v1.1.11.md)。
+
 ## v1.1.10 入口配置绑定与安装目录保护
 
 - **修复配置串用**：语言与 VSM 入口绑定生成它们的数据目录，避免旧终端继承的其它 `VSM_HOME` 导致运行另一套默认版本；原终端环境保持不变。
@@ -232,7 +240,7 @@ sudo ln -sf /Applications/VSM.app/Contents/MacOS/vsm /usr/local/bin/vsm
 自行打包（需在 Mac 上，产出与 Release 相同的通用版 zip）：
 
 ```bash
-bash scripts/package-macos.sh 1.1.10 dist
+bash scripts/package-macos.sh 1.1.11 dist
 ```
 
 > 打 `v*` tag 即可由 GitHub Actions 在 Windows / macOS / Linux 三个 runner 上分别本地编译，
