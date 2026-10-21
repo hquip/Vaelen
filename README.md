@@ -15,6 +15,14 @@
 > 镜像切换、网络代理设置、安装进度条、当前目录 local 设置、一键写入用户级 PATH。
 > **macOS 版为 Universal 通用二进制**（Apple Silicon + Intel），隐藏式标题栏 + 原生菜单，内置 CLI，一个 `.app` 开箱即用。
 
+## v1.1.10 入口配置绑定与安装目录保护
+
+- **修复配置串用**：语言与 VSM 入口绑定生成它们的数据目录，避免旧终端继承的其它 `VSM_HOME` 导致运行另一套默认版本；原终端环境保持不变。
+- **加强执行验证**：用不匹配的继承目录验证入口，避免测试中强制传入正确目录而掩盖问题。
+- **保护已有版本**：更改安装根目录前检查全局版本可用性，目标缺少所需版本时保留原设置；版本缺失提示给出要求、来源、查找目录和恢复建议。
+
+下载 [v1.1.10 正式版](https://github.com/hquip/Vaelen/releases/tag/v1.1.10)，或使用 GUI「检查 VSM 更新」/ `vsm update --gui`。**升级并重启后，点击一次「激活 PATH」重建入口。**详见[发布说明](docs/releases/v1.1.10.md)。
+
 ## v1.1.9 cmd 激活修复与详细日志
 
 - **cmd 兼容修复**：支持延迟变量展开开启和关闭两种模式，修复带引号与 `&` 的 PATH 项被拼坏的问题；执行验证同时覆盖两种模式。
@@ -224,7 +232,7 @@ sudo ln -sf /Applications/VSM.app/Contents/MacOS/vsm /usr/local/bin/vsm
 自行打包（需在 Mac 上，产出与 Release 相同的通用版 zip）：
 
 ```bash
-bash scripts/package-macos.sh 1.1.9 dist
+bash scripts/package-macos.sh 1.1.10 dist
 ```
 
 > 打 `v*` tag 即可由 GitHub Actions 在 Windows / macOS / Linux 三个 runner 上分别本地编译，
