@@ -337,6 +337,35 @@ func TestCmdActivationDiscoversAllConfiguredTools(t *testing.T) {
 	}
 }
 
+func TestCmdActivationExplainsMissingVersionsInChangedInstallRoot(t *testing.T) {
+	a, _ := executingActivationFixture(t)
+	for tool, version := range map[string]string{"java": "17.0.12", "node": "22.22.0"} {
+		if err := config.SetIn(a.Paths.GlobalToolVersions(), tool, version); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Old releases permit changing the lookup root without transferring tools.
+	// Reproduce the resulting state without moving or deleting any installation.
+	a.Paths.InstallsRoot = t.TempDir()
+	if err := config.WriteFileAtomic(a.Paths.InstallRootFile(), []byte(a.Paths.InstallsRoot), 0644); err != nil {
+		t.Fatal(err)
+	}
+	a.Registry.Paths = a.Paths
+	a.Resolver.Paths, a.Resolver.Registry = a.Paths, a.Registry
+	if err := os.WriteFile(filepath.Join(a.Paths.Root, "vsm-cmd-init.cmd"), []byte(cmdStartupScript(a.Paths.Root)), 0644); err != nil {
+		t.Fatal(err)
+	}
+	check, err := a.VerifyCmdActivation(t.TempDir())
+	if err != nil || check.Passed || len(check.Tools) != 2 {
+		t.Fatalf("missing root state not reproduced: %+v %v", check, err)
+	}
+	for _, row := range check.Tools {
+		if row.Code != "version-not-installed" || row.RequestedVersion == "" || row.InstallRoot != a.Paths.InstallsRoot || !strings.Contains(row.Error, a.Paths.InstallsRoot) || !strings.Contains(row.Action, "恢复原目录") {
+			t.Fatalf("misleading diagnostics for missing tool in selected root: %+v", row)
+		}
+	}
+}
+
 func TestCmdActivationRejectsWrongRuntimeBehindShim(t *testing.T) {
 	a, _ := executingActivationFixture(t)
 	if err := a.SetGlobalVersion("java", "17.0.12"); err != nil {

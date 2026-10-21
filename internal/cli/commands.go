@@ -85,44 +85,26 @@ func (a *app) cmdInstall(args []string) error {
 }
 
 func (a *app) cmdInstallRoot(args []string) error {
-	if a.paths.ProjectMode == "local" && len(args) > 0 {
+	if (a.paths.ProjectMode == "local" || a.paths.ProjectMode == "docker") && len(args) > 0 {
 		return fmt.Errorf("项目环境固定使用 .vsm/env/installs，不修改全局安装根目录")
 	}
-	path := a.paths.InstallRootFile()
 	if len(args) == 0 {
 		fmt.Println("当前安装根目录:", a.paths.Installs())
 		fmt.Println("修改: vsm install-root <目录>   恢复默认: vsm install-root default")
 		return nil
 	}
-	if err := a.paths.EnsureDirs(); err != nil {
-		return err
-	}
-	if args[0] == "default" {
-		// 此前忽略删除错误，会在文件只读/被占用时谎报「已恢复默认」，
-		// 之后安装仍落在旧的自定义目录里。
-		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-			return fmt.Errorf("恢复默认安装根目录失败: %w", err)
-		}
-		fmt.Println("已恢复默认安装根目录:", a.paths.Installs())
-		return nil
+	if len(args) > 1 {
+		return fmt.Errorf("用法: vsm install-root [目录|default]")
 	}
 	dir := args[0]
-	// 相对路径会随 cwd 漂移：在 A 目录设的根目录，到 B 目录就失效了。
-	// 统一转成绝对路径后再落盘。
-	abs, err := filepath.Abs(dir)
+	if dir == "default" {
+		dir = ""
+	}
+	next, err := a.paths.SetInstallRoot(dir)
 	if err != nil {
-		return fmt.Errorf("无法解析目录 %q: %w", dir, err)
-	}
-	if err := a.paths.ValidateInstallRoot(abs); err != nil {
 		return err
 	}
-	if err := os.MkdirAll(abs, 0o755); err != nil {
-		return err
-	}
-	if err := config.WriteFileAtomic(path, []byte(abs+"\n"), 0o644); err != nil {
-		return err
-	}
-	fmt.Println("已设置安装根目录:", abs)
+	fmt.Println("当前安装根目录:", next.Installs())
 	return nil
 }
 

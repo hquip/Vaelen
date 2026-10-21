@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -125,7 +126,8 @@ func (a Activator) VerifyCmdActivation(dir string) (CmdActivationCheck, error) {
 		if r.Spec == "" && r.Error == "" {
 			continue
 		}
-		row := CmdToolActivation{Tool: tool, Version: r.Version, Source: r.Source, Error: r.Error}
+		row := CmdToolActivation{Tool: tool, Version: r.Version, RequestedVersion: r.Spec, InstallRoot: a.Paths.Installs(), Source: r.Source, Error: r.Error}
+		row.InstalledVersions, _ = a.Registry.Installed(tool)
 		names := plugin.DetectCommands()[tool]
 		if len(names) == 0 {
 			names = []string{tool}
@@ -138,6 +140,11 @@ func (a Activator) VerifyCmdActivation(dir string) (CmdActivationCheck, error) {
 		row.Executable, err = a.Which(tool, dir)
 		if err != nil {
 			row.Error = err.Error()
+			var unavailable *VersionUnavailableError
+			if errors.As(err, &unavailable) {
+				row.Code = "version-not-installed"
+				row.Action = "在当前安装目录安装或纳管所需版本。若刚更改过安装目录，请恢复原目录；更改目录不会迁移已有安装。"
+			}
 		}
 		shim := filepath.Join(a.Paths.Shims(), names[0]+".cmd")
 		row.Passed = row.Error == "" && row.Command != "" && (sameCommandFile(row.Command, shim) || sameCommandFile(row.Command, row.Executable))
@@ -187,6 +194,7 @@ func (a Activator) VerifyCmdActivation(dir string) (CmdActivationCheck, error) {
 		fields["scope"], fields["tool"], fields["selected_version"] = "controlled-cmd", row.Tool, row.Version
 		fields["passed"], fields["command"], fields["selected_executable"] = row.Passed, row.Command, row.Executable
 		fields["expected_version"], fields["actual_version"], fields["source"] = row.ExpectedVersion, row.ActualVersion, row.Source
+		fields["requested_version"], fields["installed_versions"] = row.RequestedVersion, row.InstalledVersions
 		fields["code"], fields["error"], fields["action"] = row.Code, row.Error, row.Action
 		level := "info"
 		if !row.Passed {

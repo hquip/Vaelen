@@ -37,7 +37,7 @@ func (a Activator) Which(tool, startDir string) (string, error) {
 		return "", fmt.Errorf("%s", res.Error)
 	}
 	if res.Version == "" {
-		return "", fmt.Errorf("%s 未找到可用版本", tool)
+		return "", a.unavailableVersion(tool, res)
 	}
 	installDir := a.Paths.InstallDir(tool, res.Version)
 	exe := ""

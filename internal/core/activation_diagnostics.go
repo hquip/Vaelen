@@ -65,6 +65,10 @@ func (a Activator) LogActivationSnapshot(scope, phase, mode, dir string, tools [
 		fields["scope"], fields["phase"], fields["cmd_mode"] = scope, phase, mode
 		fields["helper_session"] = os.Getenv("_VSM_CMD_TRACE_ID")
 		fields["tool"], fields["effective_version"], fields["source"] = tool, r.Version, r.Source
+		fields["requested_version"] = r.Spec
+		if installed, err := a.Registry.Installed(tool); err == nil {
+			fields["installed_versions"] = installed
+		}
 		if global != nil {
 			fields["global_version"], _ = global.Get(tool)
 		}
