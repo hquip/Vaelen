@@ -34,6 +34,10 @@ GUI 会识别同目录的标准 CLI 文件名和 GitHub 原始下载文件名，
 
 已经通过 VSM shim 的 cmd，GUI 切换全局默认后，下次 `java -version` 即使用所选版本，无需重新激活或重开。`where java` 的第一项应位于 VSM 数据目录的 `shims` 下；后面的系统 Java 可以保留。项目版本和 `VSM_JAVA_VERSION` 环境覆盖仍优先于全局默认。
 
+生成的语言入口与 `vsm` 入口绑定到其所属的数据目录。旧入口只转发到 CLI，却继续使用调用者继承的 `VSM_HOME`；当 GUI 和已有终端的该变量不同时，即使执行了 GUI 生成的入口，也可能读取另一目录的默认版本。修复后的入口只在子进程中设置所属目录，保留原终端变量以及其它目录的配置；直接调用 CLI 可执行文件仍按其环境解析 `VSM_HOME`。更新后重新点击「激活 PATH」或执行 `vsm reshim` 重建入口。
+
+执行验证会额外传入一个独立空目录作为继承环境，要求入口仍能使用所属配置执行所选程序；不再用强制匹配的 `VSM_HOME` 掩盖旧入口的问题。日志中的 `owner_home_verified` 表示这项检查通过，仍不表示其它终端的 PATH 已被修改。
+
 若原有 cmd 的 PATH 从未包含 VSM，GUI 无法直接改写那个进程的环境。可在原 cmd 执行 `call "%VSM_HOME%\vsm-cmd-init.cmd"` 加载一次；未自定义 VSM_HOME 时使用 `call "%USERPROFILE%\.vsm\vsm-cmd-init.cmd"`。GUI 显示的是它自身启动时的 PATH，不能据此断言其它终端仍在使用旧版本。
 
 已有 cmd 也可能包含 VSM 目录，但顺序仍是系统 Java、Oracle `javapath`、VSM。此时 `vsm which java` 会正确显示所选 Java 17，而 `java -version` 仍运行排在前面的 Java 21。点击「激活 PATH」保存启动配置后，在这个原 cmd 中加载一次初始化命令，即可前置 VSM 并继续在同一终端切换，不需要重装 JDK 或删除 Oracle 的文件。GUI 的结果区提供按当前数据目录生成的可复制命令；这条命令不会自行在其它终端执行。

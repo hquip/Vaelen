@@ -110,6 +110,44 @@ func TestCmdHookPreservesAutoRunAndRefusesExternalChanges(t *testing.T) {
 	}
 }
 
+func TestCmdHookContinuesAfterExistingBatchStartup(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("VSM_HOME", root)
+	legacy := filepath.Join(t.TempDir(), "previous startup.cmd")
+	if err := os.WriteFile(legacy, []byte("@set \"VSM_TEST_LEGACY_RAN=1\"\r\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	for _, prefix := range []string{`call "` + legacy + `"`, `"` + legacy + `"`, `if exist "` + legacy + `" "` + legacy + `"`} {
+		key := `Software\VSM\Tests\` + filepath.Base(t.TempDir())
+		t.Cleanup(func() {
+			runRegistryScript(t, "[Microsoft.Win32.Registry]::CurrentUser.DeleteSubKeyTree("+quotePowerShell(key)+",$false)")
+		})
+		runRegistryScript(t, "$k=[Microsoft.Win32.Registry]::CurrentUser.CreateSubKey("+quotePowerShell(key)+");$k.SetValue('AutoRun',"+quotePowerShell(prefix)+");$k.Dispose()")
+		if _, err := persistCmdHookAt(root, key); err != nil {
+			t.Fatal(err)
+		}
+		var command string
+		read := "$k=[Microsoft.Win32.Registry]::CurrentUser.OpenSubKey(" + quotePowerShell(key) + ");$k.GetValue('AutoRun',$null,[Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)|ConvertTo-Json -Compress;$k.Dispose()"
+		if err := json.Unmarshal([]byte(runRegistryScript(t, read)), &command); err != nil {
+			t.Fatal(err)
+		}
+		probe := exec.Command(windowsCmdPath())
+		probe.SysProcAttr = &syscall.SysProcAttr{CmdLine: `"` + windowsCmdPath() + `" /D /U /V:OFF /S /C "` + command + ` & set VSM_TEST_LEGACY_RAN & set PATH"`}
+		out, err := probe.CombinedOutput()
+		if err != nil {
+			t.Fatalf("legacy AutoRun: %v %s", err, out)
+		}
+		units := make([]uint16, len(out)/2)
+		for i := range units {
+			units[i] = binary.LittleEndian.Uint16(out[2*i:])
+		}
+		text := string(utf16.Decode(units))
+		if !strings.Contains(text, "VSM_TEST_LEGACY_RAN=1") || !strings.Contains(text, "Path="+filepath.Join(root, "shims")+";") && !strings.Contains(text, "PATH="+filepath.Join(root, "shims")+";") {
+			t.Fatalf("VSM not reached after %s: %s", prefix, text)
+		}
+	}
+}
+
 func TestCmdStartupOverridesSystemPATHWithoutCodePageOrDuplicates(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "中文 & tools (test)")
 	if err := config.WriteFileAtomic(filepath.Join(root, "vsm-cmd-init.cmd"), []byte(cmdStartupScript(root)), 0o644); err != nil {
@@ -388,6 +426,27 @@ func TestCmdActivationRejectsWrongRuntimeBehindShim(t *testing.T) {
 	}
 	if len(check.Tools) != 1 || !strings.Contains(check.Tools[0].Error, "21.0.1") || !strings.Contains(check.Tools[0].Error, "17.0.12") {
 		t.Fatalf("did not compare actual versions: %+v", check)
+	}
+}
+
+func TestCmdActivationRejectsShimThatDependsOnInheritedHome(t *testing.T) {
+	a, _ := executingActivationFixture(t)
+	if err := a.SetGlobalVersion("java", "17.0.12"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(a.Paths.Root, "vsm-cmd-init.cmd"), []byte(cmdStartupScript(a.Paths.Root)), 0644); err != nil {
+		t.Fatal(err)
+	}
+	legacy := "@echo off\r\n\"" + quoteCmd(a.VsmExe) + "\" exec java %*\r\n"
+	if err := os.WriteFile(filepath.Join(a.Paths.Shims(), "java.cmd"), []byte(legacy), 0644); err != nil {
+		t.Fatal(err)
+	}
+	check, err := a.VerifyCmdActivation(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if check.Passed {
+		t.Fatalf("unbound entry passed because verification forced the expected VSM_HOME: %+v", check)
 	}
 }
 
