@@ -732,9 +732,10 @@ function renderDetail(tool) {
         <button id="installBtn" class="primary-btn">安装</button>
       </div>
       <div class="install-path">
-        <button id="pickDirBtn" class="mini">📁 选择安装位置</button>
+        <button id="pickDirBtn" class="mini">📁 选择安装父目录</button>
         <span id="installDirLabel" class="install-dir-label">默认目录</span>
       </div>
+      <p class="project-hint">自动创建「工具名 / 版本」目录。选择当前安装根目录或当前工具目录时使用默认位置；点击路径可恢复默认。</p>
       <label class="install-path" title="发布方没有提供 SHA256 校验值时停止安装">
         <input id="requireChecksum" type="checkbox"> 要求发布方 SHA256 校验
       </label>
@@ -771,9 +772,12 @@ function renderDetail(tool) {
   if (pickBtn) {
     pickBtn.addEventListener("click", async () => {
       try {
-        const d = await call("PickDirectory", "选择 " + tool + " 安装位置");
-        if (d) installDir = d;
-        updateInstallDirLabel();
+        const d = await call("PickDirectory", "选择安装父目录（自动创建 " + tool + " / 版本）");
+        if (d) {
+          const location = await call("InstallLocation", tool, d);
+          installDir = location.base;
+          updateInstallDirLabel();
+        }
       } catch (e) {
         toast(e.message, true);
       }
@@ -786,17 +790,22 @@ function renderDetail(tool) {
   if (projectMode !== "docker") loadSysVers(tool);
 }
 
-function updateInstallDirLabel() {
+async function updateInstallDirLabel() {
   const el = document.getElementById("installDirLabel");
   if (!el) return;
-  if (installDir) {
-    el.textContent = "→ " + installDir + "  ✕";
-    el.title = "点此清除，恢复默认目录";
+  const tool = selected;
+  const base = installDir;
+  try {
+    const location = await call("InstallLocation", tool, base);
+    if (selected !== tool || installDir !== base || document.getElementById("installDirLabel") !== el) return;
+    el.textContent = "→ " + location.target + (base ? "  ✕" : "（默认）");
+    el.title = "实际安装位置：" + location.target + "；点此恢复默认位置";
+    el.classList.toggle("set", !!base);
+  } catch (e) {
+    if (selected !== tool || installDir !== base || document.getElementById("installDirLabel") !== el) return;
+    el.textContent = "安装位置无效，点击恢复默认";
+    el.title = errMsg(e);
     el.classList.add("set");
-  } else {
-    el.textContent = "默认目录";
-    el.title = "";
-    el.classList.remove("set");
   }
 }
 

@@ -67,6 +67,10 @@ func (a *app) cmdInstall(args []string) error {
 		}
 		customDir = abs
 	}
+	customDir, err := a.paths.NormalizeInstallBase(tool, customDir)
+	if err != nil {
+		return err
+	}
 	version, err := resolveRemote(p, spec)
 	if err != nil {
 		return err

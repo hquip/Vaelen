@@ -372,10 +372,9 @@ func (a *App) install(tool, version, dir string, requireChecksum bool) (err erro
 	if !ok {
 		return fmt.Errorf("不支持的工具: %s", tool)
 	}
-	if dir = strings.TrimSpace(dir); dir != "" {
-		if dir, err = filepath.Abs(dir); err != nil {
-			return err
-		}
+	dir, err = c.paths.NormalizeInstallBase(tool, dir)
+	if err != nil {
+		return err
 	}
 	resolved, err := resolveRemote(p, version)
 	if err != nil {
@@ -409,6 +408,28 @@ func (a *App) PickDirectory(title string) (string, error) {
 
 // GetInstallRoot 返回当前全局安装根目录。
 func (a *App) GetInstallRoot() string { return a.c().paths.Installs() }
+
+type InstallLocationInfo struct {
+	Base   string `json:"base"`
+	Target string `json:"target"`
+}
+
+// InstallLocation previews the exact parent layout without network or disk writes.
+func (a *App) InstallLocation(tool, dir string) (InstallLocationInfo, error) {
+	if _, ok := plugin.Get(tool); !ok {
+		return InstallLocationInfo{}, fmt.Errorf("不支持的工具: %s", tool)
+	}
+	c := a.c()
+	base, err := c.paths.NormalizeInstallBase(tool, dir)
+	if err != nil {
+		return InstallLocationInfo{}, err
+	}
+	targetBase := base
+	if targetBase == "" {
+		targetBase = c.paths.Installs()
+	}
+	return InstallLocationInfo{Base: base, Target: filepath.Join(targetBase, tool, "<版本>")}, nil
+}
 
 // SetInstallRoot 设置全局安装根目录（dir 为空恢复默认），并热重载使之立即生效。
 func (a *App) SetInstallRoot(dir string) (err error) {

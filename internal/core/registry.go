@@ -24,12 +24,71 @@ func (r Registry) Installed(tool string) ([]string, error) {
 		return nil, err
 	}
 	guard.Close()
-	return dirNames(r.Paths.ToolInstalls(tool))
+	names, err := dirNames(r.Paths.ToolInstalls(tool))
+	if err != nil {
+		return nil, err
+	}
+	containers := r.installStorageContainers(tool, names)
+	versions := names[:0]
+	for _, name := range names {
+		if !containers[name] {
+			versions = append(versions, name)
+		}
+	}
+	return versions, nil
+}
+
+// Older custom installations could place their targets below the tool registry
+// itself (go/go/1.27.3). The first directory is storage, not a second version.
+// Identify it from verified ownership receipts rather than guessing by name.
+func (r Registry) installStorageContainers(tool string, names []string) map[string]bool {
+	containers := map[string]bool{}
+	root, err := canonicalPath(r.Paths.ToolInstalls(tool))
+	if err != nil {
+		return containers
+	}
+	for _, version := range names {
+		dir := r.Paths.InstallDir(tool, version)
+		if !isLink(dir) {
+			continue
+		}
+		linkedTarget, err := os.Readlink(dir)
+		if err != nil {
+			continue
+		}
+		if !filepath.IsAbs(linkedTarget) {
+			linkedTarget = filepath.Join(filepath.Dir(dir), linkedTarget)
+		}
+		if _, owned, err := ownedReceipt(dir, linkedTarget, tool, version); err != nil || !owned {
+			continue
+		}
+		target, err := canonicalPath(linkedTarget)
+		if err != nil || !pathWithin(root, target) {
+			continue
+		}
+		rel, err := filepath.Rel(root, target)
+		if err != nil {
+			continue
+		}
+		if container, _, nested := strings.Cut(rel, string(filepath.Separator)); nested {
+			containers[container] = true
+		}
+	}
+	return containers
 }
 
 // IsInstalled 判断某版本是否已安装。
 func (r Registry) IsInstalled(tool, version string) bool {
-	return dirExists(r.Paths.InstallDir(tool, version))
+	names, err := r.Installed(tool)
+	if err != nil {
+		return false
+	}
+	for _, name := range names {
+		if name == version {
+			return true
+		}
+	}
+	return false
 }
 
 // Tools 返回有安装记录的工具列表。
