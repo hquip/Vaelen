@@ -36,11 +36,21 @@ func (in Installer) Install(p plugin.Plugin, version, customDir string, progress
 	if in.Paths.ProjectMode == "docker" {
 		return ErrDockerHostInstall
 	}
-	if in.Paths.ProjectMode == "local" && customDir != "" && !pathWithin(in.Paths.ProjectRoot, customDir) {
-		return fmt.Errorf("项目隔离模式不允许安装到项目目录外")
-	}
 	if err := validateInstall(p.Name(), version); err != nil {
 		return err
+	}
+	customDir, err = in.Paths.NormalizeInstallBase(p.Name(), customDir)
+	if err != nil {
+		return err
+	}
+	if in.Paths.ProjectMode == "local" && customDir != "" {
+		project, err := canonicalPath(in.Paths.ProjectRoot)
+		if err != nil {
+			return err
+		}
+		if !pathWithin(project, customDir) {
+			return fmt.Errorf("项目隔离模式不允许安装到项目目录外")
+		}
 	}
 	if err := in.Paths.EnsureDirs(); err != nil {
 		return err
@@ -54,6 +64,12 @@ func (in Installer) Install(p plugin.Plugin, version, customDir string, progress
 		progress = func(string) {}
 	}
 	dest := in.Paths.InstallDir(p.Name(), version)
+	target := dest
+	if customDir != "" {
+		target = filepath.Join(customDir, p.Name(), version)
+	}
+	logging.Record("info", "core", "install.location", logging.Fields{"tool": p.Name(), "version": version, "registry": dest, "target": target})
+	progress("安装位置: " + target)
 	installed, err := checkExisting(dest)
 	if err != nil {
 		return err
@@ -226,6 +242,11 @@ func placeInstall(root, dest, customDir, tool, version string) error {
 	if err := validateInstall(tool, version); err != nil {
 		return err
 	}
+	var err error
+	customDir, err = (Paths{InstallsRoot: filepath.Dir(filepath.Dir(dest))}).NormalizeInstallBase(tool, customDir)
+	if err != nil {
+		return err
+	}
 	if customDir == "" {
 		return moveInto(root, dest)
 	}
@@ -317,6 +338,13 @@ func (in Installer) Uninstall(tool, version string) (err error) {
 	}
 	defer guard.Close()
 	dest := in.Paths.InstallDir(tool, version)
+	names, err := dirNames(in.Paths.ToolInstalls(tool))
+	if err != nil {
+		return err
+	}
+	if (Registry{Paths: in.Paths}).installStorageContainers(tool, names)[version] {
+		return fmt.Errorf("%s 是安装存储目录，不是 %s 版本；请卸载具体版本，保留其中其它安装", dest, tool)
+	}
 	if isLink(dest) {
 		// 用 Readlink 解析 junction 目标（EvalSymlinks 对部分 Windows junction 会失败）。
 		target, _ := os.Readlink(dest)
@@ -345,6 +373,7 @@ func (in Installer) Uninstall(tool, version string) (err error) {
 			if err := guard.Remove(receiptName(version)); err != nil {
 				return err
 			}
+			removeEmptyInstallParents(r.Target, in.Paths.ToolInstalls(tool))
 		}
 		return nil
 	}

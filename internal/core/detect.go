@@ -274,6 +274,11 @@ func runVersionProbe(tool, bin string, env []string, dir string, discovery bool)
 	if tool == "python" {
 		flags = []string{"--version", "-V"}
 	}
+	if tool == "lua" {
+		// Lua interprets a bare "version" as a script filename. Lua/LuaJIT
+		// both support -v; the generic --version/-version switches do not.
+		flags = []string{"-v"}
+	}
 	if tool == "java" {
 		flags = []string{"-version", "--version"}
 	}
@@ -356,6 +361,14 @@ func runVersionProbe(tool, bin string, env []string, dir string, discovery bool)
 			continue
 		}
 		text := probeANSIEscape.ReplaceAllString(output.text, "")
+		if tool == "go" {
+			version, parseErr := parseGoVersionOutput(text)
+			if parseErr == nil {
+				return version, nil
+			}
+			lastErr = parseErr
+			continue
+		}
 		if pattern := specificProbePatterns[tool]; pattern != nil {
 			if match := pattern.FindStringSubmatch(text); match != nil {
 				return match[1], nil
@@ -383,6 +396,7 @@ var probeANSIEscape = regexp.MustCompile(`\x1b\[[0-9;]*m`)
 var specificProbePatterns = map[string]*regexp.Regexp{
 	"maven":  regexp.MustCompile(`(?m)^Apache Maven\s+(\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?)`),
 	"python": regexp.MustCompile(`(?m)^Python\s+(\d+\.\d+(?:\.\d+)?(?:(?:a|b|rc)\d+)?)`),
+	"lua":    regexp.MustCompile(`(?m)^(?:Lua|LuaJIT)[ \t]+(\d+\.\d+(?:\.\d+)?(?:[-+][0-9A-Za-z.-]+)?)(?:[ \t\r\n]|$)`),
 	"redis":  regexp.MustCompile(`(?im)^Redis server\s+v=(\d+(?:\.\d+)+(?:[-+][0-9A-Za-z.-]+)?)(?:\s|$)`),
 }
 

@@ -38,6 +38,11 @@ jobs:
         if: matrix.os != 'windows-latest'
         run: bash scripts/test-install.sh
 
+      - name: Prepare native Lua version probe
+        if: matrix.os == 'ubuntu-latest'
+        timeout-minutes: 3
+        run: sudo apt-get update -o Acquire::Retries=3 && sudo apt-get install -y --no-install-recommends lua5.4
+
       - name: Test Windows installer without network
         if: matrix.os == 'windows-latest'
         shell: pwsh
@@ -71,6 +76,7 @@ jobs:
       - name: Test
         env:
           VSM_TEST_PYTHON: python
+          VSM_TEST_LUA: ${{ matrix.os == 'ubuntu-latest' && 'lua5.4' || '' }}
         run: go test ./internal/... .
 
       - name: Test (race)

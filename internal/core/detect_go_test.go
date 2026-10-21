@@ -73,6 +73,11 @@ case "failure":fmt.Println("go: downloading go1.99.0; requires go >= 1.99.0");os
 case "diagnostic":fmt.Println("warning: requires go1.99.0")
 case "wrong-command":fmt.Println("other tool 1.99.0")
 case "prerelease":fmt.Println("go version go1.27rc1 linux/amd64")
+case "vendor":fmt.Println("go version go1.26.2+vendor.1 linux/amd64")
+case "experiment":fmt.Println("go version go1.26.2 X:boringcrypto linux/amd64")
+case "gccgo":fmt.Println("go version go1.18 gccgo (GCC) 14.2.0 linux/amd64")
+case "unknown":fmt.Println("go version unknown linux/amd64")
+case "extra-diagnostic":fmt.Println("go version go1.22.3 linux/amd64\nwarning: go1.99.0")
 default:fmt.Println("go version go1.22.3 linux/amd64")
 }}
 `
@@ -88,10 +93,9 @@ default:fmt.Println("go version go1.22.3 linux/amd64")
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("build fixture: %v %s", err, out)
 	}
-	for _, mode := range []string{"failure", "diagnostic", "wrong-command", "prerelease", "stable"} {
+	for _, mode := range []string{"failure", "diagnostic", "wrong-command", "prerelease", "stable", "vendor", "experiment", "gccgo", "unknown", "extra-diagnostic"} {
 		t.Run(mode, func(t *testing.T) {
 			t.Setenv("VSM_TEST_PROBE_MODE", mode)
-			got, err := probeGoVersion(bin)
 			want := ""
 			if mode == "stable" {
 				want = "1.22.3"
@@ -99,8 +103,20 @@ default:fmt.Println("go version go1.22.3 linux/amd64")
 			if mode == "prerelease" {
 				want = "1.27rc1"
 			}
-			if got != want || (err == nil) != (want != "") {
-				t.Fatalf("mode %s returned %q, %v", mode, got, err)
+			if mode == "vendor" {
+				want = "1.26.2+vendor.1"
+			}
+			if mode == "experiment" {
+				want = "1.26.2"
+			}
+			if mode == "gccgo" {
+				want = "1.18"
+			}
+			for _, probe := range []func(string) (string, error){probeGoVersion, func(bin string) (string, error) { return probeVersionCommand("go", bin, nil, "") }} {
+				got, err := probe(bin)
+				if got != want || (err == nil) != (want != "") {
+					t.Fatalf("mode %s returned %q, %v", mode, got, err)
+				}
 			}
 		})
 	}
