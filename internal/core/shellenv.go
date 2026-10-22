@@ -156,20 +156,19 @@ func EnvScript(shell string, pathDirs []string, env map[string]string) (string, 
 		}
 		b.WriteString("export " + envKeysVar + "=" + quotePOSIX(strings.Join(keys, " ")) + "\n")
 	case "fish":
-		// VSM_PATH_BASE 未设置时 fish 会把 PATH 置成仅含工具目录，丢掉系统 PATH
-		b.WriteString("if not set -q VSM_PATH_BASE\n    set -gx VSM_PATH_BASE $PATH\nend\n")
+		b.WriteString(fishPathBase())
 		var parts []string
 		for _, d := range pathDirs {
 			parts = append(parts, quoteFish(shellPath(d)))
 		}
 		parts = append(parts, "$VSM_PATH_BASE")
-		b.WriteString("set -gx PATH " + strings.Join(parts, " ") + "\n")
+		b.WriteString("set -gx --path PATH " + strings.Join(parts, " ") + "\n")
 		b.WriteString(restoreManagedVars(sh))
 		for _, k := range keys {
 			b.WriteString(backupManagedVar(sh, k))
 			b.WriteString("set -gx " + k + " " + quoteFish(env[k]) + "\n")
 		}
-		b.WriteString("set -gx " + envKeysVar + " " + strings.Join(keys, " ") + "\n")
+		b.WriteString("set -gx " + envKeysVar + " " + quoteFish(strings.Join(keys, " ")) + "\n")
 	case "powershell", "pwsh":
 		b.WriteString("if (-not $env:VSM_PATH_BASE) { $env:VSM_PATH_BASE = $env:PATH }\n")
 		if len(pathDirs) == 0 {
@@ -205,7 +204,10 @@ func EnvScript(shell string, pathDirs []string, env map[string]string) (string, 
 			}
 		}
 		for _, tool := range plugin.Names() {
-			p, _ := plugin.Get(tool)
+			p, ok := plugin.Get(tool)
+			if !ok {
+				continue
+			}
 			for k := range p.ExecEnv("") {
 				if validEnvKey(k) {
 					known[k] = true
@@ -266,17 +268,38 @@ _vsm_hook`, posixVsm), nil
 		if vsmCmd != "vsm" {
 			fishVsm = quoteFish(shellPath(vsmCmd))
 		}
-		return fmt.Sprintf(`contains -- %s $PATH; or set -gx PATH %s $PATH
-if not set -q VSM_PATH_BASE
-    set -gx VSM_PATH_BASE $PATH
+		fishShims := quoteFish(shellPath(shimsDir))
+		return fishPathBase() + fmt.Sprintf(`if type -q fish_add_path
+    fish_add_path --global --path --move %s
+else
+    set -l _vsm_other_paths
+    for _vsm_path in $PATH
+        if test "$_vsm_path" != %s
+            set -a _vsm_other_paths "$_vsm_path"
+        end
+    end
+    set -gx --path PATH %s $_vsm_other_paths
 end
+set -l _vsm_base_paths
+for _vsm_path in $VSM_PATH_BASE
+    if test "$_vsm_path" != %s
+        set -a _vsm_base_paths "$_vsm_path"
+    end
+end
+set -gx --path VSM_PATH_BASE %s $_vsm_base_paths
 function _vsm_hook --on-variable PWD
     %s env fish | source
+    set -g _VSM_FISH_REFRESHED_PWD "$PWD"
 end
 function _vsm_prompt --on-event fish_prompt
+    if set -q _VSM_FISH_REFRESHED_PWD; and test "$_VSM_FISH_REFRESHED_PWD" = "$PWD"
+        set -e _VSM_FISH_REFRESHED_PWD
+        return
+    end
     _vsm_hook
+    set -e _VSM_FISH_REFRESHED_PWD
 end
-_vsm_hook`, quoteFish(shellPath(shimsDir)), quoteFish(shellPath(shimsDir)), fishVsm), nil
+_vsm_hook`, fishShims, fishShims, fishShims, fishShims, fishShims, fishVsm), nil
 	case "powershell", "pwsh":
 		psVsm := vsmCmd
 		if vsmCmd != "vsm" {
@@ -385,6 +408,9 @@ func ShellRCFile(shell, home string) (string, error) {
 		}
 		return filepath.Join(home, ".bashrc"), nil
 	case "fish":
+		if dir := os.Getenv("XDG_CONFIG_HOME"); filepath.IsAbs(dir) {
+			return filepath.Join(dir, "fish", "config.fish"), nil
+		}
 		return filepath.Join(home, ".config", "fish", "config.fish"), nil
 	}
 	return "", fmt.Errorf("不支持自动写入 %s 的配置文件（支持 bash/zsh/fish）", shell)

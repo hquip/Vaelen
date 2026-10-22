@@ -242,18 +242,34 @@ func (a Activator) GenerateShims() error {
 }
 
 func (a Activator) writeShim(tool string) error {
+	name, content := a.shimScript(tool, "")
+	return a.saveShim(name, content, 0o755)
+}
+
+// The same renderer is used when writing and recognizing an owned dispatcher.
+func (a Activator) shimScript(tool, command string) (name, content string) {
 	vsm := a.VsmExe
 	if vsm == "" {
 		vsm = "vsm"
 	}
+	name = tool
+	if command != "" {
+		name = command
+	}
 	if runtime.GOOS == "windows" {
 		// .cmd 里 % 会被展开，路径中的 % 需写成 %%
-		content := a.shimPreamble() + "\"" + quoteCmd(vsm) + "\" exec " + tool + " %*\r\n"
-		return a.saveShim(tool+".cmd", content, 0o644)
+		args := tool
+		if command != "" {
+			args += " -- " + command
+		}
+		return name + ".cmd", a.shimPreamble() + "\"" + quoteCmd(vsm) + "\" exec " + args + " %*\r\n"
 	}
 	// 单引号字面量：路径里的 $、反引号、空格都不会被 shell 解释
-	content := a.shimPreamble() + "exec " + quotePOSIX(vsm) + " exec " + tool + " \"$@\"\n"
-	return a.saveShim(tool, content, 0o755)
+	args := tool
+	if command != "" {
+		args += " -- " + quotePOSIX(command)
+	}
+	return name, a.shimPreamble() + "exec " + quotePOSIX(vsm) + " exec " + args + " \"$@\"\n"
 }
 
 // Services are started explicitly through db; registering their programs must
@@ -285,16 +301,8 @@ func (a Activator) writeCommandShim(tool, command string) error {
 	if err := validateComponent(command); err != nil {
 		return err
 	}
-	vsm := a.VsmExe
-	if vsm == "" {
-		vsm = "vsm"
-	}
-	if runtime.GOOS == "windows" {
-		content := a.shimPreamble() + "\"" + quoteCmd(vsm) + "\" exec " + tool + " -- " + command + " %*\r\n"
-		return a.saveShim(command+".cmd", content, 0o644)
-	}
-	content := a.shimPreamble() + "exec " + quotePOSIX(vsm) + " exec " + tool + " -- " + quotePOSIX(command) + " \"$@\"\n"
-	return a.saveShim(command, content, 0o755)
+	name, content := a.shimScript(tool, command)
+	return a.saveShim(name, content, 0o755)
 }
 
 func (a Activator) shimPreamble() string {
@@ -326,12 +334,28 @@ func findExecutable(dirs []string, name string) string {
 	for _, dir := range dirs {
 		for _, c := range candidates {
 			full := filepath.Join(dir, c)
-			if fileExists(full) {
+			if executableFile(full) {
 				return full
 			}
 		}
 	}
 	return ""
+}
+
+func executableFile(path string) bool {
+	info, err := os.Stat(path)
+	if err != nil || !info.Mode().IsRegular() || info.Size() == 0 {
+		return false
+	}
+	if runtime.GOOS == "windows" {
+		return true
+	}
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return false
+	}
+	_, err = exec.LookPath(abs)
+	return err == nil
 }
 
 func fileExists(path string) bool {

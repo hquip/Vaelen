@@ -93,7 +93,10 @@ func (a *app) useLock(install bool) error {
 			return fmt.Errorf("vsm.lock 缺少 %s/%s；运行 vsm lock --platform %s", name, key, key)
 		}
 		if install {
-			p, _ := plugin.Get(name)
+			p, ok := plugin.Get(name)
+			if !ok {
+				return fmt.Errorf("工具定义 %s 已变更，请重试", name)
+			}
 			in := a.inst
 			in.Pinned = &artifact
 			in.RequireChecksum = true

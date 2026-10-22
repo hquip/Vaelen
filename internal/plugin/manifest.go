@@ -5,6 +5,7 @@ import (
 	"embed"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -177,24 +178,54 @@ func loadManifests() {
 			}
 		}
 	}
-	for _, f := range externalManifestFiles() {
-		if data, err := os.ReadFile(f); err == nil {
-			registerManifestData(data)
-		}
+	if err := ReloadExternalTools(); err != nil {
+		fmt.Fprintln(os.Stderr, "vsm: external tools:", err)
 	}
 }
 
-// ReloadExternalTools is safe while the desktop frontend reads the registry.
-func ReloadExternalTools() {
-	for _, file := range externalManifestFiles() {
-		if data, err := os.ReadFile(file); err == nil {
-			registerManifestData(data)
+// ReloadExternalTools replaces one complete external registry. Parse errors
+// preserve the previous set and are returned to the caller, never hidden.
+func ReloadExternalTools() error {
+	files, err := externalManifestFiles()
+	if err != nil {
+		return err
+	}
+	next := map[string]Plugin{}
+	for _, file := range files {
+		f, err := os.Open(file)
+		if err != nil {
+			return fmt.Errorf("read plugin %s: %w", file, err)
+		}
+		data, err := io.ReadAll(io.LimitReader(f, (1<<20)+1))
+		closeErr := f.Close()
+		if err != nil {
+			return fmt.Errorf("read plugin %s: %w", file, err)
+		}
+		if closeErr != nil {
+			return closeErr
+		}
+		if len(data) > 1<<20 {
+			return fmt.Errorf("plugin %s exceeds 1 MiB", file)
+		}
+		manifests, err := parseManifestData(data)
+		if err != nil {
+			return fmt.Errorf("plugin %s: %w", file, err)
+		}
+		for _, m := range manifests {
+			if _, duplicate := next[m.Name]; duplicate {
+				return fmt.Errorf("duplicate external plugin %s", m.Name)
+			}
+			next[m.Name] = manifestPlugin{m}
 		}
 	}
+	registryMu.Lock()
+	externalTools = next
+	registryMu.Unlock()
+	return nil
 }
 
 // externalManifestFiles 返回用户自定义 manifest 目录下的所有 *.json。
-func externalManifestFiles() []string {
+func externalManifestFiles() ([]string, error) {
 	var dir string
 	if env := os.Getenv("VSM_HOME"); env != "" {
 		dir = filepath.Join(env, "plugins")
@@ -202,35 +233,58 @@ func externalManifestFiles() []string {
 		dir = filepath.Join(home, ".vsm", "plugins")
 	}
 	if dir == "" {
-		return nil
+		return nil, nil
 	}
-	files, _ := filepath.Glob(filepath.Join(dir, "*.json"))
-	return files
+	entries, err := os.ReadDir(dir)
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var files []string
+	for _, entry := range entries {
+		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".json") {
+			files = append(files, filepath.Join(dir, entry.Name()))
+		}
+	}
+	return files, nil
 }
 
 // registerManifestData 解析 JSON（支持单个对象或数组），注册其中的 manifest 插件。
 // 容忍 UTF-8 BOM（某些编辑器/PowerShell 会写入），否则 JSON 解析会失败。
 func registerManifestData(data []byte) {
-	data = bytes.TrimPrefix(data, []byte{0xEF, 0xBB, 0xBF})
-	var arr []Manifest
-	if err := json.Unmarshal(data, &arr); err == nil && len(arr) > 0 {
-		for _, m := range arr {
-			if err := validateManifest(m); err != nil {
-				fmt.Fprintln(os.Stderr, "vsm: skipping unsafe manifest:", err)
-			} else {
-				register(manifestPlugin{m})
-			}
-		}
+	manifests, err := parseManifestData(data)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "vsm: skipping invalid manifest:", err)
 		return
 	}
-	var single Manifest
-	if err := json.Unmarshal(data, &single); err == nil && single.Name != "" {
-		if err := validateManifest(single); err != nil {
-			fmt.Fprintln(os.Stderr, "vsm: skipping unsafe manifest:", err)
-		} else {
-			register(manifestPlugin{single})
+	for _, m := range manifests {
+		register(manifestPlugin{m})
+	}
+}
+
+func parseManifestData(data []byte) ([]Manifest, error) {
+	data = bytes.TrimPrefix(data, []byte{0xEF, 0xBB, 0xBF})
+	data = bytes.TrimSpace(data)
+	var arr []Manifest
+	if len(data) > 0 && data[0] == '[' {
+		if err := json.Unmarshal(data, &arr); err != nil {
+			return nil, err
+		}
+	} else {
+		var single Manifest
+		if err := json.Unmarshal(data, &single); err != nil {
+			return nil, err
+		}
+		arr = []Manifest{single}
+	}
+	for _, m := range arr {
+		if err := validateManifest(m); err != nil {
+			return nil, err
 		}
 	}
+	return arr, nil
 }
 
 func validateManifest(m Manifest) error {

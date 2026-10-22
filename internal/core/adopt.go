@@ -28,7 +28,10 @@ func (in Installer) AdoptPath(tool, path, alias string) (SystemVersion, error) {
 		}
 		s.ManagedVersion = alias
 	}
-	p, _ := plugin.Get(tool)
+	p, ok := plugin.Get(tool)
+	if !ok {
+		return s, fmt.Errorf("工具定义 %s 已变更，请重试", tool)
+	}
 	return s, in.Adopt(p, s.RegistryVersion(), s.Path)
 }
 

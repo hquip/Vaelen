@@ -32,7 +32,7 @@ func TestInstallIntegrityIsFailClosed(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		name += ".exe"
 	}
-	data, err := os.ReadFile(testTar(t, name))
+	data, err := os.ReadFile(testTarMode(t, 0755, name))
 	if err != nil {
 		t.Fatal(err)
 	}

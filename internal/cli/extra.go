@@ -448,6 +448,14 @@ func (a *app) cmdShell(args []string) error {
 	}
 	installDir := a.paths.InstallDir(tool, resolved)
 	binDirs := p.BinPaths(installDir)
+	if a.paths.ProjectMode == "local" || a.paths.ProjectMode == "docker" {
+		return fmt.Errorf("隔离项目请使用 vsm run；临时版本会话用于共享版本环境")
+	}
+	selection := a.act
+	selection.Resolver.Pinned = map[string]string{tool: resolved}
+	if _, err := selection.Which(tool, a.cwd); err != nil {
+		return err
+	}
 
 	if sh == "" {
 		sh = os.Getenv("SHELL")
@@ -468,6 +476,9 @@ func (a *app) cmdShell(args []string) error {
 	fmt.Fprintf(os.Stderr, "进入 %s %s 临时环境（%s）。输入 exit 退出，不影响其它终端。\n", tool, resolved, sh)
 
 	env := os.Environ()
+	// The startup hook must keep this child session's explicit selection. Only
+	// its environment is changed; project/global files and the parent stay intact.
+	env = setEnv(env, "VSM_"+strings.ToUpper(tool)+"_VERSION", resolved)
 	prefix := strings.Join(binDirs, string(os.PathListSeparator))
 	env = setEnv(env, "PATH", prefix+string(os.PathListSeparator)+os.Getenv("PATH"))
 	for k, v := range p.ExecEnv(installDir) {

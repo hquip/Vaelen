@@ -327,10 +327,13 @@ func TestPromptHooksRefreshWithoutDirectoryChange(t *testing.T) {
 			hook, _ := HookScript(shell, filepath.Join(t.TempDir(), "shims"), fake)
 			hookFile := writeTemp(t, "activate", hook)
 			invoke := "for fn in $precmd_functions; do $fn; done"
+			initialPrompt := ""
 			if shell == "fish" {
 				invoke = "emit fish_prompt"
+				// Activation already refreshed; its first prompt is intentionally free.
+				initialPrompt = invoke + "\n"
 			}
-			script := "source " + quotePOSIX(hookFile) + "\nprintf 'FIRST=%s\\n' \"$JAVA_HOME\"\n/bin/cp " + quotePOSIX(next) + " " + quotePOSIX(state) + "\n" + invoke + "\nprintf 'SECOND=%s\\n' \"$JAVA_HOME\"\n"
+			script := "source " + quotePOSIX(hookFile) + "\n" + initialPrompt + "printf 'FIRST=%s\\n' \"$JAVA_HOME\"\n/bin/cp " + quotePOSIX(next) + " " + quotePOSIX(state) + "\n" + invoke + "\nprintf 'SECOND=%s\\n' \"$JAVA_HOME\"\n"
 			stdout, stderr := runCmd(t, bin, "-c", script)
 			if strings.TrimSpace(stderr) != "" {
 				t.Fatal(stderr)
@@ -438,6 +441,7 @@ func TestPersistShellHookIsIdempotent(t *testing.T) {
 
 func TestShellRCFile(t *testing.T) {
 	t.Setenv("ZDOTDIR", "")
+	t.Setenv("XDG_CONFIG_HOME", "")
 	home := "/home/u"
 	cases := map[string]string{
 		"zsh":  filepath.Join(home, ".zshrc"),

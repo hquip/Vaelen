@@ -33,8 +33,9 @@ func (a Activator) PlanProjectEnvironment(startDir string) (EnvironmentPlan, err
 }
 
 func (a Activator) planEnvironment(startDir string, preferProject bool) (EnvironmentPlan, error) {
+	a.Resolver = a.Resolver.Snapshot(startDir)
 	plan := EnvironmentPlan{Variables: map[string]string{}}
-	project, err := findProjectBounded(startDir, a.Resolver.boundary())
+	project, err := a.Resolver.scan.project()
 	if err != nil {
 		return plan, err
 	}
@@ -51,10 +52,13 @@ func (a Activator) planEnvironment(startDir string, preferProject bool) (Environ
 		plan.Variables["npm_config_registry"] = registry
 	}
 	for _, tool := range plugin.Names() {
-		p, _ := plugin.Get(tool)
+		p, ok := plugin.Get(tool)
+		if !ok {
+			return EnvironmentPlan{}, fmt.Errorf("工具定义 %s 已变更，请重试", tool)
+		}
 		r := a.Resolver.Resolve(tool, startDir)
 		if preferProject && a.Resolver.Pinned[tool] == "" {
-			spec, source, err := findToolVersionBounded(tool, startDir, a.Resolver.boundary())
+			spec, source, err := a.Resolver.projectRequirement(tool, startDir)
 			if err != nil {
 				return EnvironmentPlan{}, err
 			}
@@ -100,13 +104,17 @@ func (a Activator) planEnvironment(startDir string, preferProject bool) (Environ
 		plan.Versions = append(plan.Versions, r)
 		if project != nil && project.Mode == "local" && tool == "python" {
 			venv := project.PythonVenv(r.Version)
-			if fileExists(filepath.Join(venv, "pyvenv.cfg")) {
+			ready, err := project.checkPythonVenv(r.Version)
+			if err != nil {
+				return EnvironmentPlan{}, err
+			}
+			if ready {
 				plan.Paths = append([]string{project.pythonVenvBin(r.Version)}, plan.Paths...)
 				plan.Variables["VIRTUAL_ENV"] = venv
 			}
 		}
 	}
-	workspace, err := findWorkspaceBounded(startDir, a.Resolver.boundary())
+	workspace, err := a.Resolver.scan.findWorkspace()
 	if err != nil {
 		return EnvironmentPlan{}, err
 	}

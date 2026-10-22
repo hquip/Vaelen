@@ -38,7 +38,7 @@ fi
 `
 	case "fish":
 		return `if set -q _VSM_ENV_KEYS
-    for _vsm_k in $_VSM_ENV_KEYS
+    for _vsm_k in (string split ' ' -- $_VSM_ENV_KEYS)
         if not string match -rq '^[A-Za-z_][A-Za-z0-9_]*$' -- $_vsm_k; continue; end
         set -l _vsm_had _VSM_HAD_$_vsm_k
         set -l _vsm_orig _VSM_ORIG_$_vsm_k
@@ -47,7 +47,8 @@ fi
         else
             set -e $_vsm_k
         end
-        set -e $_vsm_had $_vsm_orig
+        set -e $_vsm_had
+        set -e $_vsm_orig
     end
 end
 `

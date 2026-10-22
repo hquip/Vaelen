@@ -296,6 +296,9 @@ func (a *App) Status() (status []ToolStatus, err error) {
 		dir = a.resolveDir()
 	}
 	names := plugin.Names()
+	resolver := c.res.Snapshot(dir)
+	activator := c.act
+	activator.Resolver = resolver
 	out := make([]ToolStatus, 0, len(names))
 	for _, name := range names {
 		if c.paths.ProjectMode == "docker" {
@@ -306,7 +309,7 @@ func (a *App) Status() (status []ToolStatus, err error) {
 			out = append(out, ToolStatus{Tool: name, Source: source, Spec: spec, Installed: []string{}})
 			continue
 		}
-		installed, err := c.reg.Installed(name)
+		installed, err := resolver.Installed(name)
 		if err != nil {
 			return nil, fmt.Errorf("读取 %s 的已安装版本失败: %w", name, err)
 		}
@@ -316,13 +319,13 @@ func (a *App) Status() (status []ToolStatus, err error) {
 		sort.Slice(installed, func(i, j int) bool {
 			return core.CompareVersions(installed[i], installed[j]) > 0
 		})
-		r := c.res.Resolve(name, dir)
+		r := resolver.Resolve(name, dir)
 		if r.Error != "" {
 			return nil, fmt.Errorf("%s: %s", name, r.Error)
 		}
 		var activation *core.ActivationStatus
 		if c.paths.ProjectMode != "local" && r.Version != "" {
-			checked := c.act.ActivationStatus(name, dir)
+			checked := activator.ActivationStatus(name, dir)
 			activation = &checked
 		}
 		out = append(out, ToolStatus{

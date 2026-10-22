@@ -43,6 +43,12 @@ jobs:
         timeout-minutes: 3
         run: sudo apt-get update -o Acquire::Retries=3 && sudo apt-get install -y --no-install-recommends lua5.4
 
+      - name: Test fish nested-shell PATH and refresh hooks
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          fish --version
+          go test ./internal/core -run 'TestFish|TestPromptHooksRefreshWithoutDirectoryChange/fish' -v -count=1
+
       - name: Test Windows installer without network
         if: matrix.os == 'windows-latest'
         shell: pwsh

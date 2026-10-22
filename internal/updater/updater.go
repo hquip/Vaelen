@@ -357,12 +357,11 @@ func (c Client) Apply(ctx context.Context, info Info, executable string, withGUI
 		return result, fmt.Errorf("程序目录不可写（请更新可写位置的副本）: %w", err)
 	}
 	defer os.RemoveAll(stage)
-	lock, err := os.OpenFile(filepath.Join(parent, ".vsm-update.lock"), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+	unlock, err := acquireUpdateLock(parent)
 	if err != nil {
 		return result, fmt.Errorf("已有更新任务或目录不可写: %w", err)
 	}
-	lock.Close()
-	defer os.Remove(lock.Name())
+	defer unlock()
 	name := filepath.Base(exe)
 	items := []replacement{}
 	cliName := "vsm"
@@ -547,12 +546,11 @@ func (c Client) applyBundle(ctx context.Context, info Info, bundle string) (Resu
 		return result, fmt.Errorf("应用目录不可写，请将应用移至可写目录: %w", err)
 	}
 	defer os.RemoveAll(stage)
-	lock, err := os.OpenFile(filepath.Join(filepath.Dir(bundle), ".vsm-update.lock"), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+	unlock, err := acquireUpdateLock(filepath.Dir(bundle))
 	if err != nil {
 		return result, fmt.Errorf("已有应用更新任务或目录不可写: %w", err)
 	}
-	lock.Close()
-	defer os.Remove(lock.Name())
+	defer unlock()
 	archive := filepath.Join(stage, "update.zip")
 	if err := c.download(ctx, info, "vsm-gui-macos-universal.zip", archive); err != nil {
 		return result, err

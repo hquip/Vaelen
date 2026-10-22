@@ -174,9 +174,11 @@ func TestUpdateVerifiesBeforeReplacingAndRollsBack(t *testing.T) {
 			if err != nil || strings.TrimSpace(string(out)) != "vsm v1.0.5" {
 				t.Fatalf("updated executable: %v %s", err, out)
 			}
-			if _, err := os.Stat(filepath.Join(dir, ".vsm-update.lock")); !os.IsNotExist(err) {
-				t.Fatal("update lock retained")
+			unlock, err := acquireUpdateLock(dir)
+			if err != nil {
+				t.Fatalf("completed update still owns lock: %v", err)
 			}
+			unlock()
 		})
 	}
 	t.Run("rollback-second-file", func(t *testing.T) {

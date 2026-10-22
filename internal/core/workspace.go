@@ -61,40 +61,7 @@ func FindWorkspace(start string) (*Workspace, error) {
 }
 
 func findWorkspaceBounded(start, boundary string) (*Workspace, error) {
-	project, err := findProjectBounded(start, boundary)
-	if err != nil {
-		return nil, err
-	}
-	dir, err := filepath.Abs(start)
-	if err != nil {
-		return nil, err
-	}
-	for {
-		file := filepath.Join(dir, config.WorkspaceName)
-		c, err := config.LoadWorkspace(file)
-		if err == nil {
-			for tool := range c.Tools {
-				if _, ok := plugin.Get(tool); !ok {
-					return nil, fmt.Errorf("vsm.json contains unsupported tool %s", tool)
-				}
-			}
-			return &Workspace{Root: dir, File: file, Config: c}, nil
-		}
-		if !os.IsNotExist(err) {
-			return nil, err
-		}
-		if project != nil && sameDir(project.Root, dir) {
-			return nil, nil
-		}
-		if boundary != "" && sameDir(boundary, dir) {
-			return nil, nil
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			return nil, nil
-		}
-		dir = parent
-	}
+	return newResolutionScan(start, boundary).findWorkspace()
 }
 
 func SetProjectVersion(dir, tool, version string) error {

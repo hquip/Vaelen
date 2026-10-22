@@ -49,6 +49,8 @@ func TestDamagedPythonVenvStopsBeforeBaseInterpreter(t *testing.T) {
 	reg := Registry{Paths: paths}
 	a := Activator{Paths: paths, Registry: reg, Resolver: Resolver{Paths: paths, Registry: reg}}
 	for _, run := range []func() error{
+		func() error { _, err := a.PlanEnvironment(p.Root); return err },
+		func() error { _, err := a.PlanProjectEnvironment(p.Root); return err },
 		func() error { return a.PrepareProject(context.Background(), p.Root) },
 		func() error { return a.RunProject(p.Root, "python", []string{"--version"}) },
 	} {

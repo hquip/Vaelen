@@ -22,6 +22,7 @@ type Resolver struct {
 	Pinned   map[string]string
 	// Boundary limits project discovery without changing process-wide environment.
 	Boundary string
+	scan     *resolutionScan
 }
 
 func (r Resolver) boundary() string {
@@ -49,7 +50,7 @@ func (r Resolver) Resolve(tool, startDir string) Resolution {
 	if v := os.Getenv(envKey); v != "" && r.Paths.ProjectMode != "local" && r.Paths.ProjectMode != "docker" {
 		return r.match(tool, v, "环境变量 "+envKey)
 	}
-	spec, src, err := findToolVersionBounded(tool, startDir, r.boundary())
+	spec, src, err := r.projectRequirement(tool, startDir)
 	if err != nil {
 		return Resolution{Tool: tool, Error: err.Error()}
 	}
@@ -59,7 +60,7 @@ func (r Resolver) Resolve(tool, startDir string) Resolution {
 	if r.Paths.ProjectMode == "local" || r.Paths.ProjectMode == "docker" {
 		return Resolution{Tool: tool}
 	}
-	if tv, err := config.Load(r.Paths.GlobalToolVersions()); err == nil {
+	if tv, err := r.loadToolVersions(r.Paths.GlobalToolVersions()); err == nil {
 		if spec, ok := tv.Get(tool); ok {
 			return r.match(tool, spec, "全局")
 		}
@@ -70,7 +71,7 @@ func (r Resolver) Resolve(tool, startDir string) Resolution {
 }
 
 func (r Resolver) match(tool, spec, source string) Resolution {
-	installed, err := r.Registry.Installed(tool)
+	installed, err := r.Installed(tool)
 	if err != nil {
 		return Resolution{Tool: tool, Spec: spec, Source: source, Error: err.Error()}
 	}
@@ -103,18 +104,22 @@ func findToolVersionChecked(tool, startDir string) (spec, source string, err err
 }
 
 func findToolVersionBounded(tool, startDir, boundary string) (spec, source string, err error) {
-	project, err := findProjectBounded(startDir, boundary)
+	return newResolutionScan(startDir, boundary).find(tool)
+}
+
+func (s *resolutionScan) find(tool string) (spec, source string, err error) {
+	project, err := s.project()
 	if err != nil {
 		return "", "", err
 	}
-	dir, err := filepath.Abs(startDir)
+	dir, err := filepath.Abs(s.start)
 	if err != nil {
 		return "", "", err
 	}
 	for {
 		// Explicit workspace configuration wins over ecosystem version files.
 		workspacePath := filepath.Join(dir, config.WorkspaceName)
-		if workspace, err := config.LoadWorkspace(workspacePath); err == nil {
+		if workspace, err := s.workspace(workspacePath); err == nil {
 			if spec, ok := workspace.Tools[tool]; ok {
 				return spec, workspacePath, nil
 			}
@@ -124,7 +129,7 @@ func findToolVersionBounded(tool, startDir, boundary string) (spec, source strin
 		// 同一目录内：.tool-versions 的显式声明优先，其次各生态惯用版本文件
 		// （.nvmrc / go.mod / .python-version 等）。越靠近当前目录的越优先。
 		path := filepath.Join(dir, ".tool-versions")
-		if tv, err := config.Load(path); err == nil {
+		if tv, err := s.versions(path); err == nil {
 			if spec, has := tv.Get(tool); has {
 				return spec, path, nil
 			}
@@ -145,7 +150,7 @@ func findToolVersionBounded(tool, startDir, boundary string) (spec, source strin
 		if project != nil && sameDir(project.Root, dir) {
 			return "", "", nil
 		}
-		if boundary != "" && sameDir(boundary, dir) {
+		if s.boundary != "" && sameDir(s.boundary, dir) {
 			return "", "", nil
 		}
 		if parent == dir {

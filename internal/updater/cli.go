@@ -17,12 +17,11 @@ func (c Client) InstallCLI(ctx context.Context, version, directory string) (stri
 	if err := os.MkdirAll(directory, 0o700); err != nil {
 		return "", err
 	}
-	lock, err := os.OpenFile(filepath.Join(directory, ".vsm-cli-install.lock"), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	unlock, err := acquireUpdateLock(directory)
 	if err != nil {
 		return "", fmt.Errorf("配套 CLI 正在准备或目录不可写: %w", err)
 	}
-	lock.Close()
-	defer os.Remove(lock.Name())
+	defer unlock()
 	stage, err := os.MkdirTemp(directory, ".cli-")
 	if err != nil {
 		return "", err

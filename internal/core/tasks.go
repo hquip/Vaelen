@@ -615,7 +615,10 @@ func taskToolchain(dir, boundary string, locked bool) (any, error) {
 	}
 	tools := []identity{}
 	for _, resolved := range plan.Versions {
-		p, _ := plugin.Get(resolved.Tool)
+		p, ok := plugin.Get(resolved.Tool)
+		if !ok {
+			return nil, fmt.Errorf("工具定义 %s 已变更，请重试", resolved.Tool)
+		}
 		directory, err := canonicalPath(paths.InstallDir(resolved.Tool, resolved.Version))
 		if err != nil {
 			return nil, err
