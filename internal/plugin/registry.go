@@ -9,6 +9,7 @@ var registryMu sync.RWMutex
 
 // builtins 保存所有内置插件，由各插件文件的 init() 注册。
 var builtins = map[string]Plugin{}
+var externalTools = map[string]Plugin{}
 
 func register(p Plugin) { registryMu.Lock(); defer registryMu.Unlock(); builtins[p.Name()] = p }
 
@@ -16,7 +17,10 @@ func register(p Plugin) { registryMu.Lock(); defer registryMu.Unlock(); builtins
 func Get(name string) (Plugin, bool) {
 	registryMu.RLock()
 	defer registryMu.RUnlock()
-	p, ok := builtins[name]
+	p, ok := externalTools[name]
+	if !ok {
+		p, ok = builtins[name]
+	}
 	return p, ok
 }
 
@@ -46,9 +50,14 @@ func ProbeCommands() map[string][]string {
 func Names() []string {
 	registryMu.RLock()
 	defer registryMu.RUnlock()
-	names := make([]string, 0, len(builtins))
+	names := make([]string, 0, len(builtins)+len(externalTools))
 	for n := range builtins {
 		names = append(names, n)
+	}
+	for n := range externalTools {
+		if _, builtin := builtins[n]; !builtin {
+			names = append(names, n)
+		}
 	}
 	sort.Strings(names)
 	return names

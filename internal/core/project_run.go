@@ -101,7 +101,10 @@ func (a Activator) runProjectEnvironment(ctx context.Context, dir, command strin
 	for _, r := range plan.Versions {
 		for _, name := range plugin.DetectCommands()[r.Tool] {
 			if matchesCommand(name) {
-				p, _ := plugin.Get(r.Tool)
+				p, ok := plugin.Get(r.Tool)
+				if !ok {
+					return fmt.Errorf("工具定义 %s 已变更，请重试", r.Tool)
+				}
 				dirs := p.BinPaths(a.Paths.InstallDir(r.Tool, r.Version))
 				if project != nil && project.Mode == "local" && r.Tool == "python" {
 					dirs = []string{project.pythonVenvBin(r.Version)}

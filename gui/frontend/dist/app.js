@@ -562,7 +562,7 @@ async function load() {
   }
   renderStat();
   renderSidebar();
-  if (selected && statusOf(selected)) renderDetail(selected);
+  if (selected) renderDetail(selected);
   return true;
 }
 
@@ -1148,7 +1148,14 @@ function escapeHtml(s) {
 }
 
 document.getElementById("filter").addEventListener("input", renderSidebar);
-document.getElementById("refreshBtn").addEventListener("click", async () => { clearDetectionCache(); await load(); if (selected === null && document.getElementById("detectAll")) showDetectOverview(); });
+document.getElementById("refreshBtn").addEventListener("click", async () => {
+  try {
+    await call("ReloadTools");
+    clearDetectionCache();
+    await load();
+    if (selected === null && document.getElementById("detectAll")) showDetectOverview();
+  } catch (e) { toast("刷新失败: " + errMsg(e), true); }
+});
 document.getElementById("detectBtn").addEventListener("click", showDetectOverview);
 document.getElementById("mirrorSel").addEventListener("change", async (e) => {
   try {

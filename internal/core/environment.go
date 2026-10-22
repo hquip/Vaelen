@@ -52,7 +52,10 @@ func (a Activator) planEnvironment(startDir string, preferProject bool) (Environ
 		plan.Variables["npm_config_registry"] = registry
 	}
 	for _, tool := range plugin.Names() {
-		p, _ := plugin.Get(tool)
+		p, ok := plugin.Get(tool)
+		if !ok {
+			return EnvironmentPlan{}, fmt.Errorf("工具定义 %s 已变更，请重试", tool)
+		}
 		r := a.Resolver.Resolve(tool, startDir)
 		if preferProject && a.Resolver.Pinned[tool] == "" {
 			spec, source, err := a.Resolver.projectRequirement(tool, startDir)

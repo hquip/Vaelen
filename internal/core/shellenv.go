@@ -204,7 +204,10 @@ func EnvScript(shell string, pathDirs []string, env map[string]string) (string, 
 			}
 		}
 		for _, tool := range plugin.Names() {
-			p, _ := plugin.Get(tool)
+			p, ok := plugin.Get(tool)
+			if !ok {
+				continue
+			}
 			for k := range p.ExecEnv("") {
 				if validEnvKey(k) {
 					known[k] = true

@@ -15,6 +15,10 @@ import (
 )
 
 func testTar(t *testing.T, names ...string) string {
+	return testTarMode(t, 0644, names...)
+}
+
+func testTarMode(t *testing.T, mode int64, names ...string) string {
 	t.Helper()
 	name := filepath.Join(t.TempDir(), "test.tar.gz")
 	f, err := os.Create(name)
@@ -24,7 +28,7 @@ func testTar(t *testing.T, names ...string) string {
 	gz := gzip.NewWriter(f)
 	tw := tar.NewWriter(gz)
 	for _, n := range names {
-		if err := tw.WriteHeader(&tar.Header{Name: n, Mode: 0o644, Size: 1}); err != nil {
+		if err := tw.WriteHeader(&tar.Header{Name: n, Mode: mode, Size: 1}); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := tw.Write([]byte("x")); err != nil {

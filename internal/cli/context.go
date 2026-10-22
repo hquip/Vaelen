@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 
 	"vsm/internal/buildinfo"
@@ -89,11 +88,14 @@ func (a *app) cmdContext(args []string) error {
 			}
 			matches := false
 			if whichErr == nil && lookErr == nil {
-				e, eErr := filepath.EvalSymlinks(expected)
-				v, vErr := filepath.EvalSymlinks(actual)
-				matches = eErr == nil && vErr == nil && e == v
+				matches = a.act.CommandMatches(tool, actual, expected)
 			}
-			if item.Active != r.Version || !matches {
+			if matches {
+				item.Active = r.Version
+			}
+			// The exported label describes a past hook invocation; an owned shim
+			// resolves versions dynamically and does not require that label.
+			if !matches {
 				item.State = "activation_required"
 				item.Suggestions = append(item.Suggestions, suggestedCommand{"vsm", []string{"run", "--", tool, "<args>"}, "自动选择项目声明的所有工具版本并执行，无需修改父 shell"})
 				item.Suggestions = append(item.Suggestions, suggestedCommand{"vsm", []string{"shell", tool, r.Spec}, "在临时子 shell 中使用该版本，退出后恢复"}, suggestedCommand{"vsm", []string{"exec", tool, "--", "<command>"}, "让 Agent 命令明确使用解析出的版本"})

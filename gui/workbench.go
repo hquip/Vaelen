@@ -282,6 +282,15 @@ func (a *App) CancelWorkspaceTask() bool {
 }
 func (a *App) ToolCatalog(query string) []plugin.CatalogTool { return plugin.Catalog(query) }
 
+func (a *App) ReloadTools() error {
+	done, err := a.begin()
+	if err != nil {
+		return err
+	}
+	defer done()
+	return plugin.ReloadExternalTools()
+}
+
 func (a *App) AddGitHubTool(name, repo, command, bin, match string) error {
 	done, err := a.begin()
 	if err != nil {
@@ -319,6 +328,5 @@ func (a *App) AddGitHubTool(name, repo, command, bin, match string) error {
 	if closeErr != nil {
 		return closeErr
 	}
-	plugin.ReloadExternalTools()
-	return nil
+	return plugin.ReloadExternalTools()
 }

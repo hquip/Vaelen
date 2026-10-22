@@ -79,7 +79,10 @@ func (a *app) cmdRun(args []string) error {
 			if core.BestMatch(spec, installed) != "" {
 				continue
 			}
-			p, _ := plugin.Get(tool)
+			p, ok := plugin.Get(tool)
+			if !ok {
+				return fmt.Errorf("工具定义 %s 已变更，请重试", tool)
+			}
 			version, err := resolveRemote(p, spec)
 			if err != nil {
 				return err

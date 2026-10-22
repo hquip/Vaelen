@@ -31,7 +31,10 @@ func Catalog(query string) []CatalogTool {
 	out := []CatalogTool{}
 	query = strings.ToLower(query)
 	for _, name := range Names() {
-		p, _ := Get(name)
+		p, ok := Get(name)
+		if !ok {
+			continue
+		}
 		source, installable := "native", true
 		if m, ok := p.(manifestPlugin); ok {
 			source = m.m.Source.Type + ":" + m.m.Source.Repo

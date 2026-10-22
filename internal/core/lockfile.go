@@ -232,7 +232,10 @@ func CreateLock(dir string, targets []plugin.Target, update bool, progress Progr
 	sort.Strings(names)
 	for _, tool := range names {
 		spec := required[tool]
-		p, _ := plugin.Get(tool)
+		p, ok := plugin.Get(tool)
+		if !ok {
+			return nil, fmt.Errorf("工具定义 %s 已变更，请重试", tool)
+		}
 		entry := LockedTool{Definition: plugin.DefinitionID(p), Requested: spec, Platforms: map[string]plugin.Artifact{}}
 		if !update && previous != nil {
 			if old, ok := previous.Tools[tool]; ok && old.Requested == spec && old.Definition == plugin.DefinitionID(p) {
