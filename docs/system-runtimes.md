@@ -30,6 +30,14 @@ vsm use -g python office-python
 
 Go 优先读取程序自身的构建元数据，兼容发行版版本后缀和附加构建信息；命令回退仍禁用项目工具链自动切换。无法识别时会显示实际的版本标识，方便诊断，不从报错中的数字猜测版本。Lua 与 LuaJIT 使用 `-v`，同时识别标准输出和错误输出中的语言版本横幅。
 
+## fish 激活与子 shell
+
+在 fish 中执行 `vsm activate fish | source`，或用 `vsm path-init fish` 将动态激活入口写入 `config.fish`。也可自行将 `vsm activate fish | source` 放到 fish 的 `conf.d` 脚本；选择一种加载位置即可。
+
+`PATH` 和 `VSM_PATH_BASE` 均按 fish 的路径列表导出，嵌套启动 fish 后仍保留目录边界及目录中的空格。再次应用脚本会恢复基础 PATH，并保留系统命令。已有的冒号分隔基础 PATH 会重新标记为路径列表；旧版若已把目录以空格合并，不能可靠区分目录内的空格，请从健康的终端重新启动 fish，勿按空格手动拆分。
+
+激活会将 shims 前置并去重；支持 `fish_add_path` 时使用 `--path --global --move`，只调整当前进程的 PATH，避免自动激活改写持久的 `fish_user_paths`。旧 fish 使用等价的列表处理。进入目录后立即刷新一次，紧随其后的提示符不再重复启动 VSM；其它提示符仍刷新，以便在同一目录感知 GUI / 其它终端修改的全局版本和项目配置。重复加载不会累积事件处理函数。
+
 ## Windows 全局切换与 cmd
 
 点击 GUI「激活 PATH」会配置用户 PATH、cmd AutoRun 和 PowerShell 启动钩子。新开的 cmd 自动把 VSM shims 放到系统 Java 等工具之前，不修改系统 PATH 或原安装。
