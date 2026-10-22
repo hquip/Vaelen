@@ -441,6 +441,7 @@ func TestPersistShellHookIsIdempotent(t *testing.T) {
 
 func TestShellRCFile(t *testing.T) {
 	t.Setenv("ZDOTDIR", "")
+	t.Setenv("XDG_CONFIG_HOME", "")
 	home := "/home/u"
 	cases := map[string]string{
 		"zsh":  filepath.Join(home, ".zshrc"),

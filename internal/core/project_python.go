@@ -23,6 +23,25 @@ func (p Project) pythonVenvBin(version string) string {
 	return filepath.Join(p.PythonVenv(version), bin)
 }
 
+// Read-only validation is shared by shell planning and execution. Missing venvs
+// are created only by PrepareProject; existing damaged ones must never fall back.
+func (p Project) checkPythonVenv(version string) (bool, error) {
+	venv := p.PythonVenv(version)
+	if _, err := os.Lstat(venv); os.IsNotExist(err) {
+		return false, nil
+	} else if err != nil {
+		return false, err
+	}
+	data, err := os.ReadFile(filepath.Join(venv, ".vsm-python-version"))
+	if err != nil || strings.TrimSpace(string(data)) != version || !fileExists(filepath.Join(venv, "pyvenv.cfg")) {
+		return false, fmt.Errorf("Python 环境不完整或不受 vsm 管理: %s", venv)
+	}
+	if findExecutable([]string{p.pythonVenvBin(version)}, "python") == "" {
+		return false, fmt.Errorf("项目 Python venv 缺少可执行文件，已停止运行：%s；请使用项目安装的 Python 按原路径修复此 venv", venv)
+	}
+	return true, nil
+}
+
 func (a Activator) PrepareProject(ctx context.Context, dir string) error {
 	p, err := FindProject(dir)
 	if err != nil || p == nil {
@@ -58,15 +77,7 @@ func (a Activator) PrepareProject(ctx context.Context, dir string) error {
 	if err != nil {
 		return err
 	}
-	if data, err := os.ReadFile(filepath.Join(venv, ".vsm-python-version")); err == nil && strings.TrimSpace(string(data)) == res.Version && fileExists(filepath.Join(venv, "pyvenv.cfg")) {
-		if findExecutable([]string{p.pythonVenvBin(res.Version)}, "python") == "" {
-			return fmt.Errorf("项目 Python venv 缺少可执行文件，已停止运行：%s；请使用项目安装的 Python 按原路径修复此 venv", venv)
-		}
-		return nil
-	}
-	if _, err := os.Lstat(venv); err == nil {
-		return fmt.Errorf("Python 环境不完整或不受 vsm 管理: %s", venv)
-	} else if !os.IsNotExist(err) {
+	if ready, err := p.checkPythonVenv(res.Version); err != nil || ready {
 		return err
 	}
 	if err := projectRoot.MkdirAll(filepath.Dir(venvRel), 0o755); err != nil {

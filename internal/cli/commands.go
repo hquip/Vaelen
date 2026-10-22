@@ -422,6 +422,20 @@ func (a *app) cmdEnv(args []string) error {
 	if planErr != nil {
 		plan = core.EnvironmentPlan{}
 	}
+	if err := printEnvironment([]string{shell}, plan); err != nil {
+		return err
+	}
+	return planErr
+}
+
+func printEnvironment(args []string, plan core.EnvironmentPlan) error {
+	if len(args) > 1 {
+		return fmt.Errorf("用法: vsm env [shell]")
+	}
+	shell := "bash"
+	if len(args) == 1 {
+		shell = args[0]
+	}
 	script, err := core.EnvScript(shell, plan.Paths, plan.Variables)
 	if err != nil {
 		return err
@@ -432,7 +446,7 @@ func (a *app) cmdEnv(args []string) error {
 	}
 	fmt.Print(script)
 	fmt.Print(notice)
-	return planErr
+	return nil
 }
 
 // cmdPathInit 让新开的终端自动启用 vsm：

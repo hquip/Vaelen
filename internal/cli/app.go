@@ -132,10 +132,25 @@ func Run(args []string) (code int) {
 		}
 		return 0
 	}
+	// MCP uses an explicit --project; the caller's cwd must not initialize an
+	// unrelated project before that binding is parsed and validated.
+	if cmd == "mcp" {
+		if err := runMCP(rest); err != nil {
+			logErr = err
+			fmt.Fprintln(os.Stderr, "错误:", err)
+			return 1
+		}
+		return 0
+	}
 
 	a, err := newApp()
 	if err != nil {
 		logErr = err
+		if cmd == "env" {
+			if restoreErr := printEnvironment(rest, core.EnvironmentPlan{}); restoreErr != nil {
+				fmt.Fprintln(os.Stderr, "错误:", restoreErr)
+			}
+		}
 		fmt.Fprintln(os.Stderr, "错误:", err)
 		return 1
 	}
@@ -166,8 +181,6 @@ func Run(args []string) (code int) {
 		runErr = a.cmdRun(rest)
 	case "project":
 		runErr = a.cmdProject(rest)
-	case "mcp":
-		runErr = a.cmdMCP(rest)
 	case "which":
 		runErr = a.cmdWhich(rest)
 	case "exec", "x":

@@ -23,7 +23,7 @@ import (
 	"vsm/internal/plugin"
 )
 
-func (a *app) cmdMCP(args []string) error {
+func runMCP(args []string) error {
 	operation := "serve"
 	if len(args) > 0 && (args[0] == "serve" || args[0] == "config") {
 		operation = args[0]

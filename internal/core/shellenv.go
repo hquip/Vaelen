@@ -405,6 +405,9 @@ func ShellRCFile(shell, home string) (string, error) {
 		}
 		return filepath.Join(home, ".bashrc"), nil
 	case "fish":
+		if dir := os.Getenv("XDG_CONFIG_HOME"); filepath.IsAbs(dir) {
+			return filepath.Join(dir, "fish", "config.fish"), nil
+		}
 		return filepath.Join(home, ".config", "fish", "config.fish"), nil
 	}
 	return "", fmt.Errorf("不支持自动写入 %s 的配置文件（支持 bash/zsh/fish）", shell)
