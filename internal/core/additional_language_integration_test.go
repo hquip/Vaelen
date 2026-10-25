@@ -216,7 +216,7 @@ func TestRealAdditionalLocalInterpreters(t *testing.T) {
 			var log bytes.Buffer
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
-			if err := act.RunProjectContext(ctx, project, test.tool, args, nil, &log, &log); err != nil {
+			if err := act.RunProjectContext(ctx, project, filepath.Base(bin), args, nil, &log, &log); err != nil {
 				t.Fatalf("run interpreter: %v %s", err, log.String())
 			}
 			if !strings.Contains(log.String(), test.want) {
