@@ -621,6 +621,9 @@ func (a *app) cmdAdopt(args []string) error {
 			return fmt.Errorf("已纳管，但重建 shim 失败: %w", err)
 		}
 		fmt.Printf("已纳管 %s %s（版本 %s）\n  -> %s\n", tool, s.RegistryVersion(), s.Version, s.Path)
+		if s.VersionOrigin == "label" {
+			fmt.Println("版本标识由用户提供；VSM 未自动读取或核验软件版本。")
+		}
 		return nil
 	}
 	if len(args) > 3 {
@@ -870,5 +873,8 @@ func sortVersionsDesc(vs []string) {
 }
 
 func unsupported(tool string) error {
+	if guide, ok := plugin.Guide(tool); ok {
+		return fmt.Errorf("%s 是宿主接入或工具接入指引，不支持独立版本切换；运行 vsm tools info %s 查看要求与步骤", guide.Name, guide.ID)
+	}
 	return fmt.Errorf("不支持的工具: %s（可用: %s）", tool, strings.Join(plugin.Names(), ", "))
 }

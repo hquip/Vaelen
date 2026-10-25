@@ -2,6 +2,7 @@ package core
 
 import (
 	"crypto/sha256"
+	"crypto/sha512"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -87,9 +88,23 @@ func validArtifact(a plugin.Artifact) error {
 	if err := netcfg.ValidateURL(a.URL); err != nil {
 		return err
 	}
-	sum, err := hex.DecodeString(a.SHA256)
-	if err != nil || len(sum) != sha256.Size || a.Size < 0 || a.Size > 8<<30 {
-		return fmt.Errorf("invalid locked publisher SHA256 or size")
+	if a.SHA256 == "" && a.SHA512 == "" {
+		return fmt.Errorf("missing locked publisher checksum")
+	}
+	for _, item := range []struct {
+		sum  string
+		size int
+	}{{a.SHA256, sha256.Size}, {a.SHA512, sha512.Size}} {
+		if item.sum == "" {
+			continue
+		}
+		sum, err := hex.DecodeString(item.sum)
+		if err != nil || len(sum) != item.size {
+			return fmt.Errorf("invalid locked publisher checksum")
+		}
+	}
+	if a.Size < 0 || a.Size > 8<<30 {
+		return fmt.Errorf("invalid locked artifact size")
 	}
 	return nil
 }
@@ -301,14 +316,14 @@ func CheckInstalledArtifact(dir string, want plugin.Artifact) error {
 	if err := config.DecodeStrict(data, &got); err != nil {
 		return err
 	}
-	if !strings.EqualFold(got.SHA256, want.SHA256) || got.URL != want.URL {
+	if !strings.EqualFold(got.SHA256, want.SHA256) || !strings.EqualFold(got.SHA512, want.SHA512) || got.URL != want.URL {
 		return fmt.Errorf("已安装工具与锁文件中的构建不一致；请先卸载后按锁文件重装")
 	}
 	return nil
 }
 
 func writeArtifactReceipt(dir string, artifact plugin.Artifact) error {
-	if artifact.SHA256 == "" {
+	if artifact.SHA256 == "" && artifact.SHA512 == "" {
 		return nil
 	}
 	data, err := json.Marshal(artifact)

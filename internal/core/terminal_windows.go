@@ -157,21 +157,42 @@ func (a Activator) VerifyCmdActivation(dir string) (CmdActivationCheck, error) {
 		shim := filepath.Join(a.Paths.Shims(), names[0]+".cmd")
 		row.Passed = row.Error == "" && row.Command != "" && (sameCommandFile(row.Command, shim) || sameCommandFile(row.Command, row.Executable))
 		if row.Passed {
-			row.ExpectedVersion, err = probeVersion(tool, row.Executable)
-			if err != nil {
-				row.Error = "无法执行所选程序读取版本: " + err.Error()
-				row.Passed = false
-			} else {
-				env := append(os.Environ(), "VSM_HOME="+probeHome, "PATH="+strings.Join(dirs, string(os.PathListSeparator)), "PATHEXT="+check.PathExt, "_VSM_CMD_SCOPE=controlled-cmd", "VSM_ACTIVATION_OPERATION="+a.TraceID)
-				row.ActualVersion, err = probeCmdLookupVersion(tool, names[0], env, dir)
-				if err != nil {
-					row.Error = "经 shim 执行失败: " + err.Error()
+			if plugin.VersionMode(tool) == "label" {
+				row.ExpectedVersion = r.Version
+				row.Verification = "path"
+				row.Passed = a.CommandMatches(tool, row.Command, row.Executable)
+				row.Action = "已核验所选命令入口；版本标识由用户提供，未自动读取或核验软件版本。"
+				if !row.Passed {
+					row.Error = "命令入口与当前 VSM 配置不一致"
 					row.Code = "shim-dispatch-failed"
-					row.Action = "命令入口未能使用所属配置运行程序；请点击「激活 PATH」重建入口，仍失败时复制诊断信息反馈。"
+				}
+			} else {
+				row.ExpectedVersion, err = probeVersion(tool, row.Executable)
+				if err != nil {
+					row.Error = "无法执行所选程序读取版本: " + err.Error()
 					row.Passed = false
-				} else if row.ActualVersion != row.ExpectedVersion {
-					row.Error = fmt.Sprintf("经 shim 返回 %s，所选程序返回 %s", row.ActualVersion, row.ExpectedVersion)
-					row.Passed = false
+				} else if plugin.MetadataKind(tool) != "" {
+					row.Verification = "metadata"
+					row.Passed = a.CommandMatches(tool, row.Command, row.Executable)
+					if row.Passed {
+						row.ActualVersion = row.ExpectedVersion
+						row.Action = "已核验命令入口、所属配置和 SDK 版本元数据；未启动宿主软件，运行及授权状态需在使用时确认。"
+					} else {
+						row.Error = "命令入口与当前 VSM 配置不一致"
+						row.Code = "shim-dispatch-failed"
+					}
+				} else {
+					env := append(os.Environ(), "VSM_HOME="+probeHome, "PATH="+strings.Join(dirs, string(os.PathListSeparator)), "PATHEXT="+check.PathExt, "_VSM_CMD_SCOPE=controlled-cmd", "VSM_ACTIVATION_OPERATION="+a.TraceID)
+					row.ActualVersion, err = probeCmdLookupVersion(tool, names[0], env, dir)
+					if err != nil {
+						row.Error = "经 shim 执行失败: " + err.Error()
+						row.Code = "shim-dispatch-failed"
+						row.Action = "命令入口未能使用所属配置运行程序；请点击「激活 PATH」重建入口，仍失败时复制诊断信息反馈。"
+						row.Passed = false
+					} else if row.ActualVersion != row.ExpectedVersion {
+						row.Error = fmt.Sprintf("经 shim 返回 %s，所选程序返回 %s", row.ActualVersion, row.ExpectedVersion)
+						row.Passed = false
+					}
 				}
 			}
 		}
@@ -207,6 +228,7 @@ func (a Activator) VerifyCmdActivation(dir string) (CmdActivationCheck, error) {
 		fields["expected_version"], fields["actual_version"], fields["source"] = row.ExpectedVersion, row.ActualVersion, row.Source
 		fields["requested_version"], fields["installed_versions"] = row.RequestedVersion, row.InstalledVersions
 		fields["code"], fields["error"], fields["action"] = row.Code, row.Error, row.Action
+		fields["verification"] = row.Verification
 		level := "info"
 		if !row.Passed {
 			level = "warn"

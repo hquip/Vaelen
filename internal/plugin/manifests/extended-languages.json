@@ -1,0 +1,152 @@
+[
+  {
+    "name": "smalltalk",
+    "display_name": "GNU Smalltalk",
+    "languages": [
+      "Smalltalk",
+      "GNU Smalltalk"
+    ],
+    "commands": [
+      "gst"
+    ],
+    "source": {
+      "type": "local"
+    },
+    "assets": {},
+    "bin": "bin",
+    "version_flag": "--version",
+    "version_pattern": "(?im)^GNU Smalltalk(?: version)?\\s+(\\d+(?:\\.\\d+)+)",
+    "notes": "纳管 GNU Smalltalk 解释器及其完整运行库；Pharo/Squeak 的虚拟机和镜像不通过此入口管理。"
+  },
+  {
+    "name": "gforth",
+    "display_name": "Gforth",
+    "languages": [
+      "Forth",
+      "Gforth"
+    ],
+    "commands": [
+      "gforth"
+    ],
+    "source": {
+      "type": "local"
+    },
+    "assets": {},
+    "bin": "bin",
+    "version_flag": "--version",
+    "version_pattern": "(?im)^gforth\\s+(\\d+(?:\\.\\d+)+)",
+    "notes": "纳管 Gforth 完整安装；其它 Forth 方言和嵌入式固件需要单独适配。"
+  },
+  {
+    "name": "regina",
+    "display_name": "Regina REXX",
+    "languages": [
+      "REXX",
+      "Regina REXX"
+    ],
+    "commands": [
+      "regina",
+      "rexx"
+    ],
+    "source": {
+      "type": "local"
+    },
+    "assets": {},
+    "bin": "bin",
+    "version_flag": "-v",
+    "version_pattern": "(?im)\\bREXX-Regina_(\\d+(?:\\.\\d+)+)",
+    "notes": "纳管 Regina REXX；不将其它同名 rexx 实现误报为 Regina。"
+  },
+  {
+    "name": "gnu-apl",
+    "display_name": "GNU APL",
+    "languages": [
+      "APL",
+      "GNU APL"
+    ],
+    "commands": [
+      "apl"
+    ],
+    "source": {
+      "type": "local"
+    },
+    "assets": {},
+    "bin": "bin",
+    "version_flag": "--version",
+    "version_pattern": "(?im)^\\s*Project:\\s+GNU APL\\s*\\r?\\n\\s*Version / SVN:\\s+(\\d+(?:\\.\\d+)+)",
+    "notes": "纳管 GNU APL 完整安装；Dyalog APL、J、K 和 BQN 是独立实现，不由此入口替代。",
+    "platforms": [
+      "linux",
+      "darwin"
+    ]
+  },
+  {
+    "name": "ballerina",
+    "display_name": "Ballerina",
+    "languages": [
+      "Ballerina"
+    ],
+    "commands": [
+      "bal"
+    ],
+    "source": {
+      "type": "local"
+    },
+    "assets": {},
+    "bin": "bin",
+    "version_flag": "",
+    "version_pattern": "(?m)^Ballerina\\s+(\\d+\\.\\d+\\.\\d+)",
+    "notes": "纳管已初始化的 Ballerina 发行版；版本检查只运行 bal version，Java 及发行版选择仍由 Ballerina 自身管理。"
+  },
+  {
+    "name": "factor",
+    "display_name": "Factor",
+    "languages": [
+      "Factor"
+    ],
+    "commands": [
+      "factor"
+    ],
+    "source": {
+      "type": "github-releases",
+      "repo": "factor/factor",
+      "stripPrefix": ""
+    },
+    "url": "https://github.com/factor/factor/releases/download/{version}/{asset}",
+    "assets": {
+      "windows/amd64": "factor-windows-x86-64-{version}.zip",
+      "linux/amd64": "factor-linux-x86-64-{version}.tar.gz"
+    },
+    "bin": "",
+    "version_flag": "-version",
+    "version_pattern": "(?m)^Factor\\s+(\\d+(?:\\.\\d+)+)",
+    "notes": "纳管或安装完整 Factor 运行时和镜像；拒绝将系统 coreutils 的 factor 命令认作语言解释器。macOS DMG 请先安装后纳管。"
+  },
+  {
+    "name": "arturo",
+    "display_name": "Arturo",
+    "languages": [
+      "Arturo"
+    ],
+    "commands": [
+      "arturo"
+    ],
+    "source": {
+      "type": "github-releases",
+      "repo": "arturo-lang/arturo",
+      "stripPrefix": "v"
+    },
+    "url": "https://github.com/arturo-lang/arturo/releases/download/v{version}/{asset}",
+    "assets": {
+      "windows/amd64": "arturo-{version}-windows-amd64-mini.zip",
+      "linux/amd64": "arturo-{version}-linux-amd64-mini.zip",
+      "linux/arm64": "arturo-{version}-linux-arm64-mini.zip",
+      "darwin/amd64": "arturo-{version}-macos-amd64-mini.zip",
+      "darwin/arm64": "arturo-{version}-macos-arm64-mini.zip"
+    },
+    "bin": "",
+    "version_flag": "--version",
+    "version_pattern": "(?im)\\bArturo\\s+v?(\\d+\\.\\d+\\.\\d+)",
+    "notes": "默认安装官方 mini 命令行包并验证发布方 SHA256，避免完整版的桌面 WebKit 依赖；图形界面等完整版可选组件请先安装完整发行版后纳管。"
+  }
+]

@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -12,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"vsm/internal/config"
 	"vsm/internal/logging"
 	"vsm/internal/mcpserver"
 	"vsm/internal/plugin"
@@ -26,6 +28,7 @@ type SystemVersion struct {
 	VersionError   string `json:"version_error,omitempty"`
 	Environment    string `json:"environment,omitempty"`
 	ManagedVersion string `json:"managed_version,omitempty"`
+	VersionOrigin  string `json:"version_origin,omitempty"`
 }
 
 func (s SystemVersion) RegistryVersion() string {
@@ -245,6 +248,10 @@ func probeVersion(tool, bin string) (version string, err error) {
 		}
 		logging.Record(level, "detect", "version.probe", fields)
 	}()
+	if plugin.MetadataKind(tool) != "" {
+		_, version, err := plugin.ReadSDKMetadata(tool, bin)
+		return version, err
+	}
 
 	if tool == "go" {
 		return probeGoVersion(bin)
@@ -253,6 +260,18 @@ func probeVersion(tool, bin string) (version string, err error) {
 		if version, err := probeMavenMetadata(bin); err == nil {
 			return version, nil
 		}
+	}
+	if tool == "flutter" {
+		root := filepath.Dir(filepath.Dir(realPath(bin)))
+		if data, err := config.ReadBounded(filepath.Join(root, "bin", "cache", "flutter.version.json"), 64<<10); err == nil {
+			var info struct {
+				Version string `json:"frameworkVersion"`
+			}
+			if json.Unmarshal(data, &info) == nil && regexp.MustCompile(`^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$`).MatchString(info.Version) {
+				return info.Version, nil
+			}
+		}
+		return "", fmt.Errorf("Flutter 缺少缓存版本元数据；请先在自己的终端完成 flutter --version 初始化后重新检测")
 	}
 	return runVersionProbe(tool, bin, nil, "", true)
 }
@@ -264,6 +283,9 @@ func probeVersionCommand(tool, bin string, env []string, dir string) (string, er
 }
 
 func runVersionProbe(tool, bin string, env []string, dir string, discovery bool) (string, error) {
+	if plugin.VersionMode(tool) == "label" {
+		return "", fmt.Errorf("%s 使用用户标注版本，不自动启动程序探测", tool)
+	}
 	flags := []string{"--version", "version", "-version"}
 	if tool == "go" {
 		flags = []string{"version"}
@@ -291,20 +313,142 @@ func runVersionProbe(tool, bin string, env []string, dir string, discovery bool)
 		// configuration filename instead of a version subcommand.
 		flags = []string{"--version", "-v"}
 	}
+	customFlag, customPattern := plugin.VersionProbe(tool)
+	if customFlag != "" {
+		flags = []string{customFlag}
+	}
+	if tool == "dotnet" {
+		flags = []string{"--list-sdks"}
+	}
+	if tool == "ballerina" {
+		flags = []string{"version"}
+	}
+	if tool == "hare" {
+		flags = []string{"version"}
+	}
+	if tool == "j" && discovery {
+		base := strings.ToLower(strings.TrimSuffix(filepath.Base(bin), filepath.Ext(bin)))
+		if base != "jamalgam" {
+			found := false
+			for _, lib := range []string{"j.dll", "libj.so", "libj.dylib"} {
+				if fileExists(filepath.Join(filepath.Dir(realPath(bin)), lib)) {
+					found = true
+				}
+			}
+			if !found {
+				return "", fmt.Errorf("路径中缺少 J 引擎库；不会启动可能属于 JDK 的 jconsole")
+			}
+		}
+	}
+	if tool == "msvc" || tool == "tcl" || tool == "erlang" {
+		flags = []string{""}
+	}
 	var lastErr error
 	var redisErrors []error
 	for _, flag := range flags {
 		ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
 		probeArgs := []string{flag}
+		if tool == "j" {
+			probeArgs = []string{"-jprofile"}
+		}
+		if tool == "rebol" {
+			probeArgs = []string{"-w", "--do", `print rejoin [{Rebol } mold system/version] quit`}
+		}
+		if tool == "godot" {
+			probeArgs = []string{"--headless", "--version"}
+		}
+		if tool == "msvc" || tool == "tcl" {
+			probeArgs = nil
+		}
+		if tool == "erlang" {
+			probeArgs = []string{"-noshell", "-noinput", "-boot", "no_dot_erlang", "-eval", `io:format("~s~n",[erlang:system_info(otp_release)]),halt().`}
+		}
 		if tool == "mysql" || tool == "mariadb" {
 			probeArgs = []string{"--no-defaults", flag}
 		}
 		c := exec.CommandContext(ctx, bin, probeArgs...)
 		c.Dir = dir
 		c.Env = env
+		if tool == "j" {
+			c.Stdin = strings.NewReader("9!:14''\n2!:55''\n")
+		}
+		if tool == "rebol" {
+			c.Stdin = strings.NewReader("")
+			// Older Windows builds mistake NUL stdin for a console. An explicit
+			// EOF pipe lets their redirected I/O initialize without waiting.
+			private, err := os.MkdirTemp("", "vsm-rebol-version-")
+			if err != nil {
+				cancel()
+				return "", err
+			}
+			defer os.RemoveAll(private)
+			base := env
+			if base == nil {
+				base = os.Environ()
+			}
+			clean := make([]string, 0, len(base)+1)
+			for _, entry := range base {
+				key, _, _ := strings.Cut(entry, "=")
+				if !strings.EqualFold(key, "REBOL_HOME") {
+					clean = append(clean, entry)
+				}
+			}
+			c.Env = append(clean, "REBOL_HOME="+private)
+		}
+		if tool == "eiffel" && discovery {
+			if root := plugin.SDKInstallRoot(tool, bin); root != "" {
+				if p, ok := plugin.Get(tool); ok {
+					c.Env = buildEnv(p.BinPaths(root), p.ExecEnv(root))
+				}
+			}
+		}
+		if tool == "erlang" || tool == "msvc" {
+			base := env
+			if base == nil {
+				base = os.Environ()
+			}
+			clean := make([]string, 0, len(base))
+			for _, entry := range base {
+				key, _, _ := strings.Cut(entry, "=")
+				switch strings.ToUpper(key) {
+				case "ERL_FLAGS", "ERL_AFLAGS", "ERL_ZFLAGS", "ERL_LIBS", "CL", "_CL_":
+					continue
+				}
+				clean = append(clean, entry)
+			}
+			c.Env = clean
+		}
+		if tool == "dotnet" {
+			base := env
+			if base == nil {
+				base = os.Environ()
+			}
+			clean := make([]string, 0, len(base)+2)
+			for _, entry := range base {
+				key, _, _ := strings.Cut(entry, "=")
+				if strings.HasPrefix(strings.ToUpper(key), "DOTNET_ROOT") || strings.EqualFold(key, "DOTNET_MULTILEVEL_LOOKUP") {
+					continue
+				}
+				clean = append(clean, entry)
+			}
+			c.Env = append(clean, "DOTNET_MULTILEVEL_LOOKUP=0")
+		}
+		if tool == "tcl" {
+			c.Stdin = strings.NewReader("puts [info patchlevel]\nexit\n")
+		}
 		mcpserver.ConfigureProcess(c)
 		c.WaitDelay = 250 * time.Millisecond
-		if err := configureVersionProbe(c, bin, flag); err != nil {
+		batchFlag := flag
+		if tool == "godot" {
+			batchFlag = "--headless --version"
+		}
+		if tool == "j" {
+			batchFlag = "-jprofile"
+		}
+		if tool == "rebol" {
+			batchFlag = `-w --do "print rejoin [{Rebol } mold system/version] quit"`
+		}
+		if err := configureVersionProbe(c, bin, batchFlag); err != nil {
 			cancel()
 			return "", err
 		}
@@ -339,6 +483,21 @@ func runVersionProbe(tool, bin string, env []string, dir string, discovery bool)
 			err = fmt.Errorf("版本探测超时")
 		}
 		cancel()
+		if tool == "msvc" && !timedOut {
+			var exit *exec.ExitError
+			bannerExit := err == nil || errors.As(err, &exit) && exit.ExitCode() == 2
+			if m := regexp.MustCompile(`(?im)Microsoft.*C/C\+\+.*Compiler Version\s+(\d+(?:\.\d+)+)`).FindStringSubmatch(output.text); m != nil && bannerExit {
+				return m[1], nil
+			}
+		}
+		if tool == "delphi" && !timedOut {
+			var exit *exec.ExitError
+			if err == nil || errors.As(err, &exit) && exit.ExitCode() == 1 {
+				if m := regexp.MustCompile(customPattern).FindStringSubmatch(probeANSIEscape.ReplaceAllString(output.text, "")); len(m) == 2 {
+					return m[1], nil
+				}
+			}
+		}
 		// Some Windows Redis probes print their version but do not complete
 		// before the deadline. The timeout still terminates the probe process;
 		// discovery can use its complete banner without waiting for a second
@@ -361,6 +520,34 @@ func runVersionProbe(tool, bin string, env []string, dir string, discovery bool)
 			continue
 		}
 		text := probeANSIEscape.ReplaceAllString(output.text, "")
+		if tool == "dotnet" {
+			best := ""
+			for _, line := range strings.Split(text, "\n") {
+				m := regexp.MustCompile(`^(\d+\.\d+\.\d+)\s+\[`).FindStringSubmatch(strings.TrimSpace(line))
+				if m != nil && (best == "" || CompareVersions(m[1], best) > 0) {
+					best = m[1]
+				}
+			}
+			if best != "" {
+				return best, nil
+			}
+			lastErr = fmt.Errorf("未找到 .NET SDK（只有运行时不能编译 C#/F#/VB.NET）")
+			continue
+		}
+		if customPattern != "" {
+			if m := regexp.MustCompile(customPattern).FindStringSubmatch(text); m != nil {
+				return m[1], nil
+			}
+			lastErr = fmt.Errorf("未返回 %s 的版本横幅；%s", tool, message)
+			continue
+		}
+		if tool == "erlang" {
+			value := strings.TrimSpace(text)
+			if regexp.MustCompile(`^\d+(?:\.\d+)*$`).MatchString(value) {
+				return value, nil
+			}
+			continue
+		}
 		if tool == "go" {
 			version, parseErr := parseGoVersionOutput(text)
 			if parseErr == nil {

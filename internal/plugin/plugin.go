@@ -34,10 +34,18 @@ type ArtifactProvider interface {
 	Artifact(version string, target Target) (Artifact, error)
 }
 
+// InstallPreparer adapts a publisher's archive layout without executing it.
+// The returned directory must remain inside extractedDir. Most archives use
+// the installer's default single-directory layout and need no adapter.
+type InstallPreparer interface {
+	PrepareInstall(extractedDir, version string, target Target) (string, error)
+}
+
 type Artifact struct {
 	Version string `json:"version,omitempty"`
 	URL     string `json:"url"`
 	SHA256  string `json:"sha256"`
+	SHA512  string `json:"sha512,omitempty"`
 	Size    int64  `json:"size,omitempty"`
 	Format  string `json:"format,omitempty"`
 }

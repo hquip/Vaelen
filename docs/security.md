@@ -20,7 +20,9 @@ tar.xz 使用 `xz -dc`，或 macOS/Windows 的 bsdtar `@archive` 包含功能，
 - Go / Node 的 SHA256 元数据从官方地址获取，不随下载镜像改写；GitHub Release 使用 API 提供的资产摘要。manifest 可通过 `checksums` 固定 `version/os/arch` 的摘要。
 - 获取已配置校验来源失败、摘要格式错误或内容不匹配时停止安装。不匹配的缓存删除。发布方没有摘要时默认明确提示；`--require-checksum`、GUI 选项或 `VSM_REQUIRE_CHECKSUM=1` 可要求拒绝安装。
 
-SHA256 能验证与所取元数据的一致性；这里没有实现发布者签名、公钥固定或透明日志验证。无摘要模式也不提供与严格校验相同的保障。
+SHA256 / SHA512 能验证与所取元数据的一致性；这里没有实现发布者签名、公钥固定或透明日志验证。无摘要模式也不提供与严格校验相同的保障。
+
+.NET SDK 使用微软官方发布元数据的 SHA512；Dart、Julia、Flutter 使用各自官方索引/摘要，PowerShell 使用 GitHub 发行资产的 SHA256。严格安装和工具链锁文件均接受 SHA256 或 SHA512，写入并核对对应来源记录，不把缺失摘要转换成未经发布方确认的校验值。
 
 manifest 示例字段：
 

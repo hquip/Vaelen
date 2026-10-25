@@ -4,9 +4,9 @@
 等多语言运行环境的安装、版本切换与激活。设计对标 asdf / mise / vfox，核心追求 **全链路零 CGO 的 Go 单体**：
 一键交叉编译全平台、单二进制分发、内置版本切换。
 
-> CLI 为纯标准库实现、**零外部依赖**，内置 **78 种语言/工具**：其中 17 种可直接安装
-> （`go` `node` `java` `python` `zig` `deno` `bun` `gleam` `vlang` `kotlin` `tinygo` `nushell` `cmake` `ninja` `typst` `just` `uv`），
-> 其余 50+ 种支持 **识别与版本切换**（涵盖 rust/dart/php/dotnet/elixir/swift/scala/elm/purescript/lean/solidity/maven/gradle/haskell/r/vala 等；
+> CLI 为纯标准库实现、**零外部依赖**，内置 **151 项工具链/工具**：其中 30 项配置了自动安装来源
+> （`go` `node` `java` `python` `zig` `deno` `bun` `gleam` `vlang` `kotlin` `tinygo` `nushell` `cmake` `ninja` `typst` `just` `uv` `dotnet` `dart` `julia` `flutter` `powershell`），
+> 其余条目提供 **已有工具链纳管入口**（涵盖 GCC/Clang/MSVC、Fortran、Ada、COBOL、Rust、PHP、Ruby、Swift 等；
 > 下载源可按需在 manifest 中补充即变为可安装）。另支持 `~/.vsm/plugins/*.json` 无限扩展、
 > `vsm detect` 双路探测系统已装版本（PATH + 环境变量）、`vsm adopt` 一键纳管——不止管"自己装的"，更能接管机器上"已有的"。
 > 打通 `install / use / list / current / which / exec` 主流程。
@@ -14,6 +14,25 @@
 > 跨平台桌面 GUI（`gui/`，Wails v2；**Windows / macOS / Linux**）：语言列表与安装/卸载、系统版本检测与一键纳管、
 > 镜像切换、网络代理设置、安装进度条、当前目录 local 设置、一键写入用户级 PATH。
 > **macOS 版为 Universal 通用二进制**（Apple Silicon + Intel），隐藏式标题栏 + 原生菜单，内置 CLI，一个 `.app` 开箱即用。
+
+## v1.2.0 语言覆盖与宿主接入
+
+内置 151 项工具链/工具、30 项自动安装来源，以及 17 项宿主接入说明。新增工具按实际能力显示安装、纳管、元数据或手动版本；宿主入口说明要求与切换限制。
+
+```bash
+vsm tools info vba
+vsm tools search "C#"
+vsm tools search Move
+vsm adopt red --path /opt/red --name 0.6.6
+```
+
+下载 [v1.2.0 正式版](https://github.com/hquip/Vaelen/releases/tag/v1.2.0)，或使用 GUI「检查 VSM 更新」/ `vsm update --gui`。详见[发布说明](docs/releases/v1.2.0.md)。
+
+## 语言覆盖扩展
+
+新增 GCC / Clang / MSVC、Fortran、Ada、COBOL、Tcl、PowerShell、BASIC、Pascal、Lisp、Prolog、汇编、硬件与着色器语言等工具链入口；C# / F# / VB.NET 通过 .NET SDK 管理。GUI 与 CLI 可按语言名搜索，显示自动安装、纳管和平台限制。
+
+新增 .NET、Dart、Julia、Flutter、PowerShell、Godot、Vyper、Arturo、Factor、Nim、Haxe 安装来源，微软 SDK 使用官方 SHA512；严格校验和锁文件同步支持。GNU Smalltalk、Gforth、Regina REXX、GNU APL 和 Ballerina 支持纳管已有安装。新增 Cairo/Move、J/BQN、Rebol、Eiffel、Pharo/Squeak、MATLAB/NetLogo，以及 Red/Vale/K/Logo 的手动版本纳管；VBA/ABAP/Verse/PLC 等以宿主入口显示限制。完整目录、使用示例与宿主边界见 [语言覆盖说明](docs/language-support.md)。
 
 ## v1.1.12 环境恢复、版本诊断与插件刷新
 
@@ -248,7 +267,7 @@ sudo ln -sf /Applications/VSM.app/Contents/MacOS/vsm /usr/local/bin/vsm
 自行打包（需在 Mac 上，产出与 Release 相同的通用版 zip）：
 
 ```bash
-bash scripts/package-macos.sh 1.1.12 dist
+bash scripts/package-macos.sh 1.2.0 dist
 ```
 
 > 打 `v*` tag 即可由 GitHub Actions 在 Windows / macOS / Linux 三个 runner 上分别本地编译，

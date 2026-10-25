@@ -41,7 +41,18 @@ jobs:
       - name: Prepare native Lua version probe
         if: matrix.os == 'ubuntu-latest'
         timeout-minutes: 3
-        run: sudo apt-get update -o Acquire::Retries=3 && sudo apt-get install -y --no-install-recommends lua5.4
+        run: sudo apt-get update -o Acquire::Retries=3 && sudo apt-get install -y --no-install-recommends lua5.4 gforth regina-rexx
+
+      - name: Prepare native GNU APL interpreter
+        if: matrix.os == 'ubuntu-latest'
+        timeout-minutes: 6
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: '1'
+          HOMEBREW_NO_INSTALL_CLEANUP: '1'
+        run: |
+          brew=/home/linuxbrew/.linuxbrew/bin/brew
+          "$brew" install gnu-apl
+          printf 'VSM_TEST_APL=%s/bin/apl\n' "$("$brew" --prefix gnu-apl)" >> "$GITHUB_ENV"
 
       - name: Test fish nested-shell PATH and refresh hooks
         if: matrix.os == 'ubuntu-latest'
@@ -60,6 +71,42 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Compile real C and C++ programs through VSM
+        if: matrix.os == 'ubuntu-latest'
+        env:
+          VSM_TEST_CC: gcc
+          VSM_TEST_CXX: g++
+        run: go test ./internal/core -run '^TestRealCAndCXXToolchainBuildsPrograms$' -v -count=1
+
+      - name: Compile CSharp FSharp and Visual Basic through VSM
+        env:
+          VSM_TEST_DOTNET: dotnet
+          DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+        run: go test ./internal/core -run '^TestRealDotnetSDKBuildsCSharpFSharpAndVisualBasic$' -v -count=1
+
+      - name: Prepare official language compiler archives
+        timeout-minutes: 8
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python scripts/prepare-language-integration.py --directory "${{ runner.temp }}/vsm-language-packages"
+
+      - name: Run real language toolchains including Cairo Move J and Rebol
+        timeout-minutes: 8
+        env:
+          VSM_TEST_LANGUAGE_ARTIFACTS: ${{ runner.temp }}/vsm-language-packages/artifacts.json
+        run: go test ./internal/core -run '^TestRealAdditionalLanguages$' -v -count=1 -timeout 7m
+
+      - name: Run native Forth REXX and APL through VSM
+        if: matrix.os == 'ubuntu-latest'
+        env:
+          VSM_TEST_FORTH: gforth
+          VSM_TEST_REXX: regina
+        run: go test ./internal/core -run '^TestRealAdditionalLocalInterpreters$' -v -count=1
 
       - name: Prepare portable Windows Redis probes
         if: matrix.os == 'windows-latest'

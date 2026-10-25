@@ -267,10 +267,15 @@ type ToolStatus struct {
 	Spec       string                 `json:"spec"`
 	Installed  []string               `json:"installed"`
 	Activation *core.ActivationStatus `json:"activation,omitempty"`
+	Support    plugin.ToolSupport     `json:"support"`
 }
 
 // Tools 返回所有支持的工具名。
 func (a *App) Tools() []string { return plugin.Names() }
+
+func (a *App) InspectToolPathLabeled(tool, path, label string) (core.SystemVersion, error) {
+	return core.InspectToolPathLabeled(tool, path, label)
+}
 
 // resolveDir 返回解析版本时的起点目录：已选项目目录，否则用户主目录
 // （等价于「新开一个终端」时看到的版本）。
@@ -306,7 +311,7 @@ func (a *App) Status() (status []ToolStatus, err error) {
 			if err != nil {
 				return nil, err
 			}
-			out = append(out, ToolStatus{Tool: name, Source: source, Spec: spec, Installed: []string{}})
+			out = append(out, ToolStatus{Tool: name, Source: source, Spec: spec, Installed: []string{}, Support: plugin.Support(name, plugin.CurrentTarget())})
 			continue
 		}
 		installed, err := resolver.Installed(name)
@@ -335,8 +340,16 @@ func (a *App) Status() (status []ToolStatus, err error) {
 			Spec:       r.Spec,
 			Installed:  installed,
 			Activation: activation,
+			Support:    plugin.Support(name, plugin.CurrentTarget()),
 		})
 	}
+	for _, name := range plugin.CatalogNames() {
+		if _, managed := plugin.Get(name); managed {
+			continue
+		}
+		out = append(out, ToolStatus{Tool: name, Installed: []string{}, Support: plugin.Support(name, plugin.CurrentTarget())})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Tool < out[j].Tool })
 	return out, nil
 }
 

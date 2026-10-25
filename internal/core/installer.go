@@ -2,6 +2,7 @@ package core
 
 import (
 	"crypto/sha256"
+	"crypto/sha512"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -31,6 +32,9 @@ var ErrDockerHostInstall = errors.New("Docker 项目的工具由镜像提供；�
 // 非空时装到 customDir/<tool>/<version> 并在 installs 下建 junction 链接过去
 // （这样既能自选磁盘位置，vsm 又能照常识别/切换/卸载）。
 func (in Installer) Install(p plugin.Plugin, version, customDir string, progress ProgressFunc) (err error) {
+	if support := plugin.Support(p.Name(), plugin.CurrentTarget()); support.Mode == "unavailable" {
+		return fmt.Errorf("%s", support.Notes)
+	}
 	finish := logging.Start("core", "install", logging.Fields{"tool": p.Name(), "version": version, "mode": in.Paths.ProjectMode})
 	defer func() { finish(err) }()
 	if in.Paths.ProjectMode == "docker" {
@@ -99,6 +103,7 @@ func (in Installer) Install(p plugin.Plugin, version, customDir string, progress
 
 	var source string
 	var sum string
+	var sum512 string
 	var size int64
 	var format string
 	if in.Pinned != nil {
@@ -106,12 +111,14 @@ func (in Installer) Install(p plugin.Plugin, version, customDir string, progress
 			return err
 		}
 		source, sum, size, format = in.Pinned.URL, in.Pinned.SHA256, in.Pinned.Size, in.Pinned.Format
+		sum512 = in.Pinned.SHA512
 	} else if provider, ok := p.(plugin.ArtifactProvider); ok {
 		artifact, err := provider.Artifact(version, plugin.CurrentTarget())
 		if err != nil {
 			return fmt.Errorf("获取官方安装包元数据失败: %w", err)
 		}
 		source, sum, size, format = artifact.URL, artifact.SHA256, artifact.Size, artifact.Format
+		sum512 = artifact.SHA512
 	} else {
 		var err error
 		source, err = p.DownloadURL(version, plugin.CurrentTarget())
@@ -123,8 +130,8 @@ func (in Installer) Install(p plugin.Plugin, version, customDir string, progress
 			return fmt.Errorf("获取官方完整性元数据失败（安装已停止）: %w", err)
 		}
 	}
-	if sum == "" && (in.RequireChecksum || os.Getenv("VSM_REQUIRE_CHECKSUM") == "1") {
-		return fmt.Errorf("publisher checksum unavailable; --require-checksum refuses installation")
+	if sum == "" && sum512 == "" && (in.RequireChecksum || os.Getenv("VSM_REQUIRE_CHECKSUM") == "1") {
+		return fmt.Errorf("publisher checksum unavailable (SHA256/SHA512); --require-checksum refuses installation")
 	}
 	if sum != "" {
 		decoded, err := hex.DecodeString(sum)
@@ -132,10 +139,16 @@ func (in Installer) Install(p plugin.Plugin, version, customDir string, progress
 			return fmt.Errorf("invalid publisher SHA256 metadata")
 		}
 	}
-	if sum == "" {
+	if sum512 != "" {
+		decoded, err := hex.DecodeString(sum512)
+		if err != nil || len(decoded) != sha512.Size {
+			return fmt.Errorf("invalid publisher SHA512 metadata")
+		}
+	}
+	if sum == "" && sum512 == "" {
 		progress("警告：发布方未提供 SHA256；仅检查传输长度、归档格式与解压边界。可用 --require-checksum 拒绝此类安装。")
 	}
-	dlPath, err := downloadCandidates(plugin.DownloadURLs(source), in.Paths.Downloads(), p.Name()+"-"+version, progress, downloadIntegrity{SHA256: sum, Size: size, Format: format})
+	dlPath, err := downloadCandidates(plugin.DownloadURLs(source), in.Paths.Downloads(), p.Name()+"-"+version, progress, downloadIntegrity{SHA256: sum, SHA512: sum512, Size: size, Format: format})
 	if err != nil {
 		return err
 	}
@@ -183,7 +196,24 @@ func (in Installer) Install(p plugin.Plugin, version, customDir string, progress
 
 	// 官方包通常带一层顶层目录（如 go/ 或 node-vX-os-arch/），剥掉它。
 	root := tmp
-	if format != "binary" {
+	if preparer, ok := p.(plugin.InstallPreparer); ok {
+		root, err = preparer.PrepareInstall(tmp, version, plugin.CurrentTarget())
+		if err != nil {
+			return fmt.Errorf("准备安装目录失败: %w", err)
+		}
+		if !filepath.IsAbs(root) || !pathWithin(tmp, root) {
+			return fmt.Errorf("prepared installation escapes extraction directory")
+		}
+		physicalRoot, rootErr := canonicalPath(root)
+		physicalTmp, tmpErr := canonicalPath(tmp)
+		if rootErr != nil || tmpErr != nil || !pathWithin(physicalTmp, physicalRoot) {
+			return fmt.Errorf("prepared installation resolves outside extraction directory")
+		}
+		info, err := os.Lstat(root)
+		if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("prepared installation is not a real directory")
+		}
+	} else if format != "binary" {
 		root = stripSingleDir(tmp)
 	}
 	validBinary := false
@@ -196,7 +226,7 @@ func (in Installer) Install(p plugin.Plugin, version, customDir string, progress
 	if !validBinary {
 		return fmt.Errorf("archive does not contain the expected %s executable", p.Name())
 	}
-	if err := writeArtifactReceipt(root, plugin.Artifact{URL: source, SHA256: sum, Size: size, Format: format}); err != nil {
+	if err := writeArtifactReceipt(root, plugin.Artifact{URL: source, SHA256: sum, SHA512: sum512, Size: size, Format: format}); err != nil {
 		return err
 	}
 	if err := placeInstall(root, dest, customDir, p.Name(), version); err != nil {

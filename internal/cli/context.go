@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"vsm/internal/buildinfo"
@@ -30,6 +31,7 @@ type contextTool struct {
 	OverrideConflict bool               `json:"override_conflict"`
 	Suggestions      []suggestedCommand `json:"suggestions"`
 	Error            string             `json:"error,omitempty"`
+	VersionMode      string             `json:"version_mode"`
 }
 
 func (a *app) cmdContext(args []string) error {
@@ -61,19 +63,37 @@ func (a *app) cmdContext(args []string) error {
 			continue
 		}
 		item := contextTool{Tool: tool, Requested: r.Spec, Resolved: r.Version, Active: active[tool], Source: r.Source, ProjectRequired: proj, ProjectSource: src, State: "ready", Suggestions: []suggestedCommand{}, Error: r.Error}
+		item.VersionMode = plugin.VersionMode(tool)
+		command := tool
+		if names := plugin.DetectCommands()[tool]; len(names) > 0 {
+			command = names[0]
+		}
 		if err != nil {
 			item.Error = err.Error()
 		}
 		if item.Error != "" {
 			item.State = "error"
 		} else if project != nil && project.Mode == "docker" {
-			item.State = "container_unverified"
-			item.Suggestions = append(item.Suggestions, suggestedCommand{"vsm", []string{"run", "--", tool, "<args>"}, "在项目 Docker 镜像中验证版本并执行"})
+			if item.VersionMode != "probe" {
+				item.State = "container_unsupported"
+				item.Error = "本机元数据或用户标注版本不能通过 Docker 自动验证；请使用 versions 模式纳管已有安装"
+				item.Suggestions = append(item.Suggestions, suggestedCommand{"vsm", []string{"tools", "info", tool}, "查看本机工具接入要求"})
+			} else {
+				item.State = "container_unverified"
+				item.Suggestions = append(item.Suggestions, suggestedCommand{"vsm", []string{"run", "--", command, "<args>"}, "在项目 Docker 镜像中验证版本并执行"})
+			}
 		} else if r.Version == "" {
 			item.State = "missing_version"
-			item.Suggestions = append(item.Suggestions, suggestedCommand{"vsm", []string{"install", tool, r.Spec, "--require-checksum"}, "安装项目要求的版本，并要求发布方校验值"})
+			if support := plugin.Support(tool, plugin.CurrentTarget()); support.Mode == "install" || support.Mode == "release" {
+				item.Suggestions = append(item.Suggestions, suggestedCommand{"vsm", []string{"install", tool, r.Spec, "--require-checksum"}, "安装项目要求的版本，并要求发布方校验值"})
+			} else {
+				item.Suggestions = append(item.Suggestions, suggestedCommand{"vsm", []string{"tools", "info", tool}, "查看已有工具链的纳管要求及版本标识方式"})
+			}
 		} else {
 			expected, whichErr := a.act.Which(tool, a.cwd)
+			if whichErr == nil {
+				command = filepath.Base(expected)
+			}
 			actual, lookErr := exec.LookPath(tool)
 			if lookErr != nil {
 				for _, name := range plugin.DetectCommands()[tool] {
@@ -97,7 +117,7 @@ func (a *app) cmdContext(args []string) error {
 			// resolves versions dynamically and does not require that label.
 			if !matches {
 				item.State = "activation_required"
-				item.Suggestions = append(item.Suggestions, suggestedCommand{"vsm", []string{"run", "--", tool, "<args>"}, "自动选择项目声明的所有工具版本并执行，无需修改父 shell"})
+				item.Suggestions = append(item.Suggestions, suggestedCommand{"vsm", []string{"run", "--", command, "<args>"}, "自动选择项目声明的所有工具版本并执行，无需修改父 shell"})
 				item.Suggestions = append(item.Suggestions, suggestedCommand{"vsm", []string{"shell", tool, r.Spec}, "在临时子 shell 中使用该版本，退出后恢复"}, suggestedCommand{"vsm", []string{"exec", tool, "--", "<command>"}, "让 Agent 命令明确使用解析出的版本"})
 			}
 		}
@@ -105,7 +125,7 @@ func (a *app) cmdContext(args []string) error {
 			item.OverrideConflict = true
 			item.State = "override_conflict"
 			item.Suggestions = append(item.Suggestions, suggestedCommand{"vsm", []string{"shell", tool, proj}, "当前环境覆盖与项目要求不同，显式选择项目版本"})
-			item.Suggestions = append(item.Suggestions, suggestedCommand{"vsm", []string{"run", "--", tool, "<args>"}, "按项目声明执行，覆盖继承的旧版本设置"})
+			item.Suggestions = append(item.Suggestions, suggestedCommand{"vsm", []string{"run", "--", command, "<args>"}, "按项目声明执行，覆盖继承的旧版本设置"})
 		}
 		if item.State != "ready" {
 			ready = false

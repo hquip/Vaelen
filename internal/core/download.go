@@ -3,9 +3,11 @@ package core
 import (
 	"context"
 	"crypto/sha256"
+	"crypto/sha512"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"hash"
 	"io"
 	"net/http"
 	"os"
@@ -32,6 +34,7 @@ const (
 type downloadIntegrity struct {
 	Format string
 	SHA256 string
+	SHA512 string
 	Size   int64
 }
 
@@ -113,6 +116,12 @@ func downloadOnce(url, dir, base string, progress ProgressFunc, integrity downlo
 			return "", fmt.Errorf("%w: invalid publisher SHA256", errDownloadIntegrity)
 		}
 	}
+	if integrity.SHA512 != "" {
+		decoded, err := hex.DecodeString(integrity.SHA512)
+		if err != nil || len(decoded) != sha512.Size {
+			return "", fmt.Errorf("%w: invalid publisher SHA512", errDownloadIntegrity)
+		}
+	}
 	if integrity.Size < 0 || integrity.Size > dlMaxBytes {
 		return "", fmt.Errorf("%w: invalid publisher size", errDownloadIntegrity)
 	}
@@ -159,7 +168,7 @@ func downloadOnce(url, dir, base string, progress ProgressFunc, integrity downlo
 
 	done := false
 	strongETag := etag != "" && !strings.HasPrefix(etag, "W/")
-	if acceptRanges && size >= dlMinParallel && (strongETag || integrity.SHA256 != "") {
+	if acceptRanges && size >= dlMinParallel && (strongETag || integrity.SHA256 != "" || integrity.SHA512 != "") {
 		if !strongETag {
 			etag = ""
 		}
@@ -183,9 +192,16 @@ func downloadOnce(url, dir, base string, progress ProgressFunc, integrity downlo
 		}
 		progress("校验通过")
 	}
+	if integrity.SHA512 != "" {
+		progress("校验 sha512 …")
+		if err := verifyDigest(dest, integrity.SHA512, sha512.New()); err != nil {
+			return "", err
+		}
+		progress("校验通过")
+	}
 	// 用内容魔数纠正扩展名，确保 Extract 用对解压器。
 	sniff := sniffArchiveExt(dest)
-	if integrity.Format == "binary" && integrity.SHA256 != "" {
+	if integrity.Format == "binary" && (integrity.SHA256 != "" || integrity.SHA512 != "") {
 		if !sniffNativeBinary(dest) {
 			return "", fmt.Errorf("download is not a native executable")
 		}
@@ -551,18 +567,21 @@ func verifyChecksum(path, expected string) error {
 	if err != nil || len(decoded) != sha256.Size {
 		return fmt.Errorf("invalid SHA256 metadata")
 	}
+	return verifyDigest(path, expected, sha256.New())
+}
+
+func verifyDigest(path, expected string, h hash.Hash) error {
 	f, err := os.Open(path)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
-	h := sha256.New()
 	if _, err := io.Copy(h, f); err != nil {
 		return err
 	}
 	got := hex.EncodeToString(h.Sum(nil))
 	if !strings.EqualFold(got, expected) {
-		return fmt.Errorf("%w: sha256 校验失败：期望 %s，实际 %s", errDownloadIntegrity, expected, got)
+		return fmt.Errorf("%w: SHA%d 校验失败：期望 %s，实际 %s", errDownloadIntegrity, h.Size()*8, expected, got)
 	}
 	return nil
 }

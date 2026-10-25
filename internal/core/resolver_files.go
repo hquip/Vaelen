@@ -1,6 +1,7 @@
 package core
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -41,6 +42,19 @@ var versionFileSources = map[string][]versionFile{
 		{".go-version", plainVer},
 		{"go.mod", goModVer},
 	},
+	"dotnet": {{"global.json", dotnetSDKVersion}},
+}
+
+func dotnetSDKVersion(content string) string {
+	var data struct {
+		SDK struct {
+			Version string `json:"version"`
+		} `json:"sdk"`
+	}
+	if json.Unmarshal([]byte(content), &data) != nil {
+		return ""
+	}
+	return data.SDK.Version
 }
 
 // projectVersion 在 dir 下按该工具的惯用文件查找版本要求，返回首个命中的 spec 与来源路径。
@@ -69,6 +83,12 @@ func projectVersionChecked(tool, dir string) (spec, source string, err error) {
 		}
 		if len(data) > 1<<20 {
 			return "", "", fmt.Errorf("project version file exceeds limit: %s", path)
+		}
+		if src.file == "global.json" {
+			var doc map[string]json.RawMessage
+			if err := json.Unmarshal(data, &doc); err != nil {
+				return "", "", fmt.Errorf("invalid global.json: %w", err)
+			}
 		}
 		if v := src.parse(string(data)); v != "" {
 			return v, path, nil

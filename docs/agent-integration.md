@@ -6,6 +6,8 @@
 vsm context --json
 ```
 
+`tools[].version_mode` 说明版本标识方式：`probe` 为工具版本接口，`metadata` 为 SDK 元数据，`label` 为用户标注。用户标注的版本不是软件实际版本核验结果。宿主语言可通过 `vsm tools info vba --json` 等读取要求；这些入口不提供独立的版本切换。
+
 Agent 可以直接按项目版本执行命令：
 
 ```bash

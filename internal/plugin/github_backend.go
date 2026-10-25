@@ -21,18 +21,23 @@ func DefinitionID(p Plugin) string {
 }
 
 type CatalogTool struct {
-	Name        string   `json:"name"`
-	Installable bool     `json:"installable"`
-	Source      string   `json:"source"`
-	Commands    []string `json:"commands"`
+	Name        string      `json:"name"`
+	Installable bool        `json:"installable"`
+	Source      string      `json:"source"`
+	Commands    []string    `json:"commands"`
+	Support     ToolSupport `json:"support"`
 }
 
 func Catalog(query string) []CatalogTool {
 	out := []CatalogTool{}
 	query = strings.ToLower(query)
-	for _, name := range Names() {
+	for _, name := range CatalogNames() {
 		p, ok := Get(name)
 		if !ok {
+			support := Support(name, CurrentTarget())
+			if MatchesTool(name, query) {
+				out = append(out, CatalogTool{Name: name, Source: support.Mode, Commands: []string{}, Support: support})
+			}
 			continue
 		}
 		source, installable := "native", true
@@ -40,10 +45,12 @@ func Catalog(query string) []CatalogTool {
 			source = m.m.Source.Type + ":" + m.m.Source.Repo
 			installable = m.m.Source.Type == "github-auto" || len(m.m.Assets) > 0
 		}
-		if query != "" && !strings.Contains(strings.ToLower(name+" "+source), query) {
+		if query != "" && !MatchesTool(name, query) && !strings.Contains(strings.ToLower(source), query) {
 			continue
 		}
-		out = append(out, CatalogTool{name, installable, source, DetectCommands()[name]})
+		support := Support(name, CurrentTarget())
+		installable = installable && (support.Mode == "install" || support.Mode == "release")
+		out = append(out, CatalogTool{Name: name, Installable: installable, Source: source, Commands: DetectCommands()[name], Support: support})
 	}
 	return out
 }

@@ -12,13 +12,16 @@ import (
 )
 
 func (in Installer) AdoptPath(tool, path, alias string) (SystemVersion, error) {
+	if support := plugin.Support(tool, plugin.CurrentTarget()); support.Mode == "unavailable" {
+		return SystemVersion{}, fmt.Errorf("%s", support.Notes)
+	}
 	if in.Paths.ProjectMode == "docker" {
 		return SystemVersion{}, ErrDockerHostInstall
 	}
 	if in.Paths.ProjectMode == "local" {
 		return SystemVersion{}, fmt.Errorf("本地隔离模式不链接共享工具，请使用 versions 模式")
 	}
-	s, err := InspectToolPath(tool, path)
+	s, err := InspectToolPathLabeled(tool, path, alias)
 	if err != nil {
 		return SystemVersion{}, err
 	}
@@ -42,7 +45,17 @@ func (in Installer) AdoptPath(tool, path, alias string) (SystemVersion, error) {
 //
 // execPath 是系统检测得到的主命令可执行文件路径（如 C:\Java\jdk-21\bin\java.exe）。
 func (in Installer) Adopt(p plugin.Plugin, version, execPath string) (err error) {
-	finish := logging.Start("core", "adopt", logging.Fields{"tool": p.Name(), "version": version, "mode": in.Paths.ProjectMode})
+	if plugin.VersionMode(p.Name()) == "label" {
+		checked, err := InspectToolPathLabeled(p.Name(), execPath, version)
+		if err != nil {
+			return err
+		}
+		execPath = checked.Path
+	}
+	if support := plugin.Support(p.Name(), plugin.CurrentTarget()); support.Mode == "unavailable" {
+		return fmt.Errorf("%s", support.Notes)
+	}
+	finish := logging.Start("core", "adopt", logging.Fields{"tool": p.Name(), "version": version, "mode": in.Paths.ProjectMode, "version_mode": plugin.VersionMode(p.Name())})
 	defer func() { finish(err) }()
 	if in.Paths.ProjectMode == "docker" {
 		return ErrDockerHostInstall
@@ -110,6 +123,9 @@ func inferInstallRoot(p plugin.Plugin, execPath string) (string, error) {
 	}
 	if !keepPythonPrefix {
 		execPath = realPath(execPath)
+	}
+	if root := plugin.SDKInstallRoot(p.Name(), execPath); root != "" {
+		return root, nil
 	}
 	binDir := filepath.Dir(execPath)
 	candidates := []string{binDir, filepath.Dir(binDir)}

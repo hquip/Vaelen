@@ -142,6 +142,17 @@ func (a Activator) runProjectEnvironment(ctx context.Context, dir, command strin
 		mcpserver.ConfigureProcess(cmd)
 		cmd.WaitDelay = 2 * time.Second
 	}
+	for _, r := range plan.Versions {
+		if r.Tool == "rebol" {
+			for _, name := range plugin.DetectCommands()[r.Tool] {
+				if matchesCommand(name) {
+					if stdin == nil {
+						cmd.Stdin = strings.NewReader("")
+					}
+				}
+			}
+		}
+	}
 	if err := cmd.Run(); err != nil {
 		var ee *exec.ExitError
 		if errors.As(err, &ee) {
