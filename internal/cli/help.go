@@ -106,9 +106,11 @@ var commandHelpTopics = map[string]commandHelp{
 	"tasks list":        {Summary: "列出项目任务", Usage: []string{"vsm tasks list [--json]"}, Examples: []string{"vsm tasks list --json"}},
 	"tasks graph":       {Summary: "查看任务依赖执行顺序", Usage: []string{"vsm tasks graph [任务...] [--json]"}, Examples: []string{"vsm tasks graph build --json"}},
 	"tasks run":         {Summary: "执行任务及其依赖", Usage: []string{"vsm tasks run <任务...> [--jobs 1–16] [--locked] [--no-cache] [--dry-run] [--json] [-- 参数]"}, Notes: []string{"默认最多并行 4 个任务。超时终止进程树，依赖失败阻止下游；只有声明 inputs 和 outputs 的任务会使用内容缓存。"}, Examples: []string{"vsm tasks run test", "vsm tasks run build --locked --jobs 4"}},
-	"tools":             {Summary: "查找工具及添加 GitHub 安装来源", Usage: []string{"vsm tools list|search [关键词] [--json]", "vsm tools add <名称> github:owner/repo [--command 命令] [--bin 子目录] [--match 资产关键词]"}, Notes: []string{"GitHub 自动匹配当前平台的官方发布包；资产含 SHA256 且匹配唯一时才安装。不会执行第三方安装脚本。"}, Examples: []string{"vsm tools search python", "vsm tools add ripgrep github:BurntSushi/ripgrep --command rg --match msvc"}},
+	"tools":             {Summary: "查找工具、查看接入要求及添加 GitHub 安装来源", Usage: []string{"vsm tools list|search [关键词] [--json]", "vsm tools info <名称> [--json]", "vsm tools add <名称> github:owner/repo [--command 命令] [--bin 子目录] [--match 资产关键词]"}, Notes: []string{"GitHub 自动匹配当前平台的官方发布包；资产含 SHA256 且匹配唯一时才安装。不会执行第三方安装脚本。", "宿主入口仅提供要求和步骤；用户标注版本的本机工具需明确提供版本标识。"}, Examples: []string{"vsm tools search python", "vsm tools info vba", "vsm tools add ripgrep github:BurntSushi/ripgrep --command rg --match msvc"}},
 	"tools list":        {Summary: "查看工具目录", Usage: []string{"vsm tools list [--json]"}, Examples: []string{"vsm tools list --json"}},
 	"tools search":      {Summary: "按名称或安装来源搜索工具", Usage: []string{"vsm tools search [关键词] [--json]"}, Examples: []string{"vsm tools search github --json"}},
+	"tools info":        {Summary: "查看工具能力或宿主接入说明", Usage: []string{"vsm tools info <名称> [--json]"}, Examples: []string{"vsm tools info vba", "vsm tools info abap --json"}, Notes: []string{"宿主接入和未适配指南不会生成 shim，也不代表可独立切换版本。"}},
+	"tools guide":       {Summary: "查看语言接入说明", Usage: []string{"vsm tools guide <名称> [--json]"}, Examples: []string{"vsm tools guide verse"}},
 	"tools add":         {Summary: "添加 GitHub 发布工具", Usage: []string{"vsm tools add <名称> github:owner/repo [--command 命令] [--bin 子目录] [--match 关键词]"}, Notes: []string{"定义保存在全局 plugins，不覆盖已有工具。新进程自动加载。多个资产无法唯一匹配时拒绝猜测。"}, Examples: []string{"vsm tools add ripgrep github:BurntSushi/ripgrep --command rg --match msvc"}},
 	"project configure": {Summary: "创建统一项目配置", Usage: []string{"vsm project configure"}, Notes: []string{"生成 vsm.json，导入已声明工具并为 Go/Node 项目添加任务示例；保留已有配置。"}, Examples: []string{"vsm project configure"}},
 	"project trust":     {Summary: "信任已检查的项目配置", Usage: []string{"vsm project trust"}, Notes: []string{"信任绑定本机项目路径及 vsm.json/env_files 内容；修改后失效。MCP 不能授予信任。"}, Examples: []string{"vsm project trust"}},
@@ -263,7 +265,7 @@ var commandHelpTopics = map[string]commandHelp{
 	"adopt": {
 		Summary: "将系统已有运行时链接到 VSM 管理", Usage: []string{"vsm adopt <tool> [version] [可执行路径]", "vsm adopt <tool> --path <目录或可执行文件> [--name <标识>]", "vsm adopt --all"},
 		Options:  []string{"--all, -a  纳管全部检测到且可用的版本", "--path <路径>  检查并纳管 PATH 之外的安装目录或主命令", "--name <标识>  为安装或 Conda 环境指定独立管理标识"},
-		Notes:    []string{"创建链接，保留原始安装；local / docker 隔离模式拒绝纳管宿主机运行时。", "Conda Python 环境分别保留依赖，使用其完整管理标识选择；普通版本范围不会自动选中 Conda 环境。"},
+		Notes:    []string{"创建链接，保留原始安装；local / docker 隔离模式拒绝纳管宿主机运行时。", "Conda Python 环境分别保留依赖，使用其完整管理标识选择；普通版本范围不会自动选中 Conda 环境。", "Red、Vale、Kona、UCBLogo 需用 --name 手动提供版本标识；VSM 仅核验路径，不自动读取或验证软件版本。"},
 		Examples: []string{"vsm adopt go", "vsm adopt go 1.25.11 /opt/go/bin/go", "vsm adopt python --path /opt/miniconda3/envs/science --name conda-science", "vsm adopt maven --path /opt/maven", "vsm adopt --all"},
 	},
 	"mirror": {

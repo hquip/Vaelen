@@ -20,23 +20,25 @@ var manifestFS embed.FS
 // 怎么下载、装到哪、需要哪些环境变量。内置一批，也可放到 ~/.vsm/plugins/*.json
 // （或 $VSM_HOME/plugins）由用户/社区扩展——这正是支持数十种语言而无需改代码的关键。
 type Manifest struct {
-	DisplayName    string            `json:"display_name,omitempty"`
-	Languages      []string          `json:"languages,omitempty"`
-	Notes          string            `json:"notes,omitempty"`
-	Platforms      []string          `json:"platforms,omitempty"`
-	VersionFlag    string            `json:"version_flag,omitempty"`
-	VersionPattern string            `json:"version_pattern,omitempty"`
-	Service        bool              `json:"service,omitempty"`
-	DetectCommands []string          `json:"detect_commands,omitempty"`
-	Commands       []string          `json:"commands,omitempty"`
-	Match          string            `json:"match,omitempty"`
-	Name           string            `json:"name"`
-	Source         ManifestSource    `json:"source"`
-	URL            string            `json:"url"`                 // 下载 URL 模板，占位 {version} {os} {arch} {asset}
-	Assets         map[string]string `json:"assets"`              // "os/arch" -> asset 名模板（占位 {version} {os} {arch}）
-	Bin            string            `json:"bin"`                 // bin 子目录（相对安装目录，空=根），用 / 分隔
-	Env            map[string]string `json:"env"`                 // 环境变量，值可用 {dir} 代表安装目录
-	Checksums      map[string]string `json:"checksums,omitempty"` // version/os/arch -> publisher SHA256
+	DisplayName     string            `json:"display_name,omitempty"`
+	Languages       []string          `json:"languages,omitempty"`
+	Notes           string            `json:"notes,omitempty"`
+	Platforms       []string          `json:"platforms,omitempty"`
+	VersionFlag     string            `json:"version_flag,omitempty"`
+	VersionPattern  string            `json:"version_pattern,omitempty"`
+	VersionMetadata string            `json:"version_metadata,omitempty"`
+	VersionManual   bool              `json:"version_manual,omitempty"`
+	Service         bool              `json:"service,omitempty"`
+	DetectCommands  []string          `json:"detect_commands,omitempty"`
+	Commands        []string          `json:"commands,omitempty"`
+	Match           string            `json:"match,omitempty"`
+	Name            string            `json:"name"`
+	Source          ManifestSource    `json:"source"`
+	URL             string            `json:"url"`                 // 下载 URL 模板，占位 {version} {os} {arch} {asset}
+	Assets          map[string]string `json:"assets"`              // "os/arch" -> asset 名模板（占位 {version} {os} {arch}）
+	Bin             string            `json:"bin"`                 // bin 子目录（相对安装目录，空=根），用 / 分隔
+	Env             map[string]string `json:"env"`                 // 环境变量，值可用 {dir} 代表安装目录
+	Checksums       map[string]string `json:"checksums,omitempty"` // version/os/arch -> publisher SHA256
 }
 
 // ManifestSource 描述如何获取可用版本列表。
@@ -114,6 +116,12 @@ func (p manifestPlugin) DownloadURL(version string, t Target) (string, error) {
 }
 
 func (p manifestPlugin) BinPaths(installDir string) []string {
+	if p.m.Name == "pharo" || p.m.Name == "squeak" {
+		return []string{filepath.Join(installDir, "bin"), installDir, filepath.Join(installDir, "Contents", "MacOS"), filepath.Join(installDir, "Pharo.app", "Contents", "MacOS"), filepath.Join(installDir, "Squeak.app", "Contents", "MacOS")}
+	}
+	if p.m.Name == "eiffel" {
+		return append(eiffelBinPaths(installDir, CurrentTarget()), filepath.Join(installDir, "bin"), installDir)
+	}
 	if p.m.Name == "maven" {
 		return mavenBinPaths(installDir)
 	}
@@ -124,6 +132,9 @@ func (p manifestPlugin) BinPaths(installDir string) []string {
 }
 
 func (p manifestPlugin) ExecEnv(installDir string) map[string]string {
+	if p.m.Name == "eiffel" {
+		return map[string]string{"ISE_EIFFEL": installDir, "ISE_PLATFORM": eiffelPlatform(CurrentTarget())}
+	}
 	if p.m.Name == "maven" {
 		root := installDir
 		// Older VSM releases adopted Maven's bin directory as the install root.
@@ -300,6 +311,12 @@ func parseManifestData(data []byte) ([]Manifest, error) {
 }
 
 func validateManifest(m Manifest) error {
+	if m.VersionManual && (m.Source.Type != "local" || m.VersionMetadata != "" || m.VersionFlag != "" || m.VersionPattern != "") {
+		return fmt.Errorf("manual version tools must use local source without an automatic probe")
+	}
+	if m.VersionMetadata != "" && m.VersionMetadata != "matlab" && m.VersionMetadata != "netlogo" {
+		return fmt.Errorf("unsupported version metadata format")
+	}
 	if len(m.Languages) > 64 || len(m.Notes) > 4096 || len(m.DisplayName) > 200 {
 		return fmt.Errorf("tool description exceeds limit")
 	}

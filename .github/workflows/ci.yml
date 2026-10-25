@@ -95,7 +95,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: python scripts/prepare-language-integration.py --directory "${{ runner.temp }}/vsm-language-packages"
 
-      - name: Run real GDScript Vyper Arturo Factor Haxe and Nim through VSM
+      - name: Run real language toolchains including Cairo Move J and Rebol
         timeout-minutes: 8
         env:
           VSM_TEST_LANGUAGE_ARTIFACTS: ${{ runner.temp }}/vsm-language-packages/artifacts.json

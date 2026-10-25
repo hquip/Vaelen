@@ -31,9 +31,13 @@ type CatalogTool struct {
 func Catalog(query string) []CatalogTool {
 	out := []CatalogTool{}
 	query = strings.ToLower(query)
-	for _, name := range Names() {
+	for _, name := range CatalogNames() {
 		p, ok := Get(name)
 		if !ok {
+			support := Support(name, CurrentTarget())
+			if MatchesTool(name, query) {
+				out = append(out, CatalogTool{Name: name, Source: support.Mode, Commands: []string{}, Support: support})
+			}
 			continue
 		}
 		source, installable := "native", true

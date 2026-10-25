@@ -238,6 +238,7 @@ func (p Project) Variables() map[string]string {
 		"CARGO_HOME": filepath.Join(base, "cargo"), "GRADLE_USER_HOME": filepath.Join(base, "gradle"),
 		"DOTNET_CLI_HOME": filepath.Join(base, "dotnet-home"), "NUGET_PACKAGES": filepath.Join(base, "cache", "nuget"),
 		"PUB_CACHE": filepath.Join(base, "cache", "pub"), "JULIA_DEPOT_PATH": filepath.Join(base, "cache", "julia"),
+		"SCARB_CACHE": filepath.Join(base, "cache", "scarb"),
 	}
 }
 

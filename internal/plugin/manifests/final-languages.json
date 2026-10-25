@@ -1,0 +1,354 @@
+[
+  {
+    "name": "sui",
+    "display_name": "Sui CLI · Move",
+    "languages": [
+      "Move",
+      "Sui Move"
+    ],
+    "commands": [
+      "sui"
+    ],
+    "source": {
+      "type": "local"
+    },
+    "assets": {},
+    "bin": "bin",
+    "version_flag": "--version",
+    "version_pattern": "(?im)^sui\\s+(\\d+\\.\\d+\\.\\d+)",
+    "notes": "纳管完整 Sui CLI；Move 工程版本与链的框架版本需配套记录，不与 Aptos Move 互相替代。"
+  },
+  {
+    "name": "j",
+    "display_name": "J",
+    "languages": [
+      "J",
+      "J Programming Language"
+    ],
+    "commands": [
+      "jconsole",
+      "ijconsole",
+      "jamalgam"
+    ],
+    "source": {
+      "type": "local"
+    },
+    "assets": {},
+    "bin": "bin",
+    "version_flag": "-jprofile",
+    "version_pattern": "(?m)^\\s*j(\\d+(?:\\.\\d+)+)/",
+    "notes": "纳管完整 J 引擎和库。自动扫描仅检查 ijconsole / jamalgam，避免启动 JDK 的同名 jconsole；jconsole 可通过添加路径纳管并要求相邻 J 引擎库。 探测以 -jprofile 禁止加载用户配置，只执行固定的内置版本表达式。",
+    "detect_commands": [
+      "ijconsole",
+      "jamalgam"
+    ]
+  },
+  {
+    "name": "bqn",
+    "display_name": "BQN · CBQN",
+    "languages": [
+      "BQN",
+      "CBQN"
+    ],
+    "commands": [
+      "BQN",
+      "cbqn",
+      "bqn"
+    ],
+    "source": {
+      "type": "local"
+    },
+    "assets": {},
+    "bin": "bin",
+    "version_flag": "--version",
+    "version_pattern": "(?im)^CBQN[^\\r\\n]*?\\b(\\d+(?:\\.\\d+)+|[0-9a-f]{7,40})\\b",
+    "notes": "纳管带版本信息的 CBQN；无版本的开发构建会明确拒绝探测。提交号版本需显式选择，不宣称不同 BQN 实现具有相同版本。"
+  },
+  {
+    "name": "rebol",
+    "display_name": "Rebol 3",
+    "languages": [
+      "Rebol",
+      "Rebol 3"
+    ],
+    "commands": [
+      "rebol3",
+      "r3",
+      "rebol"
+    ],
+    "source": {
+      "type": "local"
+    },
+    "assets": {},
+    "bin": "bin",
+    "version_flag": "--do",
+    "version_pattern": "(?im)Rebol(?:/[A-Za-z]+)?\\s+(\\d+(?:\\.\\d+)+)",
+    "notes": "纳管完整 Rebol 3 发行版；Rebol 2 与不同分支的方言和运行库不由此入口替代。 探测使用私有空 REBOL_HOME 和固定版本表达式，避免加载用户 user.reb。"
+  },
+  {
+    "name": "hare",
+    "display_name": "Hare",
+    "languages": [
+      "Hare"
+    ],
+    "commands": [
+      "hare"
+    ],
+    "source": {
+      "type": "local"
+    },
+    "assets": {},
+    "bin": "bin",
+    "version_flag": "",
+    "version_pattern": "(?im)^hare(?: version)?\\s+(\\d+(?:\\.\\d+)+)",
+    "notes": "纳管已有 Hare 工具链及依赖；仅运行 hare version 探测，代码生成仍需对应的 QBE、链接器和系统工具。",
+    "platforms": [
+      "linux"
+    ]
+  },
+  {
+    "name": "hylo",
+    "display_name": "Hylo",
+    "languages": [
+      "Hylo"
+    ],
+    "commands": [
+      "hc"
+    ],
+    "source": {
+      "type": "local"
+    },
+    "assets": {},
+    "bin": "bin",
+    "version_flag": "--version",
+    "version_pattern": "(?m)^v?(\\d+(?:\\.\\d+)+(?:[-+][0-9A-Za-z.-]+)?)\\s*$",
+    "notes": "纳管带明确版本号的 Hylo 编译器及完整 SDK；输出 unknown 的未标记开发构建不能自动识别。"
+  },
+  {
+    "name": "eiffel",
+    "display_name": "EiffelStudio",
+    "languages": [
+      "Eiffel",
+      "EiffelStudio"
+    ],
+    "commands": [
+      "ec"
+    ],
+    "source": {
+      "type": "local"
+    },
+    "assets": {},
+    "bin": "bin",
+    "version_flag": "-version",
+    "version_pattern": "(?im)EiffelStudio(?: version)?\\s+(\\d+(?:\\.\\d+)+)",
+    "notes": "纳管完整 EiffelStudio；保留 studio/spec 平台目录，设置 ISE_EIFFEL / ISE_PLATFORM；发行版授权与附加依赖由用户准备。"
+  },
+  {
+    "name": "pharo",
+    "display_name": "Pharo VM",
+    "languages": [
+      "Smalltalk",
+      "Pharo"
+    ],
+    "commands": [
+      "pharo",
+      "Pharo",
+      "PharoConsole"
+    ],
+    "source": {
+      "type": "local"
+    },
+    "assets": {},
+    "bin": "bin",
+    "version_flag": "--version",
+    "version_pattern": "(?im)^Pharo\\s*VM(?: version)?[: ]+v?(\\d+(?:\\.\\d+)+)",
+    "notes": "管理完整 Pharo VM 安装；镜像版本与 VM 版本分别记录，运行时需显式提供相应 image；不自动转换或替换镜像。"
+  },
+  {
+    "name": "squeak",
+    "display_name": "Squeak / OpenSmalltalk VM",
+    "languages": [
+      "Smalltalk",
+      "Squeak",
+      "OpenSmalltalk"
+    ],
+    "commands": [
+      "squeak",
+      "Squeak"
+    ],
+    "source": {
+      "type": "local"
+    },
+    "assets": {},
+    "bin": "bin",
+    "version_flag": "-version",
+    "version_pattern": "(?im)^(?:(?:Squeak|Cog|Stack|Spur)[^\\r\\n]*?version[: ]+)?(\\d+\\.\\d+(?:[.-][0-9]+)*)",
+    "notes": "管理已有 Squeak/OpenSmalltalk VM；需要用户选择匹配镜像和插件，不将 VM 版本当作镜像中的 Smalltalk 系统版本。"
+  },
+  {
+    "name": "matlab",
+    "display_name": "MATLAB",
+    "languages": [
+      "MATLAB",
+      "Simulink"
+    ],
+    "commands": [
+      "matlab"
+    ],
+    "source": {
+      "type": "local"
+    },
+    "assets": {},
+    "bin": "bin",
+    "version_flag": "",
+    "version_pattern": "",
+    "notes": "纳管已有授权的完整 MATLAB 安装。只读 VersionInfo.xml，命令验证检查入口与元数据，不启动 MATLAB；运行、工具箱和授权状态需在实际使用时确认。",
+    "version_metadata": "matlab"
+  },
+  {
+    "name": "netlogo",
+    "display_name": "NetLogo",
+    "languages": [
+      "NetLogo"
+    ],
+    "commands": [
+      "netlogo-headless",
+      "netlogo-headless.sh",
+      "NetLogo_Console"
+    ],
+    "source": {
+      "type": "local"
+    },
+    "assets": {},
+    "bin": "",
+    "version_flag": "",
+    "version_pattern": "",
+    "notes": "纳管完整 NetLogo 安装；从应用配置或官方 JAR 清单读取版本，不在扫描时启动 Java/编辑器。模型、扩展和图形界面兼容性需另行测试。",
+    "version_metadata": "netlogo"
+  },
+  {
+    "name": "delphi",
+    "display_name": "Delphi 命令行编译器",
+    "languages": [
+      "Delphi",
+      "Object Pascal"
+    ],
+    "commands": [
+      "dcc32",
+      "dcc64"
+    ],
+    "source": {
+      "type": "local"
+    },
+    "assets": {},
+    "bin": "bin",
+    "version_flag": "-?",
+    "version_pattern": "(?im)(?:Embarcadero|CodeGear|Borland)[^\\r\\n]*Delphi[^\\r\\n]*compiler version\\s+(\\d+(?:\\.\\d+)+)",
+    "notes": "纳管已授权 Delphi 的 Win32/Win64 命令行编译器；IDE、SDK、库路径及组件需由完整安装提供，不修改系统组件注册。",
+    "platforms": [
+      "windows"
+    ]
+  },
+  {
+    "name": "scarb",
+    "display_name": "Scarb · Cairo",
+    "languages": [
+      "Cairo",
+      "Scarb"
+    ],
+    "commands": [
+      "scarb"
+    ],
+    "source": {
+      "type": "github-releases",
+      "repo": "software-mansion/scarb",
+      "stripPrefix": "v"
+    },
+    "url": "https://github.com/software-mansion/scarb/releases/download/v{version}/{asset}",
+    "assets": {
+      "windows/amd64": "scarb-v{version}-x86_64-pc-windows-msvc.zip",
+      "linux/amd64": "scarb-v{version}-x86_64-unknown-linux-gnu.tar.gz",
+      "linux/arm64": "scarb-v{version}-aarch64-unknown-linux-gnu.tar.gz",
+      "darwin/amd64": "scarb-v{version}-x86_64-apple-darwin.tar.gz",
+      "darwin/arm64": "scarb-v{version}-aarch64-apple-darwin.tar.gz"
+    },
+    "bin": "bin",
+    "version_flag": "--version",
+    "version_pattern": "(?im)^scarb\\s+(\\d+\\.\\d+\\.\\d+)",
+    "notes": "官方 Scarb 发行包含 Cairo 工具链；Cairo 0、Starknet 合约框架和链上部署需分别管理，不在安装或探测时执行链上操作。"
+  },
+  {
+    "name": "red",
+    "display_name": "Red / Red-System",
+    "languages": [
+      "Red",
+      "Red/System"
+    ],
+    "commands": [
+      "red",
+      "red-cli"
+    ],
+    "source": {
+      "type": "local"
+    },
+    "assets": {},
+    "bin": "bin",
+    "version_manual": true,
+    "notes": "完整安装后手动填写版本标识并纳管；VSM 仅校验命令路径，不自动启动程序读取版本。不同控制台、编译器和 SDK 需分别保留。"
+  },
+  {
+    "name": "vale",
+    "display_name": "Vale",
+    "languages": [
+      "Vale"
+    ],
+    "commands": [
+      "valec"
+    ],
+    "source": {
+      "type": "local"
+    },
+    "assets": {},
+    "bin": "bin",
+    "version_manual": true,
+    "notes": "完整安装后手动填写版本标识并纳管；VSM 仅校验命令路径，不自动启动程序读取版本。实验性构建需保留完整 SDK，并记录具体构建号。"
+  },
+  {
+    "name": "kona",
+    "display_name": "Kona · K",
+    "languages": [
+      "K",
+      "Kona",
+      "K3"
+    ],
+    "commands": [
+      "k"
+    ],
+    "source": {
+      "type": "local"
+    },
+    "assets": {},
+    "bin": "bin",
+    "version_manual": true,
+    "notes": "完整安装后手动填写版本标识并纳管；VSM 仅校验命令路径，不自动启动程序读取版本。Kona 与 kdb+、ngn/k 的方言和运行库不互相替代。"
+  },
+  {
+    "name": "ucblogo",
+    "display_name": "UCBLogo",
+    "languages": [
+      "Logo",
+      "UCBLogo"
+    ],
+    "commands": [
+      "ucblogo",
+      "logo"
+    ],
+    "source": {
+      "type": "local"
+    },
+    "assets": {},
+    "bin": "bin",
+    "version_manual": true,
+    "notes": "完整安装后手动填写版本标识并纳管；VSM 仅校验命令路径，不自动启动程序读取版本。Logo 实现及图形界面依赖需匹配，NetLogo 由独立工具管理。"
+  }
+]

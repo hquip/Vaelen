@@ -2,8 +2,12 @@ package core
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -48,6 +52,7 @@ func TestRealAdditionalLanguages(t *testing.T) {
 		SHA256  string `json:"sha256"`
 		Size    int64  `json:"size"`
 		Format  string `json:"format"`
+		Adopt   bool   `json:"adopt"`
 	}
 	if err := json.Unmarshal(data, &packages); err != nil {
 		t.Fatal(err)
@@ -76,17 +81,62 @@ func TestRealAdditionalLanguages(t *testing.T) {
 			}
 			artifact := plugin.Artifact{URL: server.URL + "/publisher." + pkg.Format, SHA256: pkg.SHA256, Size: pkg.Size, Format: pkg.Format}
 			paths := Paths{Root: home}
-			installer := Installer{Paths: paths, Pinned: &artifact, RequireChecksum: true}
-			if pkg.SHA256 == "" {
-				p = compilerFixtureProvider{Plugin: p, artifact: artifact}
-				installer.Pinned = nil
-				if err := installer.Install(p, pkg.Version, "", nil); err == nil {
-					t.Fatal("strict install accepted a publisher without a hash")
+			if pkg.Adopt {
+				data, err := os.ReadFile(pkg.Archive)
+				if err != nil {
+					t.Fatal(err)
 				}
-				installer.RequireChecksum = false
-			}
-			if err := installer.Install(p, pkg.Version, "", func(message string) { t.Log(message) }); err != nil {
-				t.Fatal(err)
+				hash := sha256.Sum256(data)
+				if hex.EncodeToString(hash[:]) != pkg.SHA256 {
+					t.Fatal("adoption fixture publisher checksum mismatch")
+				}
+				sdk := t.TempDir()
+				if pkg.Format == "zip" {
+					if err := Extract(pkg.Archive, sdk); err != nil {
+						t.Fatal(err)
+					}
+					sdk = stripSingleDir(sdk)
+				} else {
+					if pkg.Format == "gzip" {
+						r, err := gzip.NewReader(bytes.NewReader(data))
+						if err != nil {
+							t.Fatal(err)
+						}
+						data, err = io.ReadAll(io.LimitReader(r, (64<<20)+1))
+						r.Close()
+						if err != nil || len(data) > 64<<20 {
+							t.Fatal("invalid adoption fixture gzip")
+						}
+					}
+					command := plugin.DetectCommands()[pkg.Name][0]
+					if runtime.GOOS == "windows" {
+						command += ".exe"
+					}
+					if err := os.WriteFile(filepath.Join(sdk, command), data, 0755); err != nil {
+						t.Fatal(err)
+					}
+				}
+				selected, err := (Installer{Paths: paths}).AdoptPath(pkg.Name, sdk, "")
+				if err != nil {
+					t.Fatal(err)
+				}
+				if pkg.Version != "" && pkg.Version != selected.Version {
+					t.Fatalf("adopted version %s, want %s", selected.Version, pkg.Version)
+				}
+				pkg.Version = selected.Version
+			} else {
+				installer := Installer{Paths: paths, Pinned: &artifact, RequireChecksum: true}
+				if pkg.SHA256 == "" {
+					p = compilerFixtureProvider{Plugin: p, artifact: artifact}
+					installer.Pinned = nil
+					if err := installer.Install(p, pkg.Version, "", nil); err == nil {
+						t.Fatal("strict install accepted a publisher without a hash")
+					}
+					installer.RequireChecksum = false
+				}
+				if err := installer.Install(p, pkg.Version, "", func(message string) { t.Log(message) }); err != nil {
+					t.Fatal(err)
+				}
 			}
 			bin := ""
 			for _, name := range plugin.DetectCommands()[pkg.Name] {
@@ -109,6 +159,7 @@ func TestRealAdditionalLanguages(t *testing.T) {
 			act := Activator{Paths: paths, Registry: reg, Resolver: Resolver{Paths: paths, Registry: reg}}
 			var file, source, want string
 			var args []string
+			var input io.Reader
 			switch pkg.Name {
 			case "godot":
 				file, source, want = "hello.gd", "extends SceneTree\nfunc _init():\n\tprint(\"GDSCRIPT_OK\")\n\tquit(0)\n", "GDSCRIPT_OK"
@@ -142,8 +193,32 @@ func TestRealAdditionalLanguages(t *testing.T) {
 					out += ".exe"
 				}
 				args = []string{"c", "-r", "--hints:off", "--cc:" + cc, "--nimcache:" + filepath.Join(project, "nimcache"), "--out:" + out, filepath.Join(project, file)}
+			case "scarb":
+				file, source, want = "src/lib.cairo", "pub fn answer() -> u32 { 42 }\n", "Finished"
+				if err := os.WriteFile(filepath.Join(project, "Scarb.toml"), []byte("[package]\nname=\"vsm_hello\"\nversion=\"0.1.0\"\nedition=\"2024_07\"\n[lib]\n"), 0600); err != nil {
+					t.Fatal(err)
+				}
+				args = []string{"--offline", "build"}
+			case "aptos":
+				file, source, want = "sources/hello.move", "module vsm::hello { public fun answer(): u64 { 42 } }\n", "hello"
+				if err := os.WriteFile(filepath.Join(project, "Move.toml"), []byte("[package]\nname=\"vsm_hello\"\nversion=\"0.0.0\"\n[addresses]\nvsm=\"0x42\"\n"), 0600); err != nil {
+					t.Fatal(err)
+				}
+				t.Setenv("APTOS_DISABLE_TELEMETRY", "true")
+				args = []string{"move", "compile", "--package-dir", project, "--skip-fetch-latest-git-deps"}
+			case "j":
+				file, source, want = "hello.ijs", "1!:2&2 'J_OK'\n2!:55''\n", "J_OK"
+				args = []string{"-jprofile"}
+				input = strings.NewReader(source)
+			case "rebol":
+				t.Setenv("REBOL_HOME", t.TempDir())
+				file, source, want = "hello.reb", "Rebol []\nprint \"REBOL_OK\"\nquit\n", "REBOL_OK"
+				args = []string{"-w", "-q", filepath.Join(project, file)}
 			default:
 				t.Fatal("unexpected language fixture")
+			}
+			if err := os.MkdirAll(filepath.Dir(filepath.Join(project, file)), 0755); err != nil {
+				t.Fatal(err)
 			}
 			if err := os.WriteFile(filepath.Join(project, file), []byte(source), 0600); err != nil {
 				t.Fatal(err)
@@ -151,11 +226,14 @@ func TestRealAdditionalLanguages(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 			defer cancel()
 			var log bytes.Buffer
-			if err := act.RunProjectContext(ctx, project, pkg.Name, args, nil, &log, &log); err != nil {
+			if err := act.RunProjectContext(ctx, project, filepath.Base(bin), args, input, &log, &log); err != nil {
 				t.Fatalf("run project: %v\n%s", err, log.String())
 			}
 			if !strings.Contains(log.String(), want) {
 				t.Fatalf("expected %s output, got: %s", want, log.String())
+			}
+			if pkg.Name == "aptos" && !fileExists(filepath.Join(project, "build", "vsm_hello", "bytecode_modules", "hello.mv")) {
+				t.Fatal("Move compiler did not produce the expected module")
 			}
 			if pkg.Name == "vyper" && !regexp.MustCompile(`(?m)^0x[0-9a-f]+\r?$`).MatchString(log.String()) {
 				t.Fatalf("Vyper did not produce bytecode: %s", log.String())
@@ -175,6 +253,8 @@ func TestRealAdditionalLocalInterpreters(t *testing.T) {
 		{"gforth", "VSM_TEST_FORTH", "hello.fs", ".\" FORTH_OK\" cr bye\n", "FORTH_OK"},
 		{"regina", "VSM_TEST_REXX", "hello.rexx", "say 'REXX_OK'\n", "REXX_OK"},
 		{"gnu-apl", "VSM_TEST_APL", "hello.apl", "⎕←'APL_OK'\n)OFF\n", "APL_OK"},
+		{"bqn", "VSM_TEST_BQN", "hello.bqn", "•Out \"BQN_OK\"\n", "BQN_OK"},
+		{"hare", "VSM_TEST_HARE", "hello.ha", "use fmt;\nexport fn main() void = { fmt::println(\"HARE_OK\")!; };\n", "HARE_OK"},
 	} {
 		t.Run(test.tool, func(t *testing.T) {
 			requested := os.Getenv(test.variable)
@@ -212,6 +292,9 @@ func TestRealAdditionalLocalInterpreters(t *testing.T) {
 			args := []string{file}
 			if test.tool == "gnu-apl" {
 				args = []string{"--script", "-f", file}
+			}
+			if test.tool == "hare" {
+				args = []string{"run", file}
 			}
 			var log bytes.Buffer
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

@@ -6,23 +6,33 @@ import (
 )
 
 type ToolSupport struct {
-	DisplayName string   `json:"display_name"`
-	Languages   []string `json:"languages"`
-	Mode        string   `json:"mode"`
-	Notes       string   `json:"notes"`
-	Platforms   []string `json:"platforms"`
+	DisplayName string     `json:"display_name"`
+	Languages   []string   `json:"languages"`
+	Mode        string     `json:"mode"`
+	Notes       string     `json:"notes"`
+	Platforms   []string   `json:"platforms"`
+	Guide       *HostGuide `json:"guide,omitempty"`
+	VersionMode string     `json:"version_mode,omitempty"`
 }
 
 var nativeLanguages = map[string][]string{
 	"go": {"Go", "Golang"}, "java": {"Java", "JVM"}, "python": {"Python"}, "node": {"JavaScript", "TypeScript", "Node.js"}, "bun": {"JavaScript", "TypeScript", "JSX", "TSX"}, "deno": {"JavaScript", "TypeScript", "JSX", "TSX"}, "zig": {"Zig", "C", "C++"},
 	"dotnet": {"C#", "CSharp", "C Sharp", "F#", "FSharp", "Visual Basic .NET", "VB.NET", "VBNet"}, "dart": {"Dart"}, "flutter": {"Dart", "Flutter"}, "julia": {"Julia"},
 	"nim": {"Nim"}, "godot": {"GDScript", "Godot"}, "vyper": {"Vyper"},
+	"aptos": {"Move", "Aptos Move"},
 }
 
 func Support(name string, target Target) ToolSupport {
 	out := ToolSupport{DisplayName: name, Languages: []string{}, Mode: "adopt", Platforms: []string{"windows", "linux", "darwin"}, Notes: "纳管并切换本机已有安装；尚无可直接安装的发行包"}
 	p, ok := Get(name)
 	if !ok {
+		if guide, exists := Guide(name); exists {
+			out.DisplayName = guide.Name
+			out.Languages = guide.Languages
+			out.Mode = guide.Mode
+			out.Notes = guide.Limit
+			out.Guide = &guide
+		}
 		return out
 	}
 	if languages, ok := nativeLanguages[name]; ok {
@@ -40,6 +50,13 @@ func Support(name string, target Target) ToolSupport {
 	if name == "godot" {
 		out.DisplayName = "Godot · GDScript"
 		out.Notes = "官方标准版编辑器及无界面命令；不包含 .NET 版或导出模板，项目与插件兼容性由项目自行管理"
+	}
+	if name == "aptos" {
+		out.DisplayName = "Aptos CLI · Move"
+		out.Notes = "按 Aptos CLI 专用标签选择官方包并校验 SHA256；不将节点版本或 Sui Move 当作同一工具链，链上操作需用户明确执行"
+		if target.OS == "windows" && target.Arch != "amd64" {
+			out.Mode = "adopt"
+		}
 	}
 	if name == "vyper" {
 		out.DisplayName = "Vyper"
@@ -59,6 +76,11 @@ func Support(name string, target Target) ToolSupport {
 		out.Notes = "Zig 内含 C/C++ 编译能力（zig cc / zig c++）；C/C++ 项目也可选择 GCC、Clang 或 MSVC"
 	}
 	if m, ok := p.(manifestPlugin); ok {
+		if m.m.VersionManual {
+			out.VersionMode = "label"
+		} else if m.m.VersionMetadata != "" {
+			out.VersionMode = "metadata"
+		}
 		// An external definition can override a native tool. Its capabilities
 		// come from that definition, not from the native tool's former source.
 		out.Mode = "adopt"
@@ -112,9 +134,23 @@ func Support(name string, target Target) ToolSupport {
 	return out
 }
 
+func VersionMode(name string) string {
+	if p, ok := Get(name); ok {
+		if m, ok := p.(manifestPlugin); ok {
+			if m.m.VersionManual {
+				return "label"
+			}
+			if m.m.VersionMetadata != "" {
+				return "metadata"
+			}
+		}
+	}
+	return "probe"
+}
+
 func LanguageNames() []string {
 	seen := map[string]bool{}
-	for _, name := range Names() {
+	for _, name := range CatalogNames() {
 		for _, language := range Support(name, CurrentTarget()).Languages {
 			seen[language] = true
 		}
@@ -133,6 +169,9 @@ func MatchesTool(name, query string) bool {
 	}
 	s := Support(name, CurrentTarget())
 	values := append([]string{name, s.DisplayName}, s.Languages...)
+	if s.Guide != nil {
+		values = append(values, s.Guide.Host)
+	}
 	q := strings.ToLower(strings.TrimSpace(query))
 	for _, value := range values {
 		if len(q) == 1 && strings.EqualFold(value, q) || len(q) > 1 && strings.Contains(strings.ToLower(value), q) {
@@ -155,6 +194,8 @@ func VersionProbe(tool string) (flag, pattern string) {
 		return "--version", `(?m)^(\d+\.\d+\.\d+)(?:\+commit\.[0-9a-f]+)?(?:\s|$)`
 	case "nim":
 		return "--version", `(?m)^Nim Compiler Version\s+(\d+\.\d+\.\d+)(?:\s|$)`
+	case "aptos":
+		return "--version", `(?im)^aptos\s+(\d+\.\d+\.\d+)(?:\s|$)`
 	}
 	return "", ""
 }

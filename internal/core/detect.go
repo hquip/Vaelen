@@ -28,6 +28,7 @@ type SystemVersion struct {
 	VersionError   string `json:"version_error,omitempty"`
 	Environment    string `json:"environment,omitempty"`
 	ManagedVersion string `json:"managed_version,omitempty"`
+	VersionOrigin  string `json:"version_origin,omitempty"`
 }
 
 func (s SystemVersion) RegistryVersion() string {
@@ -247,6 +248,10 @@ func probeVersion(tool, bin string) (version string, err error) {
 		}
 		logging.Record(level, "detect", "version.probe", fields)
 	}()
+	if plugin.MetadataKind(tool) != "" {
+		_, version, err := plugin.ReadSDKMetadata(tool, bin)
+		return version, err
+	}
 
 	if tool == "go" {
 		return probeGoVersion(bin)
@@ -278,6 +283,9 @@ func probeVersionCommand(tool, bin string, env []string, dir string) (string, er
 }
 
 func runVersionProbe(tool, bin string, env []string, dir string, discovery bool) (string, error) {
+	if plugin.VersionMode(tool) == "label" {
+		return "", fmt.Errorf("%s 使用用户标注版本，不自动启动程序探测", tool)
+	}
 	flags := []string{"--version", "version", "-version"}
 	if tool == "go" {
 		flags = []string{"version"}
@@ -315,6 +323,23 @@ func runVersionProbe(tool, bin string, env []string, dir string, discovery bool)
 	if tool == "ballerina" {
 		flags = []string{"version"}
 	}
+	if tool == "hare" {
+		flags = []string{"version"}
+	}
+	if tool == "j" && discovery {
+		base := strings.ToLower(strings.TrimSuffix(filepath.Base(bin), filepath.Ext(bin)))
+		if base != "jamalgam" {
+			found := false
+			for _, lib := range []string{"j.dll", "libj.so", "libj.dylib"} {
+				if fileExists(filepath.Join(filepath.Dir(realPath(bin)), lib)) {
+					found = true
+				}
+			}
+			if !found {
+				return "", fmt.Errorf("路径中缺少 J 引擎库；不会启动可能属于 JDK 的 jconsole")
+			}
+		}
+	}
 	if tool == "msvc" || tool == "tcl" || tool == "erlang" {
 		flags = []string{""}
 	}
@@ -323,6 +348,12 @@ func runVersionProbe(tool, bin string, env []string, dir string, discovery bool)
 	for _, flag := range flags {
 		ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
 		probeArgs := []string{flag}
+		if tool == "j" {
+			probeArgs = []string{"-jprofile"}
+		}
+		if tool == "rebol" {
+			probeArgs = []string{"-w", "--do", `print rejoin [{Rebol } mold system/version] quit`}
+		}
 		if tool == "godot" {
 			probeArgs = []string{"--headless", "--version"}
 		}
@@ -338,6 +369,39 @@ func runVersionProbe(tool, bin string, env []string, dir string, discovery bool)
 		c := exec.CommandContext(ctx, bin, probeArgs...)
 		c.Dir = dir
 		c.Env = env
+		if tool == "j" {
+			c.Stdin = strings.NewReader("9!:14''\n2!:55''\n")
+		}
+		if tool == "rebol" {
+			c.Stdin = strings.NewReader("")
+			// Older Windows builds mistake NUL stdin for a console. An explicit
+			// EOF pipe lets their redirected I/O initialize without waiting.
+			private, err := os.MkdirTemp("", "vsm-rebol-version-")
+			if err != nil {
+				cancel()
+				return "", err
+			}
+			defer os.RemoveAll(private)
+			base := env
+			if base == nil {
+				base = os.Environ()
+			}
+			clean := make([]string, 0, len(base)+1)
+			for _, entry := range base {
+				key, _, _ := strings.Cut(entry, "=")
+				if !strings.EqualFold(key, "REBOL_HOME") {
+					clean = append(clean, entry)
+				}
+			}
+			c.Env = append(clean, "REBOL_HOME="+private)
+		}
+		if tool == "eiffel" && discovery {
+			if root := plugin.SDKInstallRoot(tool, bin); root != "" {
+				if p, ok := plugin.Get(tool); ok {
+					c.Env = buildEnv(p.BinPaths(root), p.ExecEnv(root))
+				}
+			}
+		}
 		if tool == "erlang" || tool == "msvc" {
 			base := env
 			if base == nil {
@@ -377,6 +441,12 @@ func runVersionProbe(tool, bin string, env []string, dir string, discovery bool)
 		batchFlag := flag
 		if tool == "godot" {
 			batchFlag = "--headless --version"
+		}
+		if tool == "j" {
+			batchFlag = "-jprofile"
+		}
+		if tool == "rebol" {
+			batchFlag = `-w --do "print rejoin [{Rebol } mold system/version] quit"`
 		}
 		if err := configureVersionProbe(c, bin, batchFlag); err != nil {
 			cancel()
@@ -418,6 +488,14 @@ func runVersionProbe(tool, bin string, env []string, dir string, discovery bool)
 			bannerExit := err == nil || errors.As(err, &exit) && exit.ExitCode() == 2
 			if m := regexp.MustCompile(`(?im)Microsoft.*C/C\+\+.*Compiler Version\s+(\d+(?:\.\d+)+)`).FindStringSubmatch(output.text); m != nil && bannerExit {
 				return m[1], nil
+			}
+		}
+		if tool == "delphi" && !timedOut {
+			var exit *exec.ExitError
+			if err == nil || errors.As(err, &exit) && exit.ExitCode() == 1 {
+				if m := regexp.MustCompile(customPattern).FindStringSubmatch(probeANSIEscape.ReplaceAllString(output.text, "")); len(m) == 2 {
+					return m[1], nil
+				}
 			}
 		}
 		// Some Windows Redis probes print their version but do not complete

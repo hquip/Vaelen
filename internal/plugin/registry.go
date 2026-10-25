@@ -39,6 +39,10 @@ func IsServiceTool(name string) bool {
 func ProbeCommands() map[string][]string {
 	commands := DetectCommands()
 	for tool := range commands {
+		if VersionMode(tool) == "label" {
+			delete(commands, tool)
+			continue
+		}
 		raw, _ := Get(tool)
 		if p, ok := raw.(manifestPlugin); ok && len(p.m.DetectCommands) > 0 {
 			commands[tool] = append([]string{}, p.m.DetectCommands...)

@@ -21,6 +21,7 @@ type CmdToolActivation struct {
 	Command           string   `json:"command"`
 	Executable        string   `json:"executable"`
 	ActualVersion     string   `json:"actual_version,omitempty"`
+	Verification      string   `json:"verification,omitempty"`
 	ExpectedVersion   string   `json:"expected_version,omitempty"`
 	Passed            bool     `json:"passed"`
 	Error             string   `json:"error,omitempty"`

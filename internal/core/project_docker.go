@@ -73,6 +73,18 @@ func (p Project) runDockerEnvironment(ctx context.Context, dir, command string, 
 	if err := p.ValidateStateRoot(); err != nil {
 		return err
 	}
+	for _, tool := range plugin.Names() {
+		if plugin.VersionMode(tool) == "probe" {
+			continue
+		}
+		spec, _, err := ProjectRequirement(tool, dir)
+		if err != nil {
+			return err
+		}
+		if spec != "" {
+			return fmt.Errorf("%s 使用本机元数据或用户标注版本，不能通过 Docker 的自动版本检查；请使用 versions 模式纳管完整本机安装", tool)
+		}
+	}
 	docker, err := exec.LookPath("docker")
 	if err != nil {
 		return fmt.Errorf("Docker 模式需要安装并启动 Docker Desktop / Docker Engine")

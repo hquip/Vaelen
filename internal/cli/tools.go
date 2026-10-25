@@ -12,6 +12,30 @@ import (
 )
 
 func (a *app) cmdTools(args []string) error {
+	if len(args) > 0 && (args[0] == "info" || args[0] == "guide") {
+		rest, asJSON := jsonFlag(args[1:])
+		if len(rest) != 1 {
+			return fmt.Errorf("用法: vsm tools info <名称> [--json]")
+		}
+		for _, row := range plugin.Catalog("") {
+			if row.Name != rest[0] {
+				continue
+			}
+			if asJSON {
+				return printJSON(row)
+			}
+			fmt.Printf("%s (%s)\n语言：%s\n能力：%s\n%s\n", row.Support.DisplayName, row.Name, strings.Join(row.Support.Languages, " / "), row.Support.Mode, row.Support.Notes)
+			if g := row.Support.Guide; g != nil {
+				fmt.Printf("宿主 / 工具：%s\n", g.Host)
+				for i, step := range g.Steps {
+					fmt.Printf("%d. %s\n", i+1, step)
+				}
+				fmt.Printf("官方说明：%s\n", g.URL)
+			}
+			return nil
+		}
+		return fmt.Errorf("未找到工具或接入指引: %s", rest[0])
+	}
 	if len(args) == 0 || args[0] == "list" || args[0] == "search" {
 		if len(args) > 0 {
 			args = args[1:]
@@ -37,6 +61,10 @@ func (a *app) cmdTools(args []string) error {
 				mode = "平台不支持"
 			} else if item.Support.Mode == "release" {
 				mode = "按发行包匹配"
+			} else if item.Support.Mode == "host" {
+				mode = "宿主接入"
+			} else if item.Support.Mode == "guide" {
+				mode = "接入指引（未适配）"
 			}
 			fmt.Printf("%-18s %-12s %s · %s\n", item.Name, mode, item.Support.DisplayName, strings.Join(item.Support.Languages, " / "))
 		}

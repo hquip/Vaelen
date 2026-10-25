@@ -13,9 +13,22 @@ import (
 // InspectToolPath validates a user-selected executable or installation directory.
 // It never guesses a language from an unrelated executable's numeric output.
 func InspectToolPath(tool, path string) (SystemVersion, error) {
+	return InspectToolPathLabeled(tool, path, "")
+}
+
+func InspectToolPathLabeled(tool, path, label string) (SystemVersion, error) {
 	p, ok := plugin.Get(tool)
 	if !ok {
 		return SystemVersion{}, fmt.Errorf("不支持的工具: %s", tool)
+	}
+	manual := plugin.VersionMode(tool) == "label"
+	if manual {
+		if label == "" {
+			return SystemVersion{}, fmt.Errorf("%s 需要手动提供版本标识；仅检查命令路径，不自动读取软件版本", tool)
+		}
+		if err := validateInstall(tool, label); err != nil {
+			return SystemVersion{}, err
+		}
 	}
 	path = strings.TrimSpace(path)
 	if path == "" {
@@ -30,6 +43,9 @@ func InspectToolPath(tool, path string) (SystemVersion, error) {
 		return SystemVersion{}, err
 	}
 	names := plugin.ProbeCommands()[tool]
+	if tool == "j" || manual {
+		names = plugin.DetectCommands()[tool]
+	}
 	if len(names) == 0 {
 		names = []string{tool}
 	}
@@ -55,6 +71,11 @@ func InspectToolPath(tool, path string) (SystemVersion, error) {
 	}
 	if bin == "" {
 		return SystemVersion{}, fmt.Errorf("路径中找不到 %s 的主命令（%s）", tool, strings.Join(names, " / "))
+	}
+	if manual {
+		result := describeRuntime(tool, filepath.Base(bin), bin, label)
+		result.VersionOrigin = "label"
+		return result, nil
 	}
 	version, err := probeVersion(tool, bin)
 	if err != nil || version == "" {

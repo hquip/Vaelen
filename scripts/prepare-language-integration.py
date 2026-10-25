@@ -19,7 +19,7 @@ import urllib.parse
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--directory', required=True)
-parser.add_argument('--only', default='godot,vyper,arturo,factor,haxe,nim')
+parser.add_argument('--only', default='godot,vyper,arturo,factor,haxe,nim,scarb,aptos,j,rebol')
 parser.add_argument('--use-gh', action='store_true', help='Use an authenticated gh process for public release metadata')
 args = parser.parse_args()
 directory = Path(args.directory).resolve()
@@ -92,16 +92,31 @@ def download(name):
                 raise ValueError('Nim publisher digest missing')
     else:
         repos = {'godot': 'godotengine/godot', 'vyper': 'vyperlang/vyper', 'arturo': 'arturo-lang/arturo',
-                 'factor': 'factor/factor', 'haxe': 'HaxeFoundation/haxe'}
+                 'factor': 'factor/factor', 'haxe': 'HaxeFoundation/haxe', 'scarb': 'software-mansion/scarb',
+                 'aptos': 'aptos-labs/aptos-core', 'j': 'jsoftware/jsource', 'rebol': 'Oldes/Rebol3'}
         if name == 'vyper' and arch != 'amd64' or name == 'factor' and (arch != 'amd64' or system == 'darwin'):
             return None
         if name == 'haxe' and (system == 'darwin' and arch == 'arm64' or system == 'windows' and arch == 'arm64'):
             return None
-        release = metadata(repos[name])
+        if system == 'windows' and arch == 'arm64' and name in ('scarb', 'aptos'):
+            return None
+        if name == 'aptos':
+            endpoint = 'repos/aptos-labs/aptos-core/git/matching-refs/tags/aptos-cli-v'
+            if args.use_gh:
+                refs = json.loads(subprocess.check_output(['gh', 'api', endpoint], timeout=60))
+            else:
+                with request('https://api.github.com/' + endpoint) as response:
+                    refs = json.loads(response.read(16 * 1024 * 1024))
+            versions = [ref['ref'].removeprefix('refs/tags/aptos-cli-v') for ref in refs
+                        if re.fullmatch(r'refs/tags/aptos-cli-v\d+\.\d+\.\d+', ref['ref'])]
+            versions.sort(key=lambda value: tuple(map(int, value.split('.'))), reverse=True)
+            release = metadata(repos[name], 'aptos-cli-v' + versions[0])
+        else:
+            release = metadata(repos[name], 'build96' if name == 'j' else None)
         tag = release['tag_name']
         if release.get('draft') or release.get('prerelease'):
             raise ValueError('Expected stable publisher release')
-        version = tag.removeprefix('v')
+        version = '' if name == 'j' else tag.removeprefix('aptos-cli-v').removeprefix('v')
         if name == 'godot':
             version = tag.removesuffix('-stable')
             suffix = {('windows', 'amd64'): 'win64', ('windows', 'arm64'): 'windows_arm64',
@@ -121,6 +136,25 @@ def download(name):
             filename = 'arturo-' + version + '-' + {'darwin': 'macos'}.get(system, system) + '-' + arch + '-mini.zip'
         elif name == 'factor':
             filename = 'factor-' + system + '-x86-64-' + version + ('.zip' if system == 'windows' else '.tar.gz')
+        elif name == 'scarb':
+            triple = {('windows', 'amd64'): 'x86_64-pc-windows-msvc', ('linux', 'amd64'): 'x86_64-unknown-linux-gnu',
+                      ('linux', 'arm64'): 'aarch64-unknown-linux-gnu', ('darwin', 'amd64'): 'x86_64-apple-darwin',
+                      ('darwin', 'arm64'): 'aarch64-apple-darwin'}[(system, arch)]
+            filename = 'scarb-v' + version + '-' + triple + ('.zip' if system == 'windows' else '.tar.gz')
+        elif name == 'aptos':
+            suffix = {('windows', 'amd64'): 'Windows-x86_64', ('linux', 'amd64'): 'Linux-x86_64',
+                      ('linux', 'arm64'): 'Linux-aarch64', ('darwin', 'amd64'): 'macOS-x86_64',
+                      ('darwin', 'arm64'): 'macOS-arm64'}[(system, arch)]
+            filename = 'aptos-cli-' + version + '-' + suffix + '.zip'
+        elif name == 'j':
+            filename = {('windows', 'amd64'): 'w64.zip', ('windows', 'arm64'): 'warm64.zip',
+                        ('linux', 'amd64'): 'l64.zip', ('linux', 'arm64'): 'rpi64.zip',
+                        ('darwin', 'amd64'): 'm64.zip', ('darwin', 'arm64'): 'm64arm.zip'}[(system, arch)]
+        elif name == 'rebol':
+            suffix = {'darwin': 'macos'}.get(system, system) + '-' + ('x64' if arch == 'amd64' else 'arm64')
+            filename = 'rebol3-bulk-' + suffix + ('.exe' if system == 'windows' else '.gz')
+            if not any(asset['name'] == filename for asset in release['assets']):
+                return None
         else:
             suffix = {('windows', 'amd64'): 'win64.zip', ('linux', 'amd64'): 'linux64.tar.gz',
                       ('linux', 'arm64'): 'linux-arm64.tar.gz', ('darwin', 'amd64'): 'osx.tar.gz'}[(system, arch)]
@@ -161,9 +195,9 @@ def download(name):
                 if attempt == 2:
                     raise
                 time.sleep(1)
-    file_format = 'binary' if name == 'vyper' else next(ext for ext in ['tar.gz', 'tar.xz', 'zip'] if filename.endswith('.' + ext))
+    file_format = 'binary' if name == 'vyper' or name == 'rebol' and system == 'windows' else 'gzip' if name == 'rebol' else next(ext for ext in ['tar.gz', 'tar.xz', 'zip'] if filename.endswith('.' + ext))
     print(name + ' ' + version + ': ' + ('publisher SHA256 verified' if checksum else 'publisher digest absent; strict installation will refuse'), flush=True)
-    return dict(name=name, version=version, archive=str(archive), url=url, sha256=checksum.lower(), size=archive.stat().st_size, format=file_format)
+    return dict(name=name, version=version, archive=str(archive), url=url, sha256=checksum.lower(), size=archive.stat().st_size, format=file_format, adopt=name in ('j', 'rebol'))
 
 
 with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:

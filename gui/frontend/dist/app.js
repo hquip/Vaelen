@@ -141,6 +141,12 @@ function renderActivationReport(title, message, problems, diagnostic, currentCmd
   document.getElementById("activationCurrentCmd").classList.toggle("hidden", !currentCmd);
   document.getElementById("activationCurrentCmdText").textContent = currentCmd;
 }
+function activationDiagnosticRow(row) {
+  const state = !row.passed ? "验证未通过" : row.verification === "metadata" ? "入口与版本元数据通过（未启动软件）" : row.verification === "path" ? "入口通过（版本由用户标注）" : "验证通过";
+  const version = row.verification === "path" ? "标注版本：" + (row.expected_version || row.version || "未提供") : (row.verification === "metadata" ? "元数据版本：" : "实际版本：") + (row.actual_version || "未取得");
+  return [row.tool + "：" + state, "版本要求：" + (row.requested_version || row.version || "未设置"), "解析版本：" + (row.version || "未匹配"), row.source ? "配置来源：" + row.source : "", row.install_root ? "查找安装目录：" + row.install_root : "", row.installed_versions ? "目录中的版本：" + (row.installed_versions.join("、") || "无") : "", "实际命中的程序：" + (row.command || "未找到"), "所选安装程序：" + (row.executable || "未找到"), version, row.code || "", row.error || "", row.action || ""].filter(Boolean).join("\n");
+}
+
 function showActivationReport(result, failure) {
   const check = result.check;
   const problems = (check?.tools || []).filter(row => !row.passed);
@@ -150,7 +156,7 @@ function showActivationReport(result, failure) {
     ? "这次激活没有完成，请查看详情后重试。"
     : missingVersions ? "终端配置已保存，但当前安装目录没有匹配的版本；请恢复原目录或准备对应版本。" : result.message || "终端配置已保存。";
   const diagnostic = ["VSM " + document.getElementById("appVersion").textContent, result.message || "", failure || "", result.target ? "配置位置：" + result.target : "", result.current_cmd ? "已有 cmd 加载命令：" + result.current_cmd : "", check?.pathext ? "命令扩展名：" + check.pathext : "", check?.cmd_modes?.length ? "已验证 cmd 延迟展开模式：" + check.cmd_modes.join(", ") : "",
-    ...(check?.tools || []).map(row => [row.tool + "：" + (row.passed ? "验证通过" : "验证未通过"), "版本要求：" + (row.requested_version || row.version || "未设置"), "解析版本：" + (row.version || "未匹配"), row.source ? "配置来源：" + row.source : "", row.install_root ? "查找安装目录：" + row.install_root : "", row.installed_versions ? "目录中的版本：" + (row.installed_versions.join("、") || "无") : "", "实际命中的程序：" + (row.command || "未找到"), "所选安装程序：" + (row.executable || "未找到"), "实际版本：" + (row.actual_version || "未取得"), row.code || "", row.error || "", row.action || ""].filter(Boolean).join("\n"))].filter(Boolean).join("\n\n");
+    ...(check?.tools || []).map(activationDiagnosticRow)].filter(Boolean).join("\n\n");
   pendingActivationDiagnostic = ok ? "" : diagnostic;
   renderActivationReport(ok ? "终端启动配置已保存" : missingVersions ? "安装目录中缺少所需版本" : "版本切换仍需处理", message,
     problems.map(row => displayName(row.tool) + "：" + row.error + "\n" + (row.action || "请查看诊断详情，确认所选程序是否可用。")), diagnostic, missingVersions ? "" : result.current_cmd);
@@ -569,9 +575,10 @@ async function load() {
 }
 
 function renderStat() {
-  const total = state.length;
+  const guides = state.filter(s => ["host","guide"].includes(s.support?.mode)).length;
+  const total = state.length - guides;
   const installed = state.filter((s) => s.installed && s.installed.length).length;
-  document.getElementById("stat").textContent = `共 ${total} 项工具链 · ${installed} 已安装`;
+  document.getElementById("stat").textContent = `工具链 ${total} · 接入指引 ${guides} · 已安装 ${installed}`;
 }
 
 function renderSidebar() {
@@ -579,19 +586,23 @@ function renderSidebar() {
   const box = document.getElementById("toolList");
   box.innerHTML = "";
 
-  const match = state.filter((s) => !filter || [s.tool,displayName(s.tool),...(s.support?.languages||[])].some(value=>filter.length===1?value.toLowerCase()===filter:value.toLowerCase().includes(filter)));
+  const match = state.filter((s) => !filter || [s.tool,displayName(s.tool),...(s.support?.languages||[]),s.support?.guide?.host||""].some(value=>filter.length===1?value.toLowerCase()===filter:value.toLowerCase().includes(filter)));
   if (match.length === 0) {
     box.innerHTML = `<div class="empty-hint" style="padding:12px 10px">无匹配语言</div>`;
     return;
   }
 
   const installedTools = match.filter((s) => s.installed && s.installed.length);
-  const otherTools = match.filter((s) => !(s.installed && s.installed.length));
+  const otherTools = match.filter((s) => !(s.installed && s.installed.length) && !["host","guide"].includes(s.support?.mode));
+  const hosted = match.filter(s => s.support?.mode === "host");
+  const guides = match.filter(s => s.support?.mode === "guide");
 
   if (installedTools.length) box.appendChild(buildGroup("已安装", installedTools));
   if (otherTools.length) {
     box.appendChild(buildGroup(installedTools.length ? "未安装" : "全部语言", otherTools));
   }
+  if (hosted.length) box.appendChild(buildGroup("宿主接入", hosted));
+  if (guides.length) box.appendChild(buildGroup("工具接入指南", guides));
 }
 
 function buildGroup(label, items) {
@@ -609,7 +620,7 @@ function buildGroup(label, items) {
 	li.title=[displayName(s.tool),...(s.support?.languages||[])].join(" · ");
     li.className = "tool-item" + (s.tool === selected ? " selected" : "");
     const hasInstalled = s.installed && s.installed.length;
-    const badge = s.current
+    const badge = ["host","guide"].includes(s.support?.mode) ? `<span class="tbadge">${s.support.mode === "host" ? "宿主" : "指引"}</span>` : s.current
       ? `<span class="tbadge">${escapeHtml(s.current)}</span>`
       : `<span class="tdot ${hasInstalled ? "on" : ""}"></span>`;
     li.innerHTML =
@@ -642,6 +653,10 @@ function renderDetail(tool) {
     return;
   }
 	const support=s.support||{mode:"install",languages:[],notes:""};
+  if (["host","guide"].includes(support.mode)) {
+    renderHostGuide(detail, s);
+    return;
+  }
 	const canInstall=["install","release"].includes(support.mode);
 	const supportLabel={install:"可下载安装",release:"按发行包匹配",adopt:"纳管已有安装",unavailable:"当前平台不支持",service:"数据库实例管理"}[support.mode]||"纳管已有安装";
 
@@ -797,6 +812,26 @@ function renderDetail(tool) {
   updateInstallDirLabel();
   syncActivationButtons();
   if (projectMode !== "docker") loadSysVers(tool);
+}
+
+function renderHostGuide(detail, status) {
+  const support = status.support;
+  const guide = support.guide;
+  const name = support.display_name || status.tool;
+  const steps = guide?.steps || [];
+  detail.innerHTML = `<div class="detail-head"><div><h2>${escapeHtml(name)}</h2><p class="project-hint">${escapeHtml((support.languages || []).join(" / "))}</p></div><span class="head-badge off">${support.mode === "host" ? "宿主接入" : "接入指南 · 未适配"}</span></div>
+    <section class="section"><p class="section-title">${support.mode === "host" ? "所需宿主" : "外部工具链"}</p><p>${escapeHtml(guide?.host || "请查看官方工具说明")}</p><p class="project-hint">${escapeHtml(support.notes || "")}</p></section>
+    <section class="section"><p class="section-title">接入步骤</p><ol>${steps.map(step => `<li style="margin-bottom:12px;line-height:1.7">${escapeHtml(step)}</li>`).join("")}</ol>
+    <div class="install-row"><button id="guideCopy" class="ghost-btn">复制接入步骤</button>${guide?.url ? `<button id="guideDocs" class="primary-btn">打开官方说明</button>` : ""}</div></section>
+    <p class="project-hint">此入口不创建独立运行时、安装目录或版本切换命令。可直接安装或纳管的语言请在工具链列表中选择。</p>`;
+  const text = [name, guide?.host || "", support.notes || "", ...steps.map((step, index) => `${index + 1}. ${step}`), guide?.url || ""].filter(Boolean).join("\n");
+  document.getElementById("guideCopy").addEventListener("click", async () => {
+    try { await navigator.clipboard.writeText(text); toast("接入步骤已复制"); } catch (error) { toast("复制失败：" + (error?.message || error), true); }
+  });
+  document.getElementById("guideDocs")?.addEventListener("click", async () => {
+    if (window.runtime?.BrowserOpenURL) window.runtime.BrowserOpenURL(guide.url);
+    else { try { await navigator.clipboard.writeText(guide.url); toast("官方说明链接已复制"); } catch (error) { toast("无法打开说明链接", true); } }
+  });
 }
 
 async function updateInstallDirLabel() {
@@ -970,11 +1005,15 @@ function resetManualRuntimePreview() {
   document.getElementById("manualRuntimePreview").classList.add("hidden");
   document.getElementById("manualRuntimeAdopt").disabled = true;
   document.getElementById("manualRuntimeError").classList.add("hidden");
+  const manual = statusOf(document.getElementById("manualRuntimeTool").value)?.support?.version_mode === "label";
+  document.getElementById("manualRuntimeAliasLabel").textContent = manual ? "版本标识（必填，用户标注）" : "管理标识（可选）";
+  document.getElementById("manualRuntimeAlias").placeholder = manual ? "填写所安装的版本，例如 0.6.6 或 0.2.0.28" : "留空自动生成；相同版本的不同安装可分别命名";
+  document.getElementById("manualRuntimeHint").textContent = manual ? "此工具不自动读取版本。VSM 仅检查命令路径并按此标识选择安装；软件实际版本由你确认。" : "标识可用于「设为本目录 / 全局」。Conda 环境默认使用独立标识，避免同版本的不同依赖环境混在一起。";
 }
 function openManualRuntime(tool) {
   if (projectMode === "local" || projectMode === "docker") { toast("隔离项目请独立安装工具；纳管已有运行时请使用 versions 模式", true); return; }
   const select = document.getElementById("manualRuntimeTool");
-  select.innerHTML = state.map(s => `<option value="${escapeHtml(s.tool)}">${escapeHtml(displayName(s.tool))}</option>`).join("");
+  select.innerHTML = state.filter(s => !["host","guide","unavailable"].includes(s.support?.mode)).map(s => `<option value="${escapeHtml(s.tool)}">${escapeHtml(displayName(s.tool))}</option>`).join("");
   select.value = tool || (state.some(s => s.tool === "python") ? "python" : state[0]?.tool || "");
   document.getElementById("manualRuntimePath").value = "";
   document.getElementById("manualRuntimeAlias").value = "";
@@ -994,10 +1033,11 @@ async function manualRuntimeAction(adopt) {
   error.classList.add("hidden");
   let inspected = false;
   try {
-    const runtime = await (adopt ? call("AdoptCustomTool", tool, path, alias) : call("InspectToolPath", tool, path));
+    const manual = statusOf(tool)?.support?.version_mode === "label";
+    const runtime = await (adopt ? call("AdoptCustomTool", tool, path, alias) : manual ? call("InspectToolPathLabeled", tool, path, alias) : call("InspectToolPath", tool, path));
     inspected = true;
     const preview = document.getElementById("manualRuntimePreview");
-    preview.textContent = "检测版本：" + runtime.version + (runtime.environment ? "\n环境：" + runtime.environment : "") + "\n管理标识：" + (alias || runtimeID(runtime)) + "\n主命令：" + runtime.path;
+    preview.textContent = (runtime.version_origin === "label" ? "用户标注版本：" : statusOf(tool)?.support?.version_mode === "metadata" ? "元数据版本：" : "检测版本：") + runtime.version + (runtime.environment ? "\n环境：" + runtime.environment : "") + "\n管理标识：" + (alias || runtimeID(runtime)) + "\n主命令：" + runtime.path;
     preview.classList.remove("hidden");
     if (adopt) {
       if (systemScan !== null) systemScan.push(runtime);
