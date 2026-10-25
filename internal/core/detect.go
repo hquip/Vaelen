@@ -312,6 +312,9 @@ func runVersionProbe(tool, bin string, env []string, dir string, discovery bool)
 	if tool == "dotnet" {
 		flags = []string{"--list-sdks"}
 	}
+	if tool == "ballerina" {
+		flags = []string{"version"}
+	}
 	if tool == "msvc" || tool == "tcl" || tool == "erlang" {
 		flags = []string{""}
 	}
@@ -320,6 +323,9 @@ func runVersionProbe(tool, bin string, env []string, dir string, discovery bool)
 	for _, flag := range flags {
 		ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
 		probeArgs := []string{flag}
+		if tool == "godot" {
+			probeArgs = []string{"--headless", "--version"}
+		}
 		if tool == "msvc" || tool == "tcl" {
 			probeArgs = nil
 		}
@@ -368,7 +374,11 @@ func runVersionProbe(tool, bin string, env []string, dir string, discovery bool)
 		}
 		mcpserver.ConfigureProcess(c)
 		c.WaitDelay = 250 * time.Millisecond
-		if err := configureVersionProbe(c, bin, flag); err != nil {
+		batchFlag := flag
+		if tool == "godot" {
+			batchFlag = "--headless --version"
+		}
+		if err := configureVersionProbe(c, bin, batchFlag); err != nil {
 			cancel()
 			return "", err
 		}

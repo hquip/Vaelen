@@ -4,7 +4,7 @@
 等多语言运行环境的安装、版本切换与激活。设计对标 asdf / mise / vfox，核心追求 **全链路零 CGO 的 Go 单体**：
 一键交叉编译全平台、单二进制分发、内置版本切换。
 
-> CLI 为纯标准库实现、**零外部依赖**，内置 **124 项工具链/工具**：其中 22 项配置了自动安装来源
+> CLI 为纯标准库实现、**零外部依赖**，内置 **133 项工具链/工具**：其中 28 项配置了自动安装来源
 > （`go` `node` `java` `python` `zig` `deno` `bun` `gleam` `vlang` `kotlin` `tinygo` `nushell` `cmake` `ninja` `typst` `just` `uv` `dotnet` `dart` `julia` `flutter` `powershell`），
 > 其余条目提供 **已有工具链纳管入口**（涵盖 GCC/Clang/MSVC、Fortran、Ada、COBOL、Rust、PHP、Ruby、Swift 等；
 > 下载源可按需在 manifest 中补充即变为可安装）。另支持 `~/.vsm/plugins/*.json` 无限扩展、
@@ -19,7 +19,7 @@
 
 新增 GCC / Clang / MSVC、Fortran、Ada、COBOL、Tcl、PowerShell、BASIC、Pascal、Lisp、Prolog、汇编、硬件与着色器语言等工具链入口；C# / F# / VB.NET 通过 .NET SDK 管理。GUI 与 CLI 可按语言名搜索，显示自动安装、纳管和平台限制。
 
-新增 .NET、Dart、Julia、Flutter、PowerShell 安装来源，微软 SDK 使用官方 SHA512；严格校验和锁文件同步支持。完整目录、使用示例与尚未适配的专有环境见 [语言覆盖说明](docs/language-support.md)。
+新增 .NET、Dart、Julia、Flutter、PowerShell、Godot、Vyper、Arturo、Factor、Nim、Haxe 安装来源，微软 SDK 使用官方 SHA512；严格校验和锁文件同步支持。GNU Smalltalk、Gforth、Regina REXX、GNU APL 和 Ballerina 支持纳管已有安装。完整目录、使用示例与尚未适配的专有环境见 [语言覆盖说明](docs/language-support.md)。
 
 ## v1.1.12 环境恢复、版本诊断与插件刷新
 

@@ -2,7 +2,7 @@
 
 VSM 按编译器、解释器和 SDK 管理版本。一门语言可以对应多个工具链，例如 C/C++ 可用 GCC、Clang 或 MSVC；C#、F#、VB.NET 共用 .NET SDK，语言标准版本不等于编译器版本。
 
-本目录包含 **124 项工具链 / 工具**，其中 **22 项配置了自动安装来源**（具体系统和架构以程序中的能力提示为准）。语言名称、缩写、语法方言和框架可用于搜索，但不将它们分别宣称为独立语言数量。GUI 支持搜索 `C`、`C++`、`C#`、`Objective-C`、`Fortran`、`COBOL` 等名称，并显示真实能力。
+本目录包含 **133 项工具链 / 工具**，其中 **28 项配置了自动安装来源**（具体系统和架构以程序中的能力提示为准）。语言名称、缩写、语法方言和框架可用于搜索，但不将它们分别宣称为独立语言数量。GUI 支持搜索 `C`、`C++`、`C#`、`Objective-C`、`Fortran`、`COBOL` 等名称，并显示真实能力。
 
 ## 使用方式
 
@@ -23,6 +23,9 @@ vsm run -- g++ hello.cpp -o hello
 ## 自动安装与校验
 
 - 原有 Go、Node、Java、Python、Zig、Deno、Bun 等来源保留。
+- 新增 Godot（GDScript）、Vyper、Arturo、Factor、GNU Smalltalk、Gforth、Regina REXX、GNU APL、Ballerina 的内置入口。GNU Smalltalk / Gforth / Regina / GNU APL / Ballerina 当前纳管已有完整安装；不将同族其它实现或方言视为已支持。
+- 新增 Godot、Vyper、Arturo、Factor、Nim、Haxe 自动安装来源。Godot 使用官方标准版，不包括 .NET 版及导出模板；Windows 固定命令名并保留配套控制台启动器，macOS 保持原签名应用包及外部命令链接。Vyper 当前自动安装适配 amd64，并在安装前验证实际二进制架构；Factor macOS 的 DMG 需手动安装后纳管。平台没有对应归档时回退为纳管能力。
+- Nim 从官网稳定版下载表选包并读取相邻 SHA256，不将 nightlies 仓库中的开发快照当作正式版；编译仍需 C/C++ 后端。Haxe 某些历史归档缺少发布方摘要，`--require-checksum` 会拒绝；haxelib 及不同目标后端可能需要额外依赖。
 - 新增 .NET SDK、Dart、Julia、Flutter 和 PowerShell。`.NET` 从微软官方元数据读取 SHA512；其它新来源使用发布方 SHA256。`--require-checksum`、锁文件和来源记录支持两种摘要，均不执行下载的第三方安装脚本。
 - `.NET` 的远端列表包含受支持通道的稳定 SDK；精确的历史 SDK 版本可直接输入。项目读取 `global.json` 的 `sdk.version`，不自动改写其 rollForward、工作负载或 NuGet 设置。
 - Dart 列表显示当前稳定版，历史版本可直接输入完整版本号。Julia / Flutter 从官方版本索引按平台选择归档；没有目标包时明确报错。PowerShell 使用跨平台 pwsh 发行包，不替换 Windows 自带 powershell.exe。
@@ -37,13 +40,17 @@ MATLAB、Embarcadero Delphi、SAS、Stata、LabVIEW、ABAP 和 VBA 等专有或�
 
 未列出的独立工具可通过 `vsm tools add` 接入有校验摘要的 GitHub 包，或添加外部 manifest 后在 GUI 刷新。新 manifest 支持 `display_name`、`languages`、`notes`、`platforms`、单个 `version_flag` 和含一个捕获组的 `version_pattern`，以复用搜索、能力展示和安全版本探测。依赖授权、复杂环境脚本或无稳定版本接口的实现，需要专门适配和实测后再标为可用。
 
+仍未内置：Wolfram Language、Pharo/Squeak、Eiffel、J/BQN/K、Move/Cairo、AngelScript/Verse、Scratch/Logo/NetLogo、PLC Structured Text/梯形图、Hare、Red/Rebol、Hylo/Vale 等。GDScript 不替代 Godot 的其它脚本插件；APL 入口只覆盖 GNU APL。
+
 ## 内置目录
 
-此表根据内置目录生成，以下自动安装状态以 Windows/amd64 为参考；GUI 会按实际系统和架构调整。单元测试验证定义和命令映射，集成测试实际编译 C/C++ 及 .NET 的 C#/F#/VB.NET。其余新增本机工具链并未逐一在所有系统实装验证。
+此表根据内置目录生成，以下自动安装状态以 Windows/amd64 为参考；GUI 会按实际系统和架构调整。单元测试验证定义、命令映射、只读探测和错误架构拒绝。集成测试包括 C/C++、.NET 的 C#/F#/VB.NET，以及 Godot/GDScript、Vyper、Arturo、Factor、Haxe、Nim 的真实运行/编译；Linux 额外运行 Gforth、Regina REXX 和 GNU APL。各系统只测试存在对应发行包的组合，其余新增本机工具链未逐一在所有系统实装验证。
 
 | 工具 ID | 名称 / 语言检索词 | 能力 |
 | --- | --- | --- |
 | `agda` | Agda · Agda | 纳管已有安装 |
+| `arturo` | Arturo · Arturo | 自动安装 / 纳管 |
+| `ballerina` | Ballerina · Ballerina | 纳管已有安装 |
 | `bash` | Bash · Bash / POSIX Shell / Shell Script | 纳管已有安装 |
 | `bazel` | bazel | 纳管已有安装 |
 | `bun` | bun · JavaScript / TypeScript / JSX / TSX | 自动安装 / 纳管 |
@@ -68,6 +75,7 @@ MATLAB、Embarcadero Delphi、SAS、Stata、LabVIEW、ABAP 和 VBA 等专有或�
 | `elixir` | Elixir · Elixir | 纳管已有安装 |
 | `elm` | Elm · Elm | 纳管已有安装 |
 | `erlang` | Erlang/OTP · Erlang | 纳管已有安装 |
+| `factor` | Factor · Factor | 自动安装 / 纳管 |
 | `fennel` | Fennel · Fennel | 纳管已有安装 |
 | `fish` | fish · fish / Shell Script | 纳管已有安装 |
 | `flang` | LLVM Flang · Fortran | 纳管已有安装 |
@@ -78,21 +86,24 @@ MATLAB、Embarcadero Delphi、SAS、Stata、LabVIEW、ABAP 和 VBA 等专有或�
 | `gambit` | Gambit Scheme · Scheme / Gambit | 纳管已有安装 |
 | `gawk` | GNU AWK · AWK / gawk | 纳管已有安装 |
 | `gcc` | GCC · C / C++ · C / C++ / C89 / C99 / C11 / C17 / C23 / C++11 / C++14 / C++17 / C++20 / C++23 | 纳管已有安装 |
+| `gforth` | Gforth · Forth / Gforth | 纳管已有安装 |
 | `gfortran` | GNU Fortran · Fortran / FORTRAN 77 / Fortran 90 / Fortran 2008 | 纳管已有安装 |
 | `ghdl` | GHDL · VHDL | 纳管已有安装 |
 | `gleam` | Gleam · Gleam | 自动安装 / 纳管 |
 | `glslang` | glslang · GLSL / HLSL / SPIR-V | 纳管已有安装 |
 | `glslc` | Shaderc · GLSL / HLSL / SPIR-V | 纳管已有安装 |
 | `gnat` | GNAT · Ada · Ada / SPARK | 纳管已有安装 |
+| `gnu-apl` | GNU APL · APL / GNU APL | 当前平台不支持 |
 | `gnu-prolog` | GNU Prolog · Prolog / GNU Prolog | 纳管已有安装 |
 | `go` | go · Go / Golang | 自动安装 / 纳管 |
+| `godot` | Godot · GDScript · GDScript / Godot | 自动安装 / 纳管 |
 | `gradle` | gradle | 纳管已有安装 |
 | `grain` | Grain · Grain | 纳管已有安装 |
 | `groff` | GNU troff · troff / roff | 纳管已有安装 |
 | `groovy` | Groovy · Groovy | 纳管已有安装 |
 | `guile` | GNU Guile · Scheme / Guile | 纳管已有安装 |
 | `haskell` | Haskell · GHC · Haskell | 纳管已有安装 |
-| `haxe` | Haxe · Haxe | 纳管已有安装 |
+| `haxe` | Haxe · Haxe | 自动安装 / 纳管 |
 | `idris2` | Idris 2 · Idris | 纳管已有安装 |
 | `iverilog` | Icarus Verilog · Verilog / SystemVerilog | 纳管已有安装 |
 | `janet` | Janet · Janet | 纳管已有安装 |
@@ -115,7 +126,7 @@ MATLAB、Embarcadero Delphi、SAS、Stata、LabVIEW、ABAP 和 VBA 等专有或�
 | `msvc` | MSVC · C / C++ · C / C++ / MSVC / Visual C++ | 纳管已有安装 |
 | `mysql` | mysql · SQL | 数据库实例 |
 | `nasm` | NASM · Assembly / x86 Assembly / 汇编 | 纳管已有安装 |
-| `nim` | Nim · Nim | 纳管已有安装 |
+| `nim` | Nim · Nim | 自动安装 / 纳管 |
 | `ninja` | ninja | 自动安装 / 纳管 |
 | `node` | node · JavaScript / TypeScript / Node.js | 自动安装 / 纳管 |
 | `nushell` | Nushell · Nushell | 自动安装 / 纳管 |
@@ -135,6 +146,7 @@ MATLAB、Embarcadero Delphi、SAS、Stata、LabVIEW、ABAP 和 VBA 等专有或�
 | `raku` | Raku · Raku / Perl 6 | 纳管已有安装 |
 | `reason` | Reason · Reason / ReasonML | 纳管已有安装 |
 | `redis` | redis · Redis protocol | 数据库实例 |
+| `regina` | Regina REXX · REXX / Regina REXX | 纳管已有安装 |
 | `rescript` | ReScript · ReScript | 纳管已有安装 |
 | `roc` | Roc · Roc | 纳管已有安装 |
 | `ruby` | Ruby · Ruby | 纳管已有安装 |
@@ -143,6 +155,7 @@ MATLAB、Embarcadero Delphi、SAS、Stata、LabVIEW、ABAP 和 VBA 等专有或�
 | `sbt` | sbt | 纳管已有安装 |
 | `scala` | Scala · Scala | 纳管已有安装 |
 | `sdcc` | SDCC · C / Embedded C / 嵌入式C | 纳管已有安装 |
+| `smalltalk` | GNU Smalltalk · Smalltalk / GNU Smalltalk | 纳管已有安装 |
 | `sml` | Standard ML · SML/NJ · Standard ML / SML | 纳管已有安装 |
 | `solidity` | Solidity · Solidity / Yul | 纳管已有安装 |
 | `sqlite` | SQLite · SQL / SQLite SQL | 纳管已有安装 |
@@ -160,6 +173,7 @@ MATLAB、Embarcadero Delphi、SAS、Stata、LabVIEW、ABAP 和 VBA 等专有或�
 | `verilator` | Verilator · Verilog / SystemVerilog | 纳管已有安装 |
 | `vlang` | V · V / Vlang | 自动安装 / 纳管 |
 | `vulkan-glsl` | Vulkan Shader Tools · GLSL / HLSL | 纳管已有安装 |
+| `vyper` | Vyper · Vyper | 自动安装 / 纳管 |
 | `wabt` | WABT · WebAssembly / WAT | 纳管已有安装 |
 | `wasmer` | Wasmer · WebAssembly / WAT | 纳管已有安装 |
 | `wasmtime` | Wasmtime · WebAssembly / WAT | 纳管已有安装 |

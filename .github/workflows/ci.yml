@@ -41,7 +41,7 @@ jobs:
       - name: Prepare native Lua version probe
         if: matrix.os == 'ubuntu-latest'
         timeout-minutes: 3
-        run: sudo apt-get update -o Acquire::Retries=3 && sudo apt-get install -y --no-install-recommends lua5.4
+        run: sudo apt-get update -o Acquire::Retries=3 && sudo apt-get install -y --no-install-recommends lua5.4 gforth regina-rexx apl
 
       - name: Test fish nested-shell PATH and refresh hooks
         if: matrix.os == 'ubuntu-latest'
@@ -77,6 +77,26 @@ jobs:
           VSM_TEST_DOTNET: dotnet
           DOTNET_CLI_TELEMETRY_OPTOUT: '1'
         run: go test ./internal/core -run '^TestRealDotnetSDKBuildsCSharpFSharpAndVisualBasic$' -v -count=1
+
+      - name: Prepare official language compiler archives
+        timeout-minutes: 8
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python scripts/prepare-language-integration.py --directory "${{ runner.temp }}/vsm-language-packages"
+
+      - name: Run real GDScript Vyper Arturo Factor Haxe and Nim through VSM
+        timeout-minutes: 8
+        env:
+          VSM_TEST_LANGUAGE_ARTIFACTS: ${{ runner.temp }}/vsm-language-packages/artifacts.json
+        run: go test ./internal/core -run '^TestRealAdditionalLanguages$' -v -count=1 -timeout 7m
+
+      - name: Run native Forth REXX and APL through VSM
+        if: matrix.os == 'ubuntu-latest'
+        env:
+          VSM_TEST_FORTH: gforth
+          VSM_TEST_REXX: regina
+          VSM_TEST_APL: apl
+        run: go test ./internal/core -run '^TestRealAdditionalLocalInterpreters$' -v -count=1
 
       - name: Prepare portable Windows Redis probes
         if: matrix.os == 'windows-latest'

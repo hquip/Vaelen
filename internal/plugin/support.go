@@ -16,6 +16,7 @@ type ToolSupport struct {
 var nativeLanguages = map[string][]string{
 	"go": {"Go", "Golang"}, "java": {"Java", "JVM"}, "python": {"Python"}, "node": {"JavaScript", "TypeScript", "Node.js"}, "bun": {"JavaScript", "TypeScript", "JSX", "TSX"}, "deno": {"JavaScript", "TypeScript", "JSX", "TSX"}, "zig": {"Zig", "C", "C++"},
 	"dotnet": {"C#", "CSharp", "C Sharp", "F#", "FSharp", "Visual Basic .NET", "VB.NET", "VBNet"}, "dart": {"Dart"}, "flutter": {"Dart", "Flutter"}, "julia": {"Julia"},
+	"nim": {"Nim"}, "godot": {"GDScript", "Godot"}, "vyper": {"Vyper"},
 }
 
 func Support(name string, target Target) ToolSupport {
@@ -35,6 +36,24 @@ func Support(name string, target Target) ToolSupport {
 	}
 	if name == "dart" {
 		out.Notes = "远端列表显示当前稳定版；完整历史版本可直接输入版本号安装"
+	}
+	if name == "godot" {
+		out.DisplayName = "Godot · GDScript"
+		out.Notes = "官方标准版编辑器及无界面命令；不包含 .NET 版或导出模板，项目与插件兼容性由项目自行管理"
+	}
+	if name == "vyper" {
+		out.DisplayName = "Vyper"
+		out.Notes = "官方独立编译器及 SHA256 校验；当前自动安装适配 amd64，并验证实际二进制架构；合约部署与链上运行不在此范围"
+		if target.Arch != "amd64" {
+			out.Mode = "adopt"
+		}
+	}
+	if name == "nim" {
+		out.DisplayName = "Nim"
+		out.Notes = "按 Nim 官网稳定发行表选择归档并验证 SHA256；编译 C/C++ 后端仍需已有系统编译器"
+		if target.OS == "windows" && target.Arch != "amd64" {
+			out.Mode = "adopt"
+		}
 	}
 	if name == "zig" {
 		out.Notes = "Zig 内含 C/C++ 编译能力（zig cc / zig c++）；C/C++ 项目也可选择 GCC、Clang 或 MSVC"
@@ -118,6 +137,14 @@ func VersionProbe(tool string) (flag, pattern string) {
 		if m, ok := p.(manifestPlugin); ok {
 			return m.m.VersionFlag, m.m.VersionPattern
 		}
+	}
+	switch tool {
+	case "godot":
+		return "--version", `(?m)^(\d+\.\d+(?:\.\d+)?)\.stable(?:\.|\s|$)`
+	case "vyper":
+		return "--version", `(?m)^(\d+\.\d+\.\d+)(?:\+commit\.[0-9a-f]+)?(?:\s|$)`
+	case "nim":
+		return "--version", `(?m)^Nim Compiler Version\s+(\d+\.\d+\.\d+)(?:\s|$)`
 	}
 	return "", ""
 }

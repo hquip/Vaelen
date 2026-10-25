@@ -17,23 +17,6 @@
     "notes": "先通过发行方安装完整工具链，再使用“添加路径”纳管；自动安装尚未配置。"
   },
   {
-    "name": "nim",
-    "source": {
-      "type": "github-tags",
-      "repo": "nim-lang/Nim",
-      "stripPrefix": "v"
-    },
-    "url": "",
-    "assets": {},
-    "bin": "",
-    "env": {},
-    "display_name": "Nim",
-    "languages": [
-      "Nim"
-    ],
-    "notes": "先通过发行方安装完整工具链，再使用“添加路径”纳管；自动安装尚未配置。"
-  },
-  {
     "name": "odin",
     "source": {
       "type": "github-tags",
@@ -433,19 +416,30 @@
   {
     "name": "haxe",
     "source": {
-      "type": "github-tags",
+      "type": "github-releases",
       "repo": "HaxeFoundation/haxe",
       "stripPrefix": ""
     },
-    "url": "",
-    "assets": {},
+    "url": "https://github.com/HaxeFoundation/haxe/releases/download/{version}/{asset}",
+    "assets": {
+      "windows/amd64": "haxe-{version}-win64.zip",
+      "linux/amd64": "haxe-{version}-linux64.tar.gz",
+      "linux/arm64": "haxe-{version}-linux-arm64.tar.gz",
+      "darwin/amd64": "haxe-{version}-osx.tar.gz"
+    },
     "bin": "",
     "env": {},
     "display_name": "Haxe",
     "languages": [
       "Haxe"
     ],
-    "notes": "先通过发行方安装完整工具链，再使用“添加路径”纳管；自动安装尚未配置。"
+    "notes": "官方便携包；部分历史包没有发布方摘要，严格校验会拒绝。haxelib 等功能还需相应 Neko/目标后端依赖；macOS ARM 可纳管本机安装。",
+    "commands": [
+      "haxe",
+      "haxelib"
+    ],
+    "version_flag": "--version",
+    "version_pattern": "(?m)^(\\d+\\.\\d+\\.\\d+)(?:\\s|$)"
   },
   {
     "name": "luau",

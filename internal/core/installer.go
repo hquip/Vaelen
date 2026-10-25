@@ -196,7 +196,24 @@ func (in Installer) Install(p plugin.Plugin, version, customDir string, progress
 
 	// 官方包通常带一层顶层目录（如 go/ 或 node-vX-os-arch/），剥掉它。
 	root := tmp
-	if format != "binary" {
+	if preparer, ok := p.(plugin.InstallPreparer); ok {
+		root, err = preparer.PrepareInstall(tmp, version, plugin.CurrentTarget())
+		if err != nil {
+			return fmt.Errorf("准备安装目录失败: %w", err)
+		}
+		if !filepath.IsAbs(root) || !pathWithin(tmp, root) {
+			return fmt.Errorf("prepared installation escapes extraction directory")
+		}
+		physicalRoot, rootErr := canonicalPath(root)
+		physicalTmp, tmpErr := canonicalPath(tmp)
+		if rootErr != nil || tmpErr != nil || !pathWithin(physicalTmp, physicalRoot) {
+			return fmt.Errorf("prepared installation resolves outside extraction directory")
+		}
+		info, err := os.Lstat(root)
+		if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("prepared installation is not a real directory")
+		}
+	} else if format != "binary" {
 		root = stripSingleDir(tmp)
 	}
 	validBinary := false

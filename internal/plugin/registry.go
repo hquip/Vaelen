@@ -1,6 +1,7 @@
 package plugin
 
 import (
+	"runtime"
 	"sort"
 	"sync"
 )
@@ -87,10 +88,17 @@ func DetectCommands() map[string][]string {
 		"haskell": {"ghc", "ghci"},
 		"r":       {"R", "Rscript"},
 		"vala":    {"valac"},
+		"godot":   {"godot"},
 	} {
 		if _, ok := commands[tool]; ok {
 			commands[tool] = names
 		}
+	}
+	if runtime.GOOS == "darwin" {
+		commands["godot"] = []string{"godot", "Godot"}
+	}
+	if runtime.GOOS == "windows" {
+		commands["godot"] = []string{"godot", "godot_console"}
 	}
 	return commands
 }
