@@ -14,6 +14,8 @@ import re
 import subprocess
 import time
 import urllib.request
+import urllib.error
+import urllib.parse
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--directory', required=True)
@@ -43,11 +45,12 @@ def file_digest(file):
         return digest.hexdigest()
 
 
-def metadata(repo):
+def metadata(repo, tag=None):
+    endpoint = 'repos/' + repo + '/releases/' + ('tags/' + urllib.parse.quote(tag, safe='') if tag else 'latest')
     if args.use_gh:
-        raw = subprocess.check_output(['gh', 'api', 'repos/' + repo + '/releases/latest'], timeout=60)
+        raw = subprocess.check_output(['gh', 'api', endpoint], timeout=60)
     else:
-        with request('https://api.github.com/repos/' + repo + '/releases/latest') as response:
+        with request('https://api.github.com/' + endpoint) as response:
             raw = response.read(16 * 1024 * 1024 + 1)
     return json.loads(raw)
 
@@ -73,8 +76,20 @@ def download(name):
         if not candidates:
             raise ValueError('No stable Nim binary for this platform')
         url = candidates[0]
-        with request(url + '.sha256') as response:
-            checksum = response.read(1024).decode().split()[0]
+        try:
+            with request(url + '.sha256') as response:
+                checksum = response.read(1024).decode().split()[0]
+        except urllib.error.HTTPError as error:
+            if error.code != 404 or not url.startswith('https://github.com/nim-lang/nightlies/releases/download/'):
+                raise
+            tag = url.split('/download/', 1)[1].split('/', 1)[0]
+            release = metadata('nim-lang/nightlies', tag)
+            assets = [asset for asset in release['assets'] if asset['name'] == filename and asset['browser_download_url'] == url]
+            if release['tag_name'] != tag or release.get('draft') or len(assets) != 1:
+                raise ValueError('Nim stable table asset not found')
+            checksum = (assets[0].get('digest') or '').removeprefix('sha256:')
+            if not checksum:
+                raise ValueError('Nim publisher digest missing')
     else:
         repos = {'godot': 'godotengine/godot', 'vyper': 'vyperlang/vyper', 'arturo': 'arturo-lang/arturo',
                  'factor': 'factor/factor', 'haxe': 'HaxeFoundation/haxe'}
@@ -93,6 +108,8 @@ def download(name):
                       ('linux', 'amd64'): 'linux.x86_64', ('linux', 'arm64'): 'linux.arm64',
                       ('darwin', 'amd64'): 'macos.universal', ('darwin', 'arm64'): 'macos.universal'}[(system, arch)]
             filename = 'Godot_v' + tag + '_' + suffix + '.zip'
+            if system == 'windows':
+                filename = 'Godot_v' + tag + '_' + suffix + '.exe.zip'
         elif name == 'vyper':
             suffix = {'windows': 'windows.exe', 'linux': 'linux', 'darwin': 'darwin'}[system]
             filenames = [a['name'] for a in release['assets'] if re.fullmatch(

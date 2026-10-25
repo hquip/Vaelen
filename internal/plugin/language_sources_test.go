@@ -71,7 +71,7 @@ func TestGodotAndVyperPinExactPublisherAssets(t *testing.T) {
 	officialFixture(t, func(w http.ResponseWriter, r *http.Request) {
 		parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
 		repo, tag := parts[1]+"/"+parts[2], parts[len(parts)-1]
-		names := []string{"Godot_v4.7.2-stable_win64.zip", "Godot_v4.7.2-stable_windows_arm64.zip", "Godot_v4.7.2-stable_linux.x86_64.zip", "Godot_v4.7.2-stable_linux.arm64.zip", "Godot_v4.7.2-stable_macos.universal.zip", "Godot_v4.7.2-stable_mono_win64.zip", "godot-4.7.2-stable.tar.xz"}
+		names := []string{"Godot_v4.7.2-stable_win64.exe.zip", "Godot_v4.7.2-stable_windows_arm64.exe.zip", "Godot_v4.7.2-stable_linux.x86_64.zip", "Godot_v4.7.2-stable_linux.arm64.zip", "Godot_v4.7.2-stable_macos.universal.zip", "Godot_v4.7.2-stable_mono_win64.zip", "godot-4.7.2-stable.tar.xz"}
 		if repo == "vyperlang/vyper" {
 			names = []string{"vyper.0.4.3+commit.bff19ea2.windows.exe", "vyper.0.4.3+commit.bff19ea2.linux", "vyper.0.4.3+commit.bff19ea2.darwin"}
 		}
@@ -130,12 +130,25 @@ func TestGodotAndVyperPinExactPublisherAssets(t *testing.T) {
 
 func TestNimUsesOfficialStableTableAndExactPlatformSHA256(t *testing.T) {
 	bad := false
+	missing := false
 	officialFixture(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/install.html" {
 			for _, name := range []string{"nim-2.2.12-windows_x64.zip", "nim-2.2.12-linux_x64.tar.xz", "nim-2.2.12-linux_arm64.tar.xz", "nim-2.2.12-macosx_x64.tar.xz", "nim-2.2.12-macosx_arm64.tar.xz", "nim-2.3.1-linux_x64.tar.xz"} {
 				fmt.Fprintf(w, `<a href="https://github.com/nim-lang/nightlies/releases/download/stable-tag/%s">bin</a>`, name)
 			}
 			fmt.Fprint(w, `<a href="https://evil.test/nim-99.0.0-linux_x64.tar.xz">wrong publisher</a><a href="https://github.com/someone/else/releases/download/v1/nim-99.0.0-linux_x64.tar.xz">wrong repo</a>`)
+			return
+		}
+		if missing && strings.HasSuffix(r.URL.Path, ".sha256") {
+			http.NotFound(w, r)
+			return
+		}
+		if strings.Contains(r.URL.Path, "/releases/tags/") {
+			digest := "sha256:" + strings.Repeat("d", 64)
+			if bad {
+				digest = ""
+			}
+			fmt.Fprintf(w, `{"tag_name":"stable-tag","assets":[{"name":"nim-2.2.12-linux_x64.tar.xz","digest":%q}]}`, digest)
 			return
 		}
 		sum := strings.Repeat("c", 64)
@@ -163,6 +176,15 @@ func TestNimUsesOfficialStableTableAndExactPlatformSHA256(t *testing.T) {
 	bad = true
 	if _, err := p.(ArtifactProvider).Artifact("2.2.12", Target{"linux", "amd64"}); err == nil {
 		t.Fatal("invalid SHA256 accepted")
+	}
+	bad = false
+	missing = true
+	if a, err := p.(ArtifactProvider).Artifact("2.2.12", Target{"linux", "amd64"}); err != nil || a.SHA256 != strings.Repeat("d", 64) {
+		t.Fatalf("missing sidecar did not use publisher digest: %+v %v", a, err)
+	}
+	bad = true
+	if _, err := p.(ArtifactProvider).Artifact("2.2.12", Target{"linux", "amd64"}); err == nil {
+		t.Fatal("missing sidecar and publisher digest accepted")
 	}
 }
 

@@ -86,6 +86,9 @@ func (p releaseLanguage) Artifact(v string, target Target) (Artifact, error) {
 			return Artifact{}, fmt.Errorf("Godot 不支持 %s/%s", target.OS, target.Arch)
 		}
 		want := "Godot_v" + tag + "_" + platform + ".zip"
+		if target.OS == "windows" {
+			want = "Godot_v" + tag + "_" + platform + ".exe.zip"
+		}
 		selectName = func(name string) bool { return name == want }
 	} else {
 		platform := map[string]string{"windows": "windows.exe", "linux": "linux", "darwin": "darwin"}[target.OS]
@@ -345,10 +348,16 @@ func (nimSDK) Artifact(v string, target Target) (Artifact, error) {
 			continue
 		}
 		data, err := fetchOfficial(raw + ".sha256")
+		var sum string
 		if err != nil {
-			return Artifact{}, err
+			// The stable table can retain links to removed checksum sidecars.
+			// Use the same asset's publisher API digest, never a computed hash.
+			if strings.HasPrefix(raw, "https://github.com/") && strings.Contains(err.Error(), "HTTP 404") {
+				sum, err = ChecksumFor(nimSDK{}, v, target, raw)
+			}
+		} else {
+			sum, err = checksumLine(string(data), name)
 		}
-		sum, err := checksumLine(string(data), name)
 		if err != nil {
 			return Artifact{}, err
 		}
