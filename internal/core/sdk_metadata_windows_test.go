@@ -37,4 +37,21 @@ func TestCmdMetadataVerificationDoesNotStartLicensedHostAndRejectsTampering(t *t
 	if err != nil || check.Passed || len(check.Tools) != 1 || check.Tools[0].Code != "shim-dispatch-failed" {
 		t.Fatalf("metadata verification accepted modified shim: %+v %v", check, err)
 	}
+	red := filepath.Join(a.Paths.InstallDir("red", "0.6.6"), "bin")
+	if err := os.MkdirAll(red, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(red, "red.exe"), []byte("MUST_NOT_EXECUTE_DURING_PATH_VERIFICATION"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := config.WriteFileAtomic(a.Paths.GlobalToolVersions(), []byte("red 0.6.6\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.GenerateShims(); err != nil {
+		t.Fatal(err)
+	}
+	check, err = a.VerifyCmdActivation(t.TempDir())
+	if err != nil || !check.Passed || len(check.Tools) != 1 || check.Tools[0].Verification != "path" || check.Tools[0].ActualVersion != "" || check.Tools[0].ExpectedVersion != "0.6.6" {
+		t.Fatalf("manual label presented as verified runtime version: %+v %v", check, err)
+	}
 }

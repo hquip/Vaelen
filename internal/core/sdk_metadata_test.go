@@ -188,7 +188,9 @@ func TestEiffelAdoptionKeepsTheSDKRootAndPlatformEnvironment(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, err := inferInstallRoot(p, executable)
-	if err != nil || !sameDir(got, root) {
+	actual, actualErr := os.Stat(got)
+	expected, expectedErr := os.Stat(root)
+	if err != nil || actualErr != nil || expectedErr != nil || !os.SameFile(actual, expected) {
 		t.Fatalf("Eiffel SDK root %s %v", got, err)
 	}
 	env := p.ExecEnv(root)
