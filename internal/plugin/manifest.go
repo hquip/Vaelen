@@ -20,6 +20,12 @@ var manifestFS embed.FS
 // 怎么下载、装到哪、需要哪些环境变量。内置一批，也可放到 ~/.vsm/plugins/*.json
 // （或 $VSM_HOME/plugins）由用户/社区扩展——这正是支持数十种语言而无需改代码的关键。
 type Manifest struct {
+	DisplayName    string            `json:"display_name,omitempty"`
+	Languages      []string          `json:"languages,omitempty"`
+	Notes          string            `json:"notes,omitempty"`
+	Platforms      []string          `json:"platforms,omitempty"`
+	VersionFlag    string            `json:"version_flag,omitempty"`
+	VersionPattern string            `json:"version_pattern,omitempty"`
 	Service        bool              `json:"service,omitempty"`
 	DetectCommands []string          `json:"detect_commands,omitempty"`
 	Commands       []string          `json:"commands,omitempty"`
@@ -46,6 +52,9 @@ type manifestPlugin struct{ m Manifest }
 func (p manifestPlugin) Name() string { return p.m.Name }
 
 func (p manifestPlugin) ListAll() ([]string, error) {
+	if p.m.Source.Type == "local" {
+		return nil, fmt.Errorf("%s 仅纳管本机工具链：%s", p.m.Name, p.m.Notes)
+	}
 	if p.m.Source.Type == "github-auto" {
 		return p.autoVersions()
 	}
@@ -84,6 +93,9 @@ func (p manifestPlugin) LatestStable() (string, error) {
 }
 
 func (p manifestPlugin) DownloadURL(version string, t Target) (string, error) {
+	if p.m.Source.Type == "local" {
+		return "", fmt.Errorf("%s 请先通过发行方安装，再使用 vsm adopt --path 纳管；%s", p.m.Name, p.m.Notes)
+	}
 	if p.m.Source.Type == "github-auto" {
 		a, err := githubArtifact(p.m, version, t)
 		return a.URL, err
@@ -108,7 +120,7 @@ func (p manifestPlugin) BinPaths(installDir string) []string {
 	if p.m.Bin == "" {
 		return []string{installDir}
 	}
-	return []string{filepath.Join(installDir, filepath.FromSlash(p.m.Bin))}
+	return []string{filepath.Join(installDir, filepath.FromSlash(p.m.Bin)), installDir}
 }
 
 func (p manifestPlugin) ExecEnv(installDir string) map[string]string {
@@ -288,6 +300,31 @@ func parseManifestData(data []byte) ([]Manifest, error) {
 }
 
 func validateManifest(m Manifest) error {
+	if len(m.Languages) > 64 || len(m.Notes) > 4096 || len(m.DisplayName) > 200 {
+		return fmt.Errorf("tool description exceeds limit")
+	}
+	if strings.ContainsAny(m.DisplayName+m.Notes, "\x00\r\n") {
+		return fmt.Errorf("invalid tool description")
+	}
+	for _, language := range m.Languages {
+		if len(language) > 120 || strings.ContainsAny(language, "\x00\r\n") {
+			return fmt.Errorf("invalid language label")
+		}
+	}
+	if m.VersionFlag != "" && !regexp.MustCompile(`^[-/][A-Za-z0-9?=-]+$`).MatchString(m.VersionFlag) {
+		return fmt.Errorf("invalid read-only version flag")
+	}
+	if m.VersionPattern != "" {
+		r, err := regexp.Compile(m.VersionPattern)
+		if err != nil || r.NumSubexp() != 1 || len(m.VersionPattern) > 1024 {
+			return fmt.Errorf("version pattern needs one capture group")
+		}
+	}
+	for _, p := range m.Platforms {
+		if p != "windows" && p != "linux" && p != "darwin" {
+			return fmt.Errorf("invalid tool platform")
+		}
+	}
 	if len(m.Commands) > 16 || len(m.DetectCommands) > 16 || len(m.Match) > 256 || strings.ContainsAny(m.Match, "\x00\r\n") {
 		return fmt.Errorf("invalid manifest command/match")
 	}

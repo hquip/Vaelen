@@ -462,6 +462,8 @@ const DISPLAY_NAMES = {
 };
 
 function displayName(tool) {
+	const support=statusOf(tool)?.support;
+	if(support&&support.display_name&&support.display_name!==tool)return support.display_name;
   if (DISPLAY_NAMES[tool]) return DISPLAY_NAMES[tool];
   return tool.charAt(0).toUpperCase() + tool.slice(1);
 }
@@ -569,7 +571,7 @@ async function load() {
 function renderStat() {
   const total = state.length;
   const installed = state.filter((s) => s.installed && s.installed.length).length;
-  document.getElementById("stat").textContent = `共 ${total} 种 · ${installed} 已安装`;
+  document.getElementById("stat").textContent = `共 ${total} 项工具链 · ${installed} 已安装`;
 }
 
 function renderSidebar() {
@@ -577,7 +579,7 @@ function renderSidebar() {
   const box = document.getElementById("toolList");
   box.innerHTML = "";
 
-  const match = state.filter((s) => !filter || s.tool.toLowerCase().includes(filter));
+  const match = state.filter((s) => !filter || [s.tool,displayName(s.tool),...(s.support?.languages||[])].some(value=>filter.length===1?value.toLowerCase()===filter:value.toLowerCase().includes(filter)));
   if (match.length === 0) {
     box.innerHTML = `<div class="empty-hint" style="padding:12px 10px">无匹配语言</div>`;
     return;
@@ -604,6 +606,7 @@ function buildGroup(label, items) {
   ul.className = "tool-list";
   for (const s of items) {
     const li = document.createElement("li");
+	li.title=[displayName(s.tool),...(s.support?.languages||[])].join(" · ");
     li.className = "tool-item" + (s.tool === selected ? " selected" : "");
     const hasInstalled = s.installed && s.installed.length;
     const badge = s.current
@@ -638,6 +641,9 @@ function renderDetail(tool) {
     detail.innerHTML = `<div class="placeholder"><p class="ph-title">未找到 ${escapeHtml(tool)}</p></div>`;
     return;
   }
+	const support=s.support||{mode:"install",languages:[],notes:""};
+	const canInstall=["install","release"].includes(support.mode);
+	const supportLabel={install:"可下载安装",release:"按发行包匹配",adopt:"纳管已有安装",unavailable:"当前平台不支持",service:"数据库实例管理"}[support.mode]||"纳管已有安装";
 
   const isActive = !!s.current;
   const installedCount = (s.installed && s.installed.length) || 0;
@@ -699,6 +705,7 @@ function renderDetail(tool) {
   detail.innerHTML = `
     <div class="detail-head">${langIcon(tool, 42)}<h2>${escapeHtml(displayName(tool))}</h2>${headBadge}</div>
     ${cards}
+	<p class="project-hint"><strong>${escapeHtml(supportLabel)}</strong>${support.languages?.length?" · "+escapeHtml(support.languages.join(" / ")):""}${support.notes?"<br>"+escapeHtml(support.notes):""}</p>
     ${databaseTool ? `<div class="section"><p class="project-hint">本页管理数据库程序与命令路径。运行中的服务版本、端口和独立数据，请通过数据库实例入口切换。</p><button id="openDatabaseTool" class="primary-btn">管理 ${escapeHtml(tool)} 实例与版本</button></div>` : ""}
     ${hint}
     ${s.activation ? `<details class="act-hint"><summary>版本来源与命令路径</summary><strong>全局默认：</strong>${escapeHtml(s.activation.global || "未设置")}<br /><strong>VSM 选择的程序：</strong><code>${escapeHtml(s.activation.executable || "未找到")}</code><br /><strong>GUI 启动时的 PATH：</strong><code>${escapeHtml(s.activation.command || "未找到")}</code>${(s.activation.warnings || []).map(w => `<p>${escapeHtml(w)}</p>`).join("")}</details>` : ""}
@@ -724,8 +731,8 @@ function renderDetail(tool) {
     </div>
 
     <div class="section">
-      <p class="section-title">${databaseTool ? "获取数据库程序" : "安装新版本"}</p>
-      ${databaseTool ? `<p class="project-hint">Docker 实例会自动拉取官方镜像；原生程序请先安装完整发行包，再点击「添加路径」纳管。</p><button id="databaseInstallEntry" class="ghost-btn">打开数据库实例</button>` : `
+      <p class="section-title">${databaseTool ? "获取数据库程序" : canInstall ? "安装新版本" : "接入工具链"}</p>
+      ${databaseTool ? `<p class="project-hint">Docker 实例会自动拉取官方镜像；原生程序请先安装完整发行包，再点击「添加路径」纳管。</p><button id="databaseInstallEntry" class="ghost-btn">打开数据库实例</button>` : !canInstall ? `<p class="project-hint">${escapeHtml(support.notes||"请先安装完整发行版，再点击「添加路径」纳管。")}</p>${support.mode!=="unavailable"?`<button id="adoptLocalEntry" class="primary-btn">添加本机安装路径</button>`:""}` : `
       <div class="install-row">
         <input id="versionInput" placeholder="latest（聚焦可加载远端版本，输入可筛选）" autocomplete="off" list="remoteList" />
         <datalist id="remoteList"></datalist>
@@ -736,8 +743,8 @@ function renderDetail(tool) {
         <span id="installDirLabel" class="install-dir-label">默认目录</span>
       </div>
       <p class="project-hint">自动创建「工具名 / 版本」目录。选择当前安装根目录或当前工具目录时使用默认位置；点击路径可恢复默认。</p>
-      <label class="install-path" title="发布方没有提供 SHA256 校验值时停止安装">
-        <input id="requireChecksum" type="checkbox"> 要求发布方 SHA256 校验
+      <label class="install-path" title="发布方没有提供 SHA256 或 SHA512 校验值时停止安装">
+        <input id="requireChecksum" type="checkbox"> 要求发布方完整性校验（SHA256 / SHA512）
       </label>
       <div id="installProgress" class="progress hidden"><div class="progress-bar" id="installBar"></div><span class="progress-text" id="installPct"></span></div>
       <pre id="installLog" class="log"></pre>`}
@@ -751,6 +758,8 @@ function renderDetail(tool) {
   if (ata) ata.addEventListener("click", () => onAdoptToolAll(tool));
   const addPath = document.getElementById("addToolPathBtn");
   if (addPath) addPath.addEventListener("click", () => openManualRuntime(tool));
+	const adoptLocalEntry=document.getElementById("adoptLocalEntry");
+	if(adoptLocalEntry)adoptLocalEntry.addEventListener("click",()=>openManualRuntime(tool));
   const rescan = document.getElementById("rescanToolBtn");
   if (rescan) rescan.addEventListener("click", () => { clearDetectionCache(); loadSysVers(tool); });
   const pdc = document.getElementById("projDirCard");

@@ -101,7 +101,7 @@ var commandHelpTopics = map[string]commandHelp{
 	"db":             {Summary: "数据库版本切换与独立实例管理", Aliases: []string{"database"}, Usage: []string{"vsm db use <数据库> <版本> [--name 实例] [--backend docker|native] [--port 端口]", "vsm db switch <实例> <版本>", "vsm db start|stop|logs|connection <实例>", "vsm db list [--json]", "vsm db exec <实例> -- <客户端参数>"}, Notes: []string{"支持 postgres / mysql / mariadb / redis / valkey。Docker 自动拉取官方镜像并锁定摘要；原生使用已纳管的完整数据库程序。", "同实例按版本隔离数据；切回旧版本恢复旧数据。运行中切换会重启服务，失败尝试恢复旧版本。新版本不会自动迁移旧数据。", "仅监听 127.0.0.1；连接密码保存在本地私有凭据文件，connection 显式显示连接信息。停止服务保留数据。"}, Examples: []string{"vsm db use postgres 17 --name dev --port 55432", "vsm db start dev", "vsm db switch dev 18", "vsm adopt mysql --path D:\\mysql-8.4", "vsm db use mysql 8.4 --backend native --name local-mysql --port 3307"}},
 	"project import": {Summary: "预览或导入 mise 工具版本", Usage: []string{"vsm project import --from mise [--file 导出的JSON] [--apply]"}, Notes: []string{"默认只预览。--apply 创建新的 vsm.json，不覆盖已有文件。只导入工具版本，不复制任务或秘密变量。未指定文件时以 MISE_SAFE=1 调用 mise ls --current --json。"}, Examples: []string{"vsm project import --from mise", "vsm project import --from mise --file mise-tools.json --apply"}},
 
-	"lock":              {Summary: "锁定项目工具链的具体安装包", Usage: []string{"vsm lock [--platform os/arch,...] [--update|--check] [--json]"}, Options: []string{"--platform  windows/amd64,linux/arm64 等目标", "--update  重新解析版本与包摘要", "--check  只检查锁文件与项目要求是否一致", "--json  结构化结果"}, Notes: []string{"安装包必须有发布方 SHA256。普通 lock 保留已有锁定构建。提交 vsm.lock 后使用 install --locked。"}, Examples: []string{"vsm lock", "vsm lock --platform windows/amd64,darwin/arm64,linux/amd64", "vsm install --locked", "vsm run --locked -- go test ./..."}},
+	"lock":              {Summary: "锁定项目工具链的具体安装包", Usage: []string{"vsm lock [--platform os/arch,...] [--update|--check] [--json]"}, Options: []string{"--platform  windows/amd64,linux/arm64 等目标", "--update  重新解析版本与包摘要", "--check  只检查锁文件与项目要求是否一致", "--json  结构化结果"}, Notes: []string{"安装包必须有发布方 SHA256 或 SHA512。普通 lock 保留已有锁定构建。提交 vsm.lock 后使用 install --locked。"}, Examples: []string{"vsm lock", "vsm lock --platform windows/amd64,darwin/arm64,linux/amd64", "vsm install --locked", "vsm run --locked -- go test ./..."}},
 	"tasks":             {Summary: "列出、规划或执行项目任务", Usage: []string{"vsm tasks list|graph [任务] [--json]", "vsm tasks run <任务...> [--jobs N] [--locked] [--no-cache] [--json] [--dry-run] [-- 参数]"}, Notes: []string{"任务在 vsm.json 中以命令参数数组声明。执行前需 project trust；依赖先完成，独立任务可并行。"}, Examples: []string{"vsm tasks list", "vsm tasks run test --jobs 4", "vsm tasks run build --locked --json"}},
 	"tasks list":        {Summary: "列出项目任务", Usage: []string{"vsm tasks list [--json]"}, Examples: []string{"vsm tasks list --json"}},
 	"tasks graph":       {Summary: "查看任务依赖执行顺序", Usage: []string{"vsm tasks graph [任务...] [--json]"}, Examples: []string{"vsm tasks graph build --json"}},
@@ -146,7 +146,7 @@ var commandHelpTopics = map[string]commandHelp{
 	"install": {
 		Summary: "下载并安装指定工具的版本", Aliases: []string{"i"},
 		Usage:    []string{"vsm install <tool> [version] [--path <目录>] [--require-checksum]", "vsm install --locked"},
-		Options:  []string{"--path, -p <目录>  自定义安装位置", "--require-checksum  发布方缺少 SHA256 时拒绝安装"},
+		Options:  []string{"--path, -p <目录>  自定义安装位置", "--require-checksum  发布方缺少 SHA256/SHA512 时拒绝安装"},
 		Notes:    []string{"省略版本或使用 latest 安装最新稳定版；支持数字前缀，如 node 22。", "local 项目在项目内安装；Docker 项目的工具由镜像提供。"},
 		Examples: []string{"vsm install go 1.25.11", "vsm install node 22 --require-checksum", `vsm install go 1.25.11 --path "D:\sdk"`},
 	},
@@ -187,7 +187,7 @@ var commandHelpTopics = map[string]commandHelp{
 	},
 	"run": {
 		Summary: "使用项目要求的完整工具链执行命令", Usage: []string{"vsm run [--install-missing] [--locked] [--env KEY=VALUE] -- <command> [args...]"},
-		Options:  []string{"--install-missing  先补装缺失工具，强制验证发布方 SHA256", "--require-checksum  兼容选项；自动补装始终要求 SHA256", "--  分隔 VSM 选项与子命令"},
+		Options:  []string{"--install-missing  先补装缺失工具，强制验证发布方 SHA256/SHA512", "--require-checksum  兼容选项；自动补装始终要求 SHA256/SHA512", "--  分隔 VSM 选项与子命令"},
 		Notes:    []string{"按项目隔离模式执行并透传子进程退出码，不修改父终端。", "-- 之后的 -h / --help 会原样传给子命令。"},
 		Examples: []string{"vsm run -- go test ./...", "vsm run --install-missing -- python app.py", "vsm run -- node --help"},
 	},

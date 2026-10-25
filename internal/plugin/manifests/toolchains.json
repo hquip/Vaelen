@@ -1,0 +1,867 @@
+[
+  {
+    "name": "gcc",
+    "display_name": "GCC · C / C++",
+    "languages": [
+      "C",
+      "C++",
+      "C89",
+      "C99",
+      "C11",
+      "C17",
+      "C23",
+      "C++11",
+      "C++14",
+      "C++17",
+      "C++20",
+      "C++23"
+    ],
+    "commands": [
+      "gcc",
+      "g++"
+    ],
+    "source": {
+      "type": "local"
+    },
+    "assets": {},
+    "bin": "bin",
+    "notes": "GCC/MinGW-w64 工具链；Windows 需完整 MinGW 发行版，编译器版本与 C/C++ 标准版本分别管理。",
+    "version_flag": "--version"
+  },
+  {
+    "name": "clang",
+    "display_name": "LLVM / Clang · C / C++",
+    "languages": [
+      "C",
+      "C++",
+      "Objective-C",
+      "Objective-C++",
+      "Clang",
+      "LLVM"
+    ],
+    "commands": [
+      "clang",
+      "clang++"
+    ],
+    "source": {
+      "type": "local"
+    },
+    "assets": {},
+    "bin": "bin",
+    "notes": "纳管完整 LLVM/Clang；Windows 需相应系统 SDK/链接器，Objective-C 在 macOS 依赖 Apple SDK。",
+    "version_flag": "--version"
+  },
+  {
+    "name": "msvc",
+    "display_name": "MSVC · C / C++",
+    "languages": [
+      "C",
+      "C++",
+      "MSVC",
+      "Visual C++"
+    ],
+    "commands": [
+      "cl"
+    ],
+    "source": {
+      "type": "local"
+    },
+    "assets": {},
+    "bin": "bin",
+    "notes": "先安装 Visual Studio Build Tools；需在已加载 vcvars 的开发者终端使用，保留 INCLUDE/LIB 和 Windows SDK。",
+    "version_flag": "/Bv",
+    "platforms": [
+      "windows"
+    ]
+  },
+  {
+    "name": "gfortran",
+    "display_name": "GNU Fortran",
+    "languages": [
+      "Fortran",
+      "FORTRAN 77",
+      "Fortran 90",
+      "Fortran 2008"
+    ],
+    "commands": [
+      "gfortran"
+    ],
+    "source": {
+      "type": "local"
+    },
+    "assets": {},
+    "bin": "bin",
+    "notes": "安装完整发行版后添加路径纳管；VSM 不安装系统级依赖。",
+    "version_flag": "--version"
+  },
+  {
+    "name": "flang",
+    "display_name": "LLVM Flang",
+    "languages": [
+      "Fortran"
+    ],
+    "commands": [
+      "flang-new",
+      "flang"
+    ],
+    "source": {
+      "type": "local"
+    },
+    "assets": {},
+    "bin": "bin",
+    "notes": "安装完整发行版后添加路径纳管；VSM 不安装系统级依赖。",
+    "version_flag": "--version"
+  },
+  {
+    "name": "gnat",
+    "display_name": "GNAT · Ada",
+    "languages": [
+      "Ada",
+      "SPARK"
+    ],
+    "commands": [
+      "gnat",
+      "gnatmake"
+    ],
+    "source": {
+      "type": "local"
+    },
+    "assets": {},
+    "bin": "bin",
+    "notes": "纳管完整 GNAT，SPARK 验证器等额外组件由发行方安装。",
+    "version_flag": "--version"
+  },
+  {
+    "name": "cobol",
+    "display_name": "GnuCOBOL",
+    "languages": [
+      "COBOL",
+      "GnuCOBOL"
+    ],
+    "commands": [
+      "cobc"
+    ],
+    "source": {
+      "type": "local"
+    },
+    "assets": {},
+    "bin": "bin",
+    "notes": "安装完整发行版后添加路径纳管；VSM 不安装系统级依赖。",
+    "version_flag": "-V"
+  },
+  {
+    "name": "tcl",
+    "display_name": "Tcl / Tk",
+    "languages": [
+      "Tcl",
+      "Tk"
+    ],
+    "commands": [
+      "tclsh"
+    ],
+    "source": {
+      "type": "local"
+    },
+    "assets": {},
+    "bin": "bin",
+    "notes": "安装完整发行版后添加路径纳管；VSM 不安装系统级依赖。",
+    "version_flag": "--version"
+  },
+  {
+    "name": "powershell",
+    "display_name": "PowerShell",
+    "languages": [
+      "PowerShell",
+      "pwsh"
+    ],
+    "commands": [
+      "pwsh"
+    ],
+    "source": {
+      "type": "github-releases",
+      "repo": "PowerShell/PowerShell",
+      "stripPrefix": "v"
+    },
+    "assets": {
+      "windows/amd64": "PowerShell-{version}-win-x64.zip",
+      "windows/arm64": "PowerShell-{version}-win-arm64.zip",
+      "linux/amd64": "powershell-{version}-linux-x64.tar.gz",
+      "linux/arm64": "powershell-{version}-linux-arm64.tar.gz",
+      "darwin/amd64": "powershell-{version}-osx-x64.tar.gz",
+      "darwin/arm64": "powershell-{version}-osx-arm64.tar.gz"
+    },
+    "bin": "",
+    "notes": "跨平台 PowerShell；Windows 内置 powershell.exe 不由此入口替换。",
+    "version_flag": "--version",
+    "url": "https://github.com/PowerShell/PowerShell/releases/download/v{version}/{asset}"
+  },
+  {
+    "name": "bash",
+    "display_name": "Bash",
+    "languages": [
+      "Bash",
+      "POSIX Shell",
+      "Shell Script"
+    ],
+    "commands": [
+      "bash"
+    ],
+    "source": {
+      "type": "local"
+    },
+    "assets": {},
+    "bin": "bin",
+    "notes": "安装完整发行版后添加路径纳管；VSM 不安装系统级依赖。",
+    "version_flag": "--version"
+  },
+  {
+    "name": "zsh",
+    "display_name": "Zsh",
+    "languages": [
+      "Zsh",
+      "Shell Script"
+    ],
+    "commands": [
+      "zsh"
+    ],
+    "source": {
+      "type": "local"
+    },
+    "assets": {},
+    "bin": "bin",
+    "notes": "安装完整发行版后添加路径纳管；VSM 不安装系统级依赖。",
+    "version_flag": "--version"
+  },
+  {
+    "name": "fish",
+    "display_name": "fish",
+    "languages": [
+      "fish",
+      "Shell Script"
+    ],
+    "commands": [
+      "fish"
+    ],
+    "source": {
+      "type": "local"
+    },
+    "assets": {},
+    "bin": "bin",
+    "notes": "安装完整发行版后添加路径纳管；VSM 不安装系统级依赖。",
+    "version_flag": "--version"
+  },
+  {
+    "name": "gawk",
+    "display_name": "GNU AWK",
+    "languages": [
+      "AWK",
+      "gawk"
+    ],
+    "commands": [
+      "gawk"
+    ],
+    "source": {
+      "type": "local"
+    },
+    "assets": {},
+    "bin": "bin",
+    "notes": "安装完整发行版后添加路径纳管；VSM 不安装系统级依赖。",
+    "version_flag": "--version"
+  },
+  {
+    "name": "sqlite",
+    "display_name": "SQLite",
+    "languages": [
+      "SQL",
+      "SQLite SQL"
+    ],
+    "commands": [
+      "sqlite3"
+    ],
+    "source": {
+      "type": "local"
+    },
+    "assets": {},
+    "bin": "bin",
+    "notes": "安装完整发行版后添加路径纳管；VSM 不安装系统级依赖。",
+    "version_flag": "--version"
+  },
+  {
+    "name": "octave",
+    "display_name": "GNU Octave",
+    "languages": [
+      "Octave",
+      "MATLAB-compatible syntax"
+    ],
+    "commands": [
+      "octave",
+      "octave-cli"
+    ],
+    "source": {
+      "type": "local"
+    },
+    "assets": {},
+    "bin": "bin",
+    "notes": "Octave 提供部分 MATLAB 语法兼容；不替代 MATLAB 许可和专有工具箱。",
+    "version_flag": "--version"
+  },
+  {
+    "name": "mojo",
+    "display_name": "Mojo",
+    "languages": [
+      "Mojo"
+    ],
+    "commands": [
+      "mojo"
+    ],
+    "source": {
+      "type": "local"
+    },
+    "assets": {},
+    "bin": "bin",
+    "notes": "先按 Modular 要求安装；架构和系统限制以发行方为准。",
+    "version_flag": "--version",
+    "platforms": [
+      "linux",
+      "darwin"
+    ]
+  },
+  {
+    "name": "cuda",
+    "display_name": "CUDA · NVCC",
+    "languages": [
+      "CUDA",
+      "CUDA C",
+      "CUDA C++"
+    ],
+    "commands": [
+      "nvcc"
+    ],
+    "source": {
+      "type": "local"
+    },
+    "assets": {},
+    "bin": "bin",
+    "notes": "纳管完整 NVIDIA CUDA Toolkit；驱动、GPU 和系统编译器由用户准备。",
+    "version_flag": "--version",
+    "platforms": [
+      "windows",
+      "linux"
+    ]
+  },
+  {
+    "name": "mono",
+    "display_name": "Mono",
+    "languages": [
+      "C#",
+      "CSharp",
+      "F#",
+      "VB.NET",
+      "Mono"
+    ],
+    "commands": [
+      "mono",
+      "mcs"
+    ],
+    "source": {
+      "type": "local"
+    },
+    "assets": {},
+    "bin": "bin",
+    "notes": "旧版 .NET Framework/Mono 工程入口；现代 C#/F#/VB.NET 使用 .NET SDK。",
+    "version_flag": "--version"
+  },
+  {
+    "name": "freebasic",
+    "display_name": "FreeBASIC",
+    "languages": [
+      "BASIC",
+      "FreeBASIC",
+      "QuickBASIC-compatible syntax"
+    ],
+    "commands": [
+      "fbc"
+    ],
+    "source": {
+      "type": "local"
+    },
+    "assets": {},
+    "bin": "bin",
+    "notes": "安装完整发行版后添加路径纳管；VSM 不安装系统级依赖。",
+    "version_flag": "-version"
+  },
+  {
+    "name": "fpc",
+    "display_name": "Free Pascal",
+    "languages": [
+      "Pascal",
+      "Object Pascal",
+      "Delphi-compatible syntax"
+    ],
+    "commands": [
+      "fpc"
+    ],
+    "source": {
+      "type": "local"
+    },
+    "assets": {},
+    "bin": "bin",
+    "notes": "Free Pascal/Object Pascal；不包含 Embarcadero Delphi 专有 SDK 或组件。",
+    "version_flag": "-iV"
+  },
+  {
+    "name": "sbcl",
+    "display_name": "SBCL · Common Lisp",
+    "languages": [
+      "Common Lisp",
+      "Lisp"
+    ],
+    "commands": [
+      "sbcl"
+    ],
+    "source": {
+      "type": "local"
+    },
+    "assets": {},
+    "bin": "bin",
+    "notes": "安装完整发行版后添加路径纳管；VSM 不安装系统级依赖。",
+    "version_flag": "--version"
+  },
+  {
+    "name": "clisp",
+    "display_name": "CLISP · Common Lisp",
+    "languages": [
+      "Common Lisp",
+      "Lisp"
+    ],
+    "commands": [
+      "clisp"
+    ],
+    "source": {
+      "type": "local"
+    },
+    "assets": {},
+    "bin": "bin",
+    "notes": "安装完整发行版后添加路径纳管；VSM 不安装系统级依赖。",
+    "version_flag": "--version"
+  },
+  {
+    "name": "guile",
+    "display_name": "GNU Guile",
+    "languages": [
+      "Scheme",
+      "Guile"
+    ],
+    "commands": [
+      "guile"
+    ],
+    "source": {
+      "type": "local"
+    },
+    "assets": {},
+    "bin": "bin",
+    "notes": "安装完整发行版后添加路径纳管；VSM 不安装系统级依赖。",
+    "version_flag": "--version"
+  },
+  {
+    "name": "chicken",
+    "display_name": "CHICKEN Scheme",
+    "languages": [
+      "Scheme",
+      "CHICKEN"
+    ],
+    "commands": [
+      "csi"
+    ],
+    "source": {
+      "type": "local"
+    },
+    "assets": {},
+    "bin": "bin",
+    "notes": "安装完整发行版后添加路径纳管；VSM 不安装系统级依赖。",
+    "version_flag": "-version"
+  },
+  {
+    "name": "gambit",
+    "display_name": "Gambit Scheme",
+    "languages": [
+      "Scheme",
+      "Gambit"
+    ],
+    "commands": [
+      "gsi",
+      "gsc"
+    ],
+    "source": {
+      "type": "local"
+    },
+    "assets": {},
+    "bin": "bin",
+    "notes": "安装完整发行版后添加路径纳管；VSM 不安装系统级依赖。",
+    "version_flag": "-v"
+  },
+  {
+    "name": "swi-prolog",
+    "display_name": "SWI-Prolog",
+    "languages": [
+      "Prolog",
+      "SWI-Prolog"
+    ],
+    "commands": [
+      "swipl"
+    ],
+    "source": {
+      "type": "local"
+    },
+    "assets": {},
+    "bin": "bin",
+    "notes": "安装完整发行版后添加路径纳管；VSM 不安装系统级依赖。",
+    "version_flag": "--version"
+  },
+  {
+    "name": "gnu-prolog",
+    "display_name": "GNU Prolog",
+    "languages": [
+      "Prolog",
+      "GNU Prolog"
+    ],
+    "commands": [
+      "gprolog"
+    ],
+    "source": {
+      "type": "local"
+    },
+    "assets": {},
+    "bin": "bin",
+    "notes": "安装完整发行版后添加路径纳管；VSM 不安装系统级依赖。",
+    "version_flag": "--version"
+  },
+  {
+    "name": "sml",
+    "display_name": "Standard ML · SML/NJ",
+    "languages": [
+      "Standard ML",
+      "SML"
+    ],
+    "commands": [
+      "sml"
+    ],
+    "source": {
+      "type": "local"
+    },
+    "assets": {},
+    "bin": "bin",
+    "notes": "安装完整发行版后添加路径纳管；VSM 不安装系统级依赖。",
+    "version_flag": "-version"
+  },
+  {
+    "name": "mlton",
+    "display_name": "MLton",
+    "languages": [
+      "Standard ML",
+      "SML"
+    ],
+    "commands": [
+      "mlton"
+    ],
+    "source": {
+      "type": "local"
+    },
+    "assets": {},
+    "bin": "bin",
+    "notes": "安装完整发行版后添加路径纳管；VSM 不安装系统级依赖。",
+    "version_flag": "--version"
+  },
+  {
+    "name": "nasm",
+    "display_name": "NASM",
+    "languages": [
+      "Assembly",
+      "x86 Assembly",
+      "汇编"
+    ],
+    "commands": [
+      "nasm"
+    ],
+    "source": {
+      "type": "local"
+    },
+    "assets": {},
+    "bin": "bin",
+    "notes": "安装完整发行版后添加路径纳管；VSM 不安装系统级依赖。",
+    "version_flag": "-v"
+  },
+  {
+    "name": "yasm",
+    "display_name": "Yasm",
+    "languages": [
+      "Assembly",
+      "x86 Assembly",
+      "汇编"
+    ],
+    "commands": [
+      "yasm"
+    ],
+    "source": {
+      "type": "local"
+    },
+    "assets": {},
+    "bin": "bin",
+    "notes": "安装完整发行版后添加路径纳管；VSM 不安装系统级依赖。",
+    "version_flag": "--version"
+  },
+  {
+    "name": "tcc",
+    "display_name": "Tiny C Compiler",
+    "languages": [
+      "C",
+      "TinyCC"
+    ],
+    "commands": [
+      "tcc"
+    ],
+    "source": {
+      "type": "local"
+    },
+    "assets": {},
+    "bin": "bin",
+    "notes": "安装完整发行版后添加路径纳管；VSM 不安装系统级依赖。",
+    "version_flag": "-v"
+  },
+  {
+    "name": "sdcc",
+    "display_name": "SDCC",
+    "languages": [
+      "C",
+      "Embedded C",
+      "嵌入式C"
+    ],
+    "commands": [
+      "sdcc"
+    ],
+    "source": {
+      "type": "local"
+    },
+    "assets": {},
+    "bin": "bin",
+    "notes": "安装完整发行版后添加路径纳管；VSM 不安装系统级依赖。",
+    "version_flag": "--version"
+  },
+  {
+    "name": "iverilog",
+    "display_name": "Icarus Verilog",
+    "languages": [
+      "Verilog",
+      "SystemVerilog"
+    ],
+    "commands": [
+      "iverilog"
+    ],
+    "source": {
+      "type": "local"
+    },
+    "assets": {},
+    "bin": "bin",
+    "notes": "安装完整发行版后添加路径纳管；VSM 不安装系统级依赖。",
+    "version_flag": "-V"
+  },
+  {
+    "name": "verilator",
+    "display_name": "Verilator",
+    "languages": [
+      "Verilog",
+      "SystemVerilog"
+    ],
+    "commands": [
+      "verilator"
+    ],
+    "source": {
+      "type": "local"
+    },
+    "assets": {},
+    "bin": "bin",
+    "notes": "安装完整发行版后添加路径纳管；VSM 不安装系统级依赖。",
+    "version_flag": "--version"
+  },
+  {
+    "name": "ghdl",
+    "display_name": "GHDL",
+    "languages": [
+      "VHDL"
+    ],
+    "commands": [
+      "ghdl"
+    ],
+    "source": {
+      "type": "local"
+    },
+    "assets": {},
+    "bin": "bin",
+    "notes": "安装完整发行版后添加路径纳管；VSM 不安装系统级依赖。",
+    "version_flag": "--version"
+  },
+  {
+    "name": "glslang",
+    "display_name": "glslang",
+    "languages": [
+      "GLSL",
+      "HLSL",
+      "SPIR-V"
+    ],
+    "commands": [
+      "glslangValidator"
+    ],
+    "source": {
+      "type": "local"
+    },
+    "assets": {},
+    "bin": "bin",
+    "notes": "安装完整发行版后添加路径纳管；VSM 不安装系统级依赖。",
+    "version_flag": "--version"
+  },
+  {
+    "name": "glslc",
+    "display_name": "Shaderc",
+    "languages": [
+      "GLSL",
+      "HLSL",
+      "SPIR-V"
+    ],
+    "commands": [
+      "glslc"
+    ],
+    "source": {
+      "type": "local"
+    },
+    "assets": {},
+    "bin": "bin",
+    "notes": "安装完整发行版后添加路径纳管；VSM 不安装系统级依赖。",
+    "version_flag": "--version"
+  },
+  {
+    "name": "typescript",
+    "display_name": "TypeScript Compiler",
+    "languages": [
+      "TypeScript",
+      "TSX"
+    ],
+    "commands": [
+      "tsc"
+    ],
+    "source": {
+      "type": "local"
+    },
+    "assets": {},
+    "bin": "bin",
+    "notes": "纳管独立 tsc 安装；运行还需 Node.js。Node/Bun/Deno 的 TypeScript 执行与 tsc 类型检查分别管理。",
+    "version_flag": "--version"
+  },
+  {
+    "name": "coffeescript",
+    "display_name": "CoffeeScript",
+    "languages": [
+      "CoffeeScript"
+    ],
+    "commands": [
+      "coffee"
+    ],
+    "source": {
+      "type": "local"
+    },
+    "assets": {},
+    "bin": "bin",
+    "notes": "纳管 coffee 入口；依赖 Node.js。",
+    "version_flag": "--version"
+  },
+  {
+    "name": "jython",
+    "display_name": "Jython",
+    "languages": [
+      "Python 2",
+      "Jython"
+    ],
+    "commands": [
+      "jython"
+    ],
+    "source": {
+      "type": "local"
+    },
+    "assets": {},
+    "bin": "bin",
+    "notes": "JVM 上的 Python 2 实现，依赖 Java；现代 Python 3 使用 Python 工具链。",
+    "version_flag": "--version"
+  },
+  {
+    "name": "pypy",
+    "display_name": "PyPy",
+    "languages": [
+      "Python",
+      "PyPy"
+    ],
+    "commands": [
+      "pypy3",
+      "pypy"
+    ],
+    "source": {
+      "type": "local"
+    },
+    "assets": {},
+    "bin": "bin",
+    "notes": "安装完整发行版后添加路径纳管；VSM 不安装系统级依赖。",
+    "version_flag": "--version"
+  },
+  {
+    "name": "groff",
+    "display_name": "GNU troff",
+    "languages": [
+      "troff",
+      "roff"
+    ],
+    "commands": [
+      "groff"
+    ],
+    "source": {
+      "type": "local"
+    },
+    "assets": {},
+    "bin": "bin",
+    "notes": "安装完整发行版后添加路径纳管；VSM 不安装系统级依赖。",
+    "version_flag": "--version"
+  },
+  {
+    "name": "wabt",
+    "display_name": "WABT",
+    "languages": [
+      "WebAssembly",
+      "WAT"
+    ],
+    "commands": [
+      "wat2wasm"
+    ],
+    "source": {
+      "type": "local"
+    },
+    "assets": {},
+    "bin": "bin",
+    "notes": "安装完整发行版后添加路径纳管；VSM 不安装系统级依赖。",
+    "version_flag": "--version"
+  },
+  {
+    "name": "vulkan-glsl",
+    "display_name": "Vulkan Shader Tools",
+    "languages": [
+      "GLSL",
+      "HLSL"
+    ],
+    "commands": [
+      "spirv-as"
+    ],
+    "source": {
+      "type": "local"
+    },
+    "assets": {},
+    "bin": "bin",
+    "notes": "安装完整发行版后添加路径纳管；VSM 不安装系统级依赖。",
+    "version_flag": "--version"
+  }
+]

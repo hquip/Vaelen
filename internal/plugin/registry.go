@@ -77,6 +77,8 @@ func DetectCommands() map[string][]string {
 	}
 	for tool, names := range map[string][]string{
 		"python":  {"python", "python3"},
+		"dotnet":  {"dotnet"},
+		"flutter": {"flutter"},
 		"maven":   {"mvn"},
 		"vlang":   {"v"},
 		"kotlin":  {"kotlin", "kotlinc"},

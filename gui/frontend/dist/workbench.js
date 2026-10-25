@@ -37,7 +37,7 @@ async function searchWorkbenchCatalog(){
   const query=wb("Search").value;
   const tools=await call("ToolCatalog",query);
   if(wb("Search").value!==query)return;
-  wb("Catalog").replaceChildren(...tools.map(tool=>{const row=document.createElement("div");row.className="workbench-tool";for(const [text,cls] of [[tool.name,""],[tool.installable?"可安装":"识别 / 切换",""],[tool.source,"source"]]){const label=document.createElement("span");label.textContent=text;label.className=cls;row.appendChild(label);}return row;}));
+  wb("Catalog").replaceChildren(...tools.map(tool=>{const row=document.createElement("div");row.className="workbench-tool";for(const [text,cls] of [[tool.support?.display_name||tool.name,""],[tool.installable?"可安装":"纳管已有安装",""],[(tool.support?.languages||[]).join(" / ")||tool.source,"source"]]){const label=document.createElement("span");label.textContent=text;label.className=cls;row.appendChild(label);}return row;}));
 }
 document.getElementById("workbenchBtn").addEventListener("click",()=>{wb("Modal").classList.remove("hidden");workbenchAction(async()=>{await refreshWorkbench();await searchWorkbenchCatalog();});});
 wb("Pick").addEventListener("click",()=>workbenchAction(async()=>{const dir=await call("PickProjectDir");if(dir){wb("Reviewed").checked=false;wb("EditorWrap").classList.add("hidden");await refreshWorkbench();await load();await loadCurrentDir();}}));

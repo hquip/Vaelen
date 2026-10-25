@@ -61,6 +61,23 @@ jobs:
         with:
           python-version: '3.12'
 
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Compile real C and C++ programs through VSM
+        if: matrix.os == 'ubuntu-latest'
+        env:
+          VSM_TEST_CC: gcc
+          VSM_TEST_CXX: g++
+        run: go test ./internal/core -run '^TestRealCAndCXXToolchainBuildsPrograms$' -v -count=1
+
+      - name: Compile CSharp FSharp and Visual Basic through VSM
+        env:
+          VSM_TEST_DOTNET: dotnet
+          DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+        run: go test ./internal/core -run '^TestRealDotnetSDKBuildsCSharpFSharpAndVisualBasic$' -v -count=1
+
       - name: Prepare portable Windows Redis probes
         if: matrix.os == 'windows-latest'
         shell: pwsh

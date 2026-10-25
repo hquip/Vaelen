@@ -12,6 +12,9 @@ import (
 )
 
 func (in Installer) AdoptPath(tool, path, alias string) (SystemVersion, error) {
+	if support := plugin.Support(tool, plugin.CurrentTarget()); support.Mode == "unavailable" {
+		return SystemVersion{}, fmt.Errorf("%s", support.Notes)
+	}
 	if in.Paths.ProjectMode == "docker" {
 		return SystemVersion{}, ErrDockerHostInstall
 	}
@@ -42,6 +45,9 @@ func (in Installer) AdoptPath(tool, path, alias string) (SystemVersion, error) {
 //
 // execPath 是系统检测得到的主命令可执行文件路径（如 C:\Java\jdk-21\bin\java.exe）。
 func (in Installer) Adopt(p plugin.Plugin, version, execPath string) (err error) {
+	if support := plugin.Support(p.Name(), plugin.CurrentTarget()); support.Mode == "unavailable" {
+		return fmt.Errorf("%s", support.Notes)
+	}
 	finish := logging.Start("core", "adopt", logging.Fields{"tool": p.Name(), "version": version, "mode": in.Paths.ProjectMode})
 	defer func() { finish(err) }()
 	if in.Paths.ProjectMode == "docker" {

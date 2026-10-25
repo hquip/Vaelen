@@ -1,7 +1,11 @@
 [
   {
     "name": "gleam",
-    "source": { "type": "github-releases", "repo": "gleam-lang/gleam", "stripPrefix": "v" },
+    "source": {
+      "type": "github-releases",
+      "repo": "gleam-lang/gleam",
+      "stripPrefix": "v"
+    },
     "url": "https://github.com/gleam-lang/gleam/releases/download/v{version}/{asset}",
     "assets": {
       "windows/amd64": "gleam-v{version}-x86_64-pc-windows-msvc.zip",
@@ -11,11 +15,19 @@
       "darwin/arm64": "gleam-v{version}-aarch64-apple-darwin.tar.gz"
     },
     "bin": "",
-    "env": {}
+    "env": {},
+    "display_name": "Gleam",
+    "languages": [
+      "Gleam"
+    ]
   },
   {
     "name": "vlang",
-    "source": { "type": "github-releases", "repo": "vlang/v", "stripPrefix": "" },
+    "source": {
+      "type": "github-releases",
+      "repo": "vlang/v",
+      "stripPrefix": ""
+    },
     "url": "https://github.com/vlang/v/releases/download/{version}/{asset}",
     "assets": {
       "windows/amd64": "v_windows.zip",
@@ -24,11 +36,20 @@
       "darwin/arm64": "v_macos.zip"
     },
     "bin": "",
-    "env": {}
+    "env": {},
+    "display_name": "V",
+    "languages": [
+      "V",
+      "Vlang"
+    ]
   },
   {
     "name": "kotlin",
-    "source": { "type": "github-releases", "repo": "JetBrains/kotlin", "stripPrefix": "v" },
+    "source": {
+      "type": "github-releases",
+      "repo": "JetBrains/kotlin",
+      "stripPrefix": "v"
+    },
     "url": "https://github.com/JetBrains/kotlin/releases/download/v{version}/{asset}",
     "assets": {
       "windows/amd64": "kotlin-compiler-{version}.zip",
@@ -37,6 +58,11 @@
       "darwin/arm64": "kotlin-compiler-{version}.zip"
     },
     "bin": "bin",
-    "env": {}
+    "env": {},
+    "display_name": "Kotlin",
+    "languages": [
+      "Kotlin",
+      "Kotlin Script"
+    ]
   }
 ]

@@ -33,7 +33,12 @@ func (a *app) cmdTools(args []string) error {
 			if item.Installable {
 				mode = "可安装"
 			}
-			fmt.Printf("%-18s %-12s %s\n", item.Name, mode, item.Source)
+			if item.Support.Mode == "unavailable" {
+				mode = "平台不支持"
+			} else if item.Support.Mode == "release" {
+				mode = "按发行包匹配"
+			}
+			fmt.Printf("%-18s %-12s %s · %s\n", item.Name, mode, item.Support.DisplayName, strings.Join(item.Support.Languages, " / "))
 		}
 		return nil
 	}

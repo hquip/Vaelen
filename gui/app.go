@@ -267,6 +267,7 @@ type ToolStatus struct {
 	Spec       string                 `json:"spec"`
 	Installed  []string               `json:"installed"`
 	Activation *core.ActivationStatus `json:"activation,omitempty"`
+	Support    plugin.ToolSupport     `json:"support"`
 }
 
 // Tools 返回所有支持的工具名。
@@ -306,7 +307,7 @@ func (a *App) Status() (status []ToolStatus, err error) {
 			if err != nil {
 				return nil, err
 			}
-			out = append(out, ToolStatus{Tool: name, Source: source, Spec: spec, Installed: []string{}})
+			out = append(out, ToolStatus{Tool: name, Source: source, Spec: spec, Installed: []string{}, Support: plugin.Support(name, plugin.CurrentTarget())})
 			continue
 		}
 		installed, err := resolver.Installed(name)
@@ -335,6 +336,7 @@ func (a *App) Status() (status []ToolStatus, err error) {
 			Spec:       r.Spec,
 			Installed:  installed,
 			Activation: activation,
+			Support:    plugin.Support(name, plugin.CurrentTarget()),
 		})
 	}
 	return out, nil

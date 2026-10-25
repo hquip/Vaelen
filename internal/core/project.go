@@ -236,6 +236,8 @@ func (p Project) Variables() map[string]string {
 		"PIP_CACHE_DIR": filepath.Join(base, "cache", "pip"), "PIP_REQUIRE_VIRTUALENV": "true", "PYTHONNOUSERSITE": "1",
 		"PYTHONHOME": "", "PYTHONPATH": "", "VIRTUAL_ENV": "", "NODE_PATH": "",
 		"CARGO_HOME": filepath.Join(base, "cargo"), "GRADLE_USER_HOME": filepath.Join(base, "gradle"),
+		"DOTNET_CLI_HOME": filepath.Join(base, "dotnet-home"), "NUGET_PACKAGES": filepath.Join(base, "cache", "nuget"),
+		"PUB_CACHE": filepath.Join(base, "cache", "pub"), "JULIA_DEPOT_PATH": filepath.Join(base, "cache", "julia"),
 	}
 }
 

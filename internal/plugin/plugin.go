@@ -38,6 +38,7 @@ type Artifact struct {
 	Version string `json:"version,omitempty"`
 	URL     string `json:"url"`
 	SHA256  string `json:"sha256"`
+	SHA512  string `json:"sha512,omitempty"`
 	Size    int64  `json:"size,omitempty"`
 	Format  string `json:"format,omitempty"`
 }
