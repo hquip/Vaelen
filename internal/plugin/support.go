@@ -59,6 +59,10 @@ func Support(name string, target Target) ToolSupport {
 		out.Notes = "Zig 内含 C/C++ 编译能力（zig cc / zig c++）；C/C++ 项目也可选择 GCC、Clang 或 MSVC"
 	}
 	if m, ok := p.(manifestPlugin); ok {
+		// An external definition can override a native tool. Its capabilities
+		// come from that definition, not from the native tool's former source.
+		out.Mode = "adopt"
+		out.Notes = "纳管并切换本机已有安装；尚无可直接安装的发行包"
 		if m.m.DisplayName != "" {
 			out.DisplayName = m.m.DisplayName
 		}
@@ -71,16 +75,22 @@ func Support(name string, target Target) ToolSupport {
 		}
 		if len(m.m.Assets) > 0 {
 			out.Mode = "install"
+			if m.m.Notes == "" {
+				out.Notes = "使用发行方归档安装，或纳管已有安装"
+			}
 			if m.m.Assets[target.OS+"/"+target.Arch] == "" {
 				out.Mode = "adopt"
-				out.Notes = "当前平台暂无自动安装归档；可纳管已有安装。" + out.Notes
+				out.Notes = "当前平台暂无自动安装归档；可纳管已有安装。" + m.m.Notes
 			}
 		} else if m.m.Source.Type == "github-auto" {
 			out.Mode = "release"
-			out.Notes = "按平台匹配 GitHub 发行包，须有发布方摘要；实际可用性以版本资产为准。" + out.Notes
+			out.Notes = "按平台匹配 GitHub 发行包，须有发布方摘要；实际可用性以版本资产为准。" + m.m.Notes
 		}
 		if m.m.Service {
 			out.Mode = "service"
+			if m.m.Notes == "" {
+				out.Notes = "通过数据库实例入口选择版本和运行方式"
+			}
 			if len(out.Languages) == 0 {
 				out.Languages = []string{"SQL"}
 				if name == "redis" || name == "valkey" {

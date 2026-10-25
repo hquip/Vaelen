@@ -118,7 +118,7 @@ def download(name):
                 raise ValueError('Vyper asset is not unique')
             filename = filenames[0]
         elif name == 'arturo':
-            filename = 'arturo-' + version + '-' + {'darwin': 'macos'}.get(system, system) + '-' + arch + '.zip'
+            filename = 'arturo-' + version + '-' + {'darwin': 'macos'}.get(system, system) + '-' + arch + '-mini.zip'
         elif name == 'factor':
             filename = 'factor-' + system + '-x86-64-' + version + ('.zip' if system == 'windows' else '.tar.gz')
         else:

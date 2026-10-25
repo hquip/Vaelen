@@ -26,6 +26,7 @@ vsm run -- g++ hello.cpp -o hello
 - 新增 Godot（GDScript）、Vyper、Arturo、Factor、GNU Smalltalk、Gforth、Regina REXX、GNU APL、Ballerina 的内置入口。GNU Smalltalk / Gforth / Regina / GNU APL / Ballerina 当前纳管已有完整安装；不将同族其它实现或方言视为已支持。
 - 新增 Godot、Vyper、Arturo、Factor、Nim、Haxe 自动安装来源。Godot 使用官方标准版，不包括 .NET 版及导出模板；Windows 固定命令名并保留配套控制台启动器，macOS 保持原签名应用包及外部命令链接。Vyper 当前自动安装适配 amd64，并在安装前验证实际二进制架构；Factor macOS 的 DMG 需手动安装后纳管。平台没有对应归档时回退为纳管能力。
 - Nim 从官网稳定版下载表选包，校验附件缺失时读取同一官方发行资产的 SHA256，不将 nightlies 仓库中的开发快照当作正式版；编译仍需 C/C++ 后端。Haxe 某些历史归档缺少发布方摘要，`--require-checksum` 会拒绝；haxelib 及不同目标后端可能需要额外依赖。
+- Arturo 默认安装官方 mini 命令行包，避免完整版在无桌面系统中缺少 WebKit 动态库；图形界面等可选组件需自行安装完整版后纳管。
 - 新增 .NET SDK、Dart、Julia、Flutter 和 PowerShell。`.NET` 从微软官方元数据读取 SHA512；其它新来源使用发布方 SHA256。`--require-checksum`、锁文件和来源记录支持两种摘要，均不执行下载的第三方安装脚本。
 - `.NET` 的远端列表包含受支持通道的稳定 SDK；精确的历史 SDK 版本可直接输入。项目读取 `global.json` 的 `sdk.version`，不自动改写其 rollForward、工作负载或 NuGet 设置。
 - Dart 列表显示当前稳定版，历史版本可直接输入完整版本号。Julia / Flutter 从官方版本索引按平台选择归档；没有目标包时明确报错。PowerShell 使用跨平台 pwsh 发行包，不替换 Windows 自带 powershell.exe。

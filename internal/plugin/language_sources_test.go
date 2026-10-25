@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -10,6 +11,46 @@ import (
 	"strings"
 	"testing"
 )
+
+func TestSupportReflectsOverrideSourceAndAvoidsContradictoryNotes(t *testing.T) {
+	dir := externalFixture(t)
+	manifest := Manifest{Name: "go", Source: ManifestSource{Type: "local"}, Commands: []string{"go"}}
+	write := func() {
+		data, err := json.Marshal(manifest)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "override.json"), data, 0600); err != nil {
+			t.Fatal(err)
+		}
+		if err := ReloadExternalTools(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write()
+	if s := Support("go", Target{"linux", "amd64"}); s.Mode != "adopt" {
+		t.Fatalf("local override inherited native install capability: %+v", s)
+	}
+	for _, row := range Catalog("go") {
+		if row.Name == "go" && row.Installable {
+			t.Fatal("local override still offers installation")
+		}
+	}
+	manifest.Source = ManifestSource{Type: "github-auto", Repo: "publisher/compiler"}
+	write()
+	if s := Support("go", Target{"linux", "amd64"}); s.Mode != "release" || strings.Contains(s.Notes, "尚无") {
+		t.Fatalf("release matching capability contradicts notes: %+v", s)
+	}
+	manifest.Source = ManifestSource{Type: "github-releases", Repo: "publisher/compiler"}
+	manifest.Assets = map[string]string{"linux/amd64": "compiler.tar.gz"}
+	write()
+	if s := Support("go", Target{"linux", "amd64"}); s.Mode != "install" || strings.Contains(s.Notes, "尚无") {
+		t.Fatalf("configured source contradicts notes: %+v", s)
+	}
+	if s := Support("go", Target{"windows", "amd64"}); s.Mode != "adopt" {
+		t.Fatalf("missing platform still offers installation: %+v", s)
+	}
+}
 
 func TestVyperExecutableFormatRejectsWrongArchitectureBeforeExecution(t *testing.T) {
 	for _, target := range []Target{{"windows", "amd64"}, {"windows", "arm64"}, {"linux", "amd64"}, {"linux", "arm64"}, {"darwin", "amd64"}, {"darwin", "arm64"}} {

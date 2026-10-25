@@ -138,15 +138,15 @@
     },
     "url": "https://github.com/arturo-lang/arturo/releases/download/v{version}/{asset}",
     "assets": {
-      "windows/amd64": "arturo-{version}-windows-amd64.zip",
-      "linux/amd64": "arturo-{version}-linux-amd64.zip",
-      "linux/arm64": "arturo-{version}-linux-arm64.zip",
-      "darwin/amd64": "arturo-{version}-macos-amd64.zip",
-      "darwin/arm64": "arturo-{version}-macos-arm64.zip"
+      "windows/amd64": "arturo-{version}-windows-amd64-mini.zip",
+      "linux/amd64": "arturo-{version}-linux-amd64-mini.zip",
+      "linux/arm64": "arturo-{version}-linux-arm64-mini.zip",
+      "darwin/amd64": "arturo-{version}-macos-amd64-mini.zip",
+      "darwin/arm64": "arturo-{version}-macos-arm64-mini.zip"
     },
     "bin": "",
     "version_flag": "--version",
     "version_pattern": "(?im)\\bArturo\\s+v?(\\d+\\.\\d+\\.\\d+)",
-    "notes": "官方完整命令行发行包及发布方 SHA256；系统动态库需符合发行包要求，图形界面和平台特定功能仍受系统限制。"
+    "notes": "默认安装官方 mini 命令行包并验证发布方 SHA256，避免完整版的桌面 WebKit 依赖；图形界面等完整版可选组件请先安装完整发行版后纳管。"
   }
 ]
