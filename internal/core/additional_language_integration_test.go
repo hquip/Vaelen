@@ -211,7 +211,7 @@ func TestRealAdditionalLocalInterpreters(t *testing.T) {
 			act := Activator{Paths: paths, Registry: reg, Resolver: Resolver{Paths: paths, Registry: reg}}
 			args := []string{file}
 			if test.tool == "gnu-apl" {
-				args = []string{"--script", file}
+				args = []string{"--script", "-f", file}
 			}
 			var log bytes.Buffer
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

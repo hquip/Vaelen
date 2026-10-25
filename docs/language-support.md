@@ -20,6 +20,17 @@ vsm run -- g++ hello.cpp -o hello
 
 版本号为格式示例，可使用远端列表选择可用版本。已纳管安装的命令缺失、执行权限损坏或依赖不完整时仍会报错，不自动修改系统编译器、驱动或许可证。
 
+工具 ID 与实际命令可能不同，例如 GNU APL 的工具 ID 是 `gnu-apl`，运行命令为 `apl`：
+
+```bash
+vsm adopt gnu-apl --path /opt/gnu-apl
+vsm use gnu-apl 2.0
+vsm run -- apl --script -f hello.apl
+vsm install godot 4.7.2 --require-checksum
+vsm use godot 4.7.2
+vsm run -- godot --headless --path .
+```
+
 ## 自动安装与校验
 
 - 原有 Go、Node、Java、Python、Zig、Deno、Bun 等来源保留。
