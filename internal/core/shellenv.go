@@ -328,10 +328,16 @@ _vsm_refresh
 }
 
 // PersistShimsPath 在 Windows 上把 shims 目录持久化写入「用户级 PATH」并广播变更：
-// 通过 .NET 的 SetEnvironmentVariable(User) 写注册表，会自动发出 WM_SETTINGCHANGE，
+// 保留注册表原有字符串类型，写入后广播 WM_SETTINGCHANGE，
 // 用户 PATH 不会覆盖排在前面的系统 PATH；Windows PowerShell 还需启动钩子。
 // 返回 "added" / "exists"。
 func PersistShimsPath(shimsDir string, operationIDs ...string) (status string, err error) {
+	return persistShimsPathAt(shimsDir, "Environment", operationIDs...)
+}
+
+// A separate registry location lets subprocess tests exercise persistence
+// without changing the user's actual PATH or broadcasting fixture paths.
+func persistShimsPathAt(shimsDir, registryKey string, operationIDs ...string) (status string, err error) {
 	operationID := logging.NewOperationID()
 	if len(operationIDs) > 0 && operationIDs[0] != "" {
 		operationID = operationIDs[0]
@@ -345,18 +351,34 @@ func PersistShimsPath(shimsDir string, operationIDs ...string) (status string, e
 	// 目录用单引号字面量，避免路径里的 $ 被 PowerShell 展开。
 	ps := fmt.Sprintf(`$ErrorActionPreference='Stop'
 $d=%s
-$p=[Environment]::GetEnvironmentVariable('Path','User'); if (-not $p) { $p='' }
+$expected=[IO.Path]::GetFullPath([Environment]::ExpandEnvironmentVariables($d.Trim('"'))).TrimEnd('\','/')
+$key=[Microsoft.Win32.Registry]::CurrentUser.CreateSubKey(%s)
+try {
+$options=[Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames
+$p=$key.GetValue('Path','',$options)
+if ($p -isnot [string]) { throw 'User PATH is not a string; left unchanged' }
+$kind=if($null -eq $key.GetValue('Path',$null,$options)){[Microsoft.Win32.RegistryValueKind]::ExpandString}else{$key.GetValueKind('Path')}
 $parts=@($p -split ';' | Where-Object { $_ -ne '' })
 $parts=@($parts | Where-Object {
-  try { [IO.Path]::GetFullPath([Environment]::ExpandEnvironmentVariables($_.Trim('"'))).TrimEnd('\','/') -ine $d.TrimEnd('\','/') }
+  try { [IO.Path]::GetFullPath([Environment]::ExpandEnvironmentVariables($_.Trim('"'))).TrimEnd('\','/') -ine $expected }
   catch { $true }
 })
 $next=(@($d)+$parts) -join ';'
 if ($next -ceq $p) { 'exists' }
 else {
-  [Environment]::SetEnvironmentVariable('Path', $next, 'User')
+  $key.SetValue('Path',$next,$kind)
+  if ($key.GetValue('Path',$null,$options) -cne $next) { throw 'User PATH read-back mismatch' }
+  if (%s -eq 'Environment') {
+    Add-Type -Namespace Vsm -Name EnvironmentBroadcast -MemberDefinition @'
+[System.Runtime.InteropServices.DllImport("user32.dll", CharSet=System.Runtime.InteropServices.CharSet.Unicode, SetLastError=true)]
+public static extern System.IntPtr SendMessageTimeout(System.IntPtr window, uint message, System.UIntPtr parameter, string name, uint flags, uint timeout, out System.UIntPtr result);
+'@
+    $broadcastResult=[UIntPtr]::Zero
+    [void][Vsm.EnvironmentBroadcast]::SendMessageTimeout([IntPtr]0xffff,0x1a,[UIntPtr]::Zero,'Environment',2,2000,[ref]$broadcastResult)
+  }
   'added'
-}`, quotePowerShell(shimsDir))
+}
+} finally { $key.Dispose() }`, quotePowerShell(shimsDir), quotePowerShell(registryKey), quotePowerShell(registryKey))
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	c := exec.CommandContext(ctx, "powershell", "-NoProfile", "-NonInteractive", "-Command", ps)

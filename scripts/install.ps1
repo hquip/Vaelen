@@ -45,7 +45,33 @@ try {
     throw
   }
   Write-Output ('Installed VSM ' + $vsmRelease.tag_name + ': ' + $vsmTarget)
-  Write-Output ('Next: & "' + $vsmTarget + '" path-init powershell')
+  $vsmRegistrationArgs = @('path-init', 'cmd')
+  try {
+    $vsmHelp = & $vsmTarget help path-init 2>$null
+    if ($LASTEXITCODE -eq 0 -and ($vsmHelp -join "`n") -match '--command-only') { $vsmRegistrationArgs = @('path-init', '--command-only') }
+    # Older releases predate --command-only. Run their cmd setup outside the
+    # invoking project so local/docker isolation cannot block installation.
+    $vsmPriorBoundary = $env:VSM_PROJECT_BOUNDARY
+    $vsmPriorExpectedMode = $env:VSM_MCP_EXPECT_MODE
+    Push-Location -LiteralPath $vsmStage
+    try {
+      $env:VSM_PROJECT_BOUNDARY = $vsmStage
+      $env:VSM_MCP_EXPECT_MODE = $null
+      & $vsmTarget @vsmRegistrationArgs
+      if ($LASTEXITCODE -ne 0) { throw ('Command registration exited with code ' + $LASTEXITCODE) }
+    } finally {
+      Pop-Location
+      $env:VSM_PROJECT_BOUNDARY = $vsmPriorBoundary
+      $env:VSM_MCP_EXPECT_MODE = $vsmPriorExpectedMode
+    }
+    # Applies immediately when the installer is run in the current PowerShell.
+    $vsmProcessParts = @($env:Path -split ';' | Where-Object { $_ -ne '' -and $_.Trim('"').TrimEnd('\','/') -ine $vsmResolvedDir.TrimEnd('\','/') })
+    $env:Path = (@($vsmResolvedDir) + $vsmProcessParts) -join ';'
+    Write-Output 'The vsm command is ready. Language activation: vsm path-init'
+  } catch {
+    Write-Warning ('VSM was installed, but automatic command registration failed: ' + $_.Exception.Message)
+    Write-Warning ('Retry: & "' + $vsmTarget + '" ' + ($vsmRegistrationArgs -join ' '))
+  }
   if ($vsmBackup) { Write-Output ('Previous executable: ' + $vsmBackup) }
 } finally {
   # Only remove the two known staging files; never recursively remove paths.

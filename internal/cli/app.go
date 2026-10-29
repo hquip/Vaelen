@@ -142,6 +142,16 @@ func Run(args []string) (code int) {
 		}
 		return 0
 	}
+	// Installing VSM itself is independent of the current project's isolation
+	// mode, tool constraints, and even a malformed project configuration.
+	if cmd == "path-init" && len(rest) == 1 && rest[0] == "--command-only" {
+		if err := registerCommand(); err != nil {
+			logErr = err
+			fmt.Fprintln(os.Stderr, "错误:", err)
+			return 1
+		}
+		return 0
+	}
 
 	a, err := newApp()
 	if err != nil {

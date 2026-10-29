@@ -15,6 +15,14 @@
 > 镜像切换、网络代理设置、安装进度条、当前目录 local 设置、一键写入用户级 PATH。
 > **macOS 版为 Universal 通用二进制**（Apple Silicon + Intel），隐藏式标题栏 + 原生菜单，内置 CLI，一个 `.app` 开箱即用。
 
+## v1.2.1 自动注册 Windows 命令
+
+- 打开 Windows GUI 自动准备同版本 CLI、注册 `vsm` 命令并加入用户 PATH，无需先安装语言或手动重命名下载文件。
+- Windows 安装脚本自动注册，兼容旧 CLI，成功后当前 PowerShell 可直接使用 `vsm`。
+- 注册结果、失败原因与重试入口可见；保留已有 PATH、变量引用和 cmd 启动命令，隔离项目仍使用全局命令入口。
+
+下载 [v1.2.1 正式版](https://github.com/hquip/Vaelen/releases/tag/v1.2.1)，或使用 GUI「检查 VSM 更新」/ `vsm update --gui`。Windows 更新后重新启动 GUI 即自动注册；尚未加载 VSM 的已有 cmd 需执行界面提供的加载命令一次。详见[发布说明](docs/releases/v1.2.1.md)。
+
 ## v1.2.0 语言覆盖与宿主接入
 
 内置 151 项工具链/工具、30 项自动安装来源，以及 17 项宿主接入说明。新增工具按实际能力显示安装、纳管、元数据或手动版本；宿主入口说明要求与切换限制。
@@ -396,6 +404,8 @@ echo 'eval "$(vsm activate bash)"' >> ~/.bashrc    # bash
 vsm path-init powershell  # 自动发现 Windows PowerShell / pwsh 配置位置，保留自定义提示符
 vsm activate powershell | Out-String | Invoke-Expression # 立即激活已有 PowerShell
 ```
+
+Windows GUI 打开后会自动准备同版本 CLI、建立 `vsm` 命令入口并加入用户 PATH，无需先安装语言或手动改名下载文件。Windows 安装脚本也会自动注册，并让当前 PowerShell 立即可用。注册只处理全局命令入口；即使从 local / docker 项目启动，也不会把项目目录写入用户 PATH。失败原因显示在界面并写入 `command.setup` 日志，可点击结果区「重新验证」重试注册；命令行可用完整 CLI 路径执行 `path-init --command-only`。
 
 Windows 的系统 PATH 排在用户 PATH 前面；只写用户 PATH，可能仍命中系统 Java 等旧版本。「激活 PATH」/ `path-init` 会配置 cmd 和 PowerShell 启动钩子，把 VSM 放在系统工具之前，并实际执行工具核对版本。已经通过 VSM 的 cmd 后续全局切换即时生效，无需重开；从未加载 VSM 的已有 cmd 需加载一次初始化脚本。PowerShell 随提示符刷新；不修改执行策略。GUI 自动选择匹配的 CLI，缺少时下载同版本官方组件；不会直接使用 PATH 中的旧 CLI。详见[Windows 激活说明](docs/system-runtimes.md#windows-全局切换与-cmd)。
 
