@@ -74,14 +74,15 @@ type App struct {
 	// 用 TryLock 而不是排队等待：安装可能持续数分钟，排队会让按钮看起来毫无反应。
 	mu sync.Mutex
 
-	workMu         sync.Mutex
-	taskCancel     context.CancelFunc
-	databaseCancel context.CancelFunc
-	dirMu          sync.RWMutex
-	projectDir     string // 「设为本目录」写入 .tool-versions 的目标目录；空表示尚未选择
-	cliInstaller   func(context.Context, string, string) (string, error)
-	cliPreparing   atomic.Bool
-	cliProgress    func(updater.Progress)
+	workMu           sync.Mutex
+	taskCancel       context.CancelFunc
+	databaseCancel   context.CancelFunc
+	dirMu            sync.RWMutex
+	projectDir       string // 「设为本目录」写入 .tool-versions 的目标目录；空表示尚未选择
+	cliInstaller     func(context.Context, string, string) (string, error)
+	cliPreparing     atomic.Bool
+	cliProgress      func(updater.Progress)
+	commandRegistrar func(core.Activator) (core.CommandSetup, error)
 }
 
 // errBusy 在已有写操作进行中时返回给前端。

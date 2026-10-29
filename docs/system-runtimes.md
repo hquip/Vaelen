@@ -60,6 +60,10 @@ Unix 安装的主命令必须是有执行权限的非空文件或有效链接。
 
 ## Windows 全局切换与 cmd
 
+打开 Windows GUI 即会自动注册全局 `vsm` 命令：校验或下载配套 CLI，创建 `shims/vsm.cmd`，写入用户 PATH 并配置 cmd 自动加载。下载文件可保持 `vsm-windows-amd64.exe` 等官方原名；无需先安装任何语言。重复启动会去重 PATH，保留其它程序的 PATH 和已有 cmd 启动命令。即使 GUI 当前打开隔离项目或项目配置损坏，注册的仍是全局 VSM 入口。
+
+自动注册与语言版本激活分别处理；自动注册不重建语言入口、不切换语言版本，也不修改 PowerShell 配置。Windows 安装脚本调用 `path-init --command-only`，安装旧版时兼容使用 `path-init cmd`；成功后在当前 PowerShell 前置安装目录。自动注册失败会显示具体原因，安装脚本保留已校验的程序并给出重试命令；GUI 可点击注册结果区「重新验证」重试。
+
 点击 GUI「激活 PATH」会配置用户 PATH、cmd AutoRun 和 PowerShell 启动钩子。新开的 cmd 自动把 VSM shims 放到系统 Java 等工具之前，不修改系统 PATH 或原安装。
 
 Windows 的 `PATHEXT` 决定无扩展名命令会搜索哪些文件。若缺少 `.CMD`，cmd 会跳过 VSM 的 `.cmd` 入口；初始化脚本现在会自动补齐，保留原有扩展名，重复加载不累积。此修复在加载脚本的 cmd 中生效。

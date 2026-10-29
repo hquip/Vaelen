@@ -397,6 +397,8 @@ vsm path-init powershell  # 自动发现 Windows PowerShell / pwsh 配置位置�
 vsm activate powershell | Out-String | Invoke-Expression # 立即激活已有 PowerShell
 ```
 
+Windows GUI 打开后会自动准备同版本 CLI、建立 `vsm` 命令入口并加入用户 PATH，无需先安装语言或手动改名下载文件。Windows 安装脚本也会自动注册，并让当前 PowerShell 立即可用。注册只处理全局命令入口；即使从 local / docker 项目启动，也不会把项目目录写入用户 PATH。失败原因显示在界面并写入 `command.setup` 日志，可点击结果区「重新验证」重试注册；命令行可用完整 CLI 路径执行 `path-init --command-only`。
+
 Windows 的系统 PATH 排在用户 PATH 前面；只写用户 PATH，可能仍命中系统 Java 等旧版本。「激活 PATH」/ `path-init` 会配置 cmd 和 PowerShell 启动钩子，把 VSM 放在系统工具之前，并实际执行工具核对版本。已经通过 VSM 的 cmd 后续全局切换即时生效，无需重开；从未加载 VSM 的已有 cmd 需加载一次初始化脚本。PowerShell 随提示符刷新；不修改执行策略。GUI 自动选择匹配的 CLI，缺少时下载同版本官方组件；不会直接使用 PATH 中的旧 CLI。详见[Windows 激活说明](docs/system-runtimes.md#windows-全局切换与-cmd)。
 
 全局默认是兜底设置：项目的 `vsm.json` / `.tool-versions` 和 `VSM_<TOOL>_VERSION` 仍有更高优先级。GUI 详情会分别显示全局默认、VSM 选择和 GUI 进程 PATH 命中位置，不代表所有终端都已切换。CLI 与 GUI 应使用同一版本，并放在同一目录；切换全局版本会更新 shim，避免继续调用旧 CLI。

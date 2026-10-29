@@ -123,7 +123,9 @@ let activationBusy = false;
 let activationDiagnostic = "";
 let pendingActivationDiagnostic = "";
 let currentCmdActivation = "";
+let commandSetupReport = false;
 function renderActivationReport(title, message, problems, diagnostic, currentCmd = "") {
+  commandSetupReport = false;
   document.getElementById("activationReport").classList.remove("hidden");
   document.getElementById("activationReportTitle").textContent = title;
   document.getElementById("activationReportMessage").textContent = message;
@@ -1293,7 +1295,7 @@ document.getElementById("pathBtn").addEventListener("click", async () => {
 });
 
 document.getElementById("activationReportClose").addEventListener("click", () => document.getElementById("activationReport").classList.add("hidden"));
-document.getElementById("activationReportRetry").addEventListener("click", () => document.getElementById("pathBtn").click());
+document.getElementById("activationReportRetry").addEventListener("click", () => commandSetupReport ? ensureCommand() : document.getElementById("pathBtn").click());
 document.getElementById("activationReportCopy").addEventListener("click", async () => {
   try { await navigator.clipboard.writeText(activationDiagnostic); toast("诊断信息已复制"); }
   catch (_) {
@@ -1433,6 +1435,27 @@ async function loadVersion() {
   }
 }
 
+async function ensureCommand() {
+  if (activationBusy) return;
+  activationBusy = true;
+  syncActivationButtons();
+  try {
+    const result = await call("EnsureCommand");
+    if (result?.status === "added" || (commandSetupReport && result?.status === "exists")) {
+      renderActivationReport("vsm 命令已自动注册", "已加入用户 PATH，新 cmd 会自动加载。已经打开且尚未加载 VSM 的 cmd，可复制下方命令执行一次。语言版本激活可继续点击「激活 PATH」。", [],
+        ["CLI：" + result.cli, "用户 PATH 入口：" + result.shims, "已有 cmd 加载命令：" + result.current_cmd].join("\n"), result.current_cmd);
+      commandSetupReport = true;
+    }
+  } catch (error) {
+    const message = "自动注册 vsm 命令失败：" + String(error);
+    renderActivationReport("vsm 命令尚未注册", "请查看原因后点击「重新验证」重试注册。", [message], message);
+    commandSetupReport = true;
+  } finally {
+    activationBusy = false;
+    syncActivationButtons();
+  }
+}
+
 window.addEventListener("DOMContentLoaded", () => {
   bindEvents();
   setTimeout(() => {
@@ -1445,5 +1468,6 @@ window.addEventListener("DOMContentLoaded", () => {
     loadProxy();
     loadTheme();
     loadInstallRoot();
+    ensureCommand();
   }, 120);
 });

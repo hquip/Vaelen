@@ -151,18 +151,8 @@ func (a Activator) GenerateShims() error {
 	if err := os.MkdirAll(a.Paths.Shims(), 0o755); err != nil {
 		return err
 	}
-	// Keep the vsm command on the same dispatcher as the language shims. An old
-	// vsm.exe elsewhere on PATH must not regenerate them back to an older CLI.
 	if a.VsmExe != "" {
-		name, content := "vsm", a.shimPreamble()+"exec "+quotePOSIX(a.VsmExe)+" \"$@\"\n"
-		if runtime.GOOS == "windows" {
-			name = "vsm.cmd"
-			content = a.shimPreamble() + "\"" + quoteCmd(a.VsmExe) + "\" %*\r\n"
-		}
-		if sameDir(filepath.Dir(a.VsmExe), a.Paths.Shims()) {
-			return fmt.Errorf("CLI 不能位于 shims 目录，否则会递归调用自身")
-		}
-		if err := a.saveShim(name, content, 0o755); err != nil {
+		if err := a.GenerateCLIShim(); err != nil {
 			return err
 		}
 	}
@@ -239,6 +229,33 @@ func (a Activator) GenerateShims() error {
 
 	}
 	return nil
+}
+
+// GenerateCLIShim exposes the paired CLI even before any tools are installed.
+// Command registration must not regenerate language shims or inspect projects.
+func (a Activator) GenerateCLIShim() error {
+	if a.Paths.Root == "" || a.VsmExe == "" {
+		return fmt.Errorf("生成 vsm 命令入口需要明确的数据目录和 CLI 路径")
+	}
+	root, err := filepath.Abs(a.Paths.Root)
+	if err != nil {
+		return err
+	}
+	a.Paths.Root = root
+	if sameDir(filepath.Dir(a.VsmExe), a.Paths.Shims()) {
+		return fmt.Errorf("CLI 不能位于 shims 目录，否则会递归调用自身")
+	}
+	if err := os.MkdirAll(a.Paths.Shims(), 0o755); err != nil {
+		return err
+	}
+	// Keep vsm on the same dispatcher as language shims, including when the
+	// official download retains its vsm-windows-amd64.exe filename.
+	name, content := "vsm", a.shimPreamble()+"exec "+quotePOSIX(a.VsmExe)+" \"$@\"\n"
+	if runtime.GOOS == "windows" {
+		name = "vsm.cmd"
+		content = a.shimPreamble() + "\"" + quoteCmd(a.VsmExe) + "\" %*\r\n"
+	}
+	return a.saveShim(name, content, 0o755)
 }
 
 func (a Activator) writeShim(tool string) error {
