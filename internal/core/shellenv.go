@@ -351,6 +351,7 @@ func persistShimsPathAt(shimsDir, registryKey string, operationIDs ...string) (s
 	// 目录用单引号字面量，避免路径里的 $ 被 PowerShell 展开。
 	ps := fmt.Sprintf(`$ErrorActionPreference='Stop'
 $d=%s
+$expected=[IO.Path]::GetFullPath([Environment]::ExpandEnvironmentVariables($d.Trim('"'))).TrimEnd('\','/')
 $key=[Microsoft.Win32.Registry]::CurrentUser.CreateSubKey(%s)
 try {
 $options=[Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames
@@ -359,7 +360,7 @@ if ($p -isnot [string]) { throw 'User PATH is not a string; left unchanged' }
 $kind=if($null -eq $key.GetValue('Path',$null,$options)){[Microsoft.Win32.RegistryValueKind]::ExpandString}else{$key.GetValueKind('Path')}
 $parts=@($p -split ';' | Where-Object { $_ -ne '' })
 $parts=@($parts | Where-Object {
-  try { [IO.Path]::GetFullPath([Environment]::ExpandEnvironmentVariables($_.Trim('"'))).TrimEnd('\','/') -ine $d.TrimEnd('\','/') }
+  try { [IO.Path]::GetFullPath([Environment]::ExpandEnvironmentVariables($_.Trim('"'))).TrimEnd('\','/') -ine $expected }
   catch { $true }
 })
 $next=(@($d)+$parts) -join ';'
