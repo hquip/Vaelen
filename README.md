@@ -15,6 +15,14 @@
 > 镜像切换、网络代理设置、安装进度条、当前目录 local 设置、一键写入用户级 PATH。
 > **macOS 版为 Universal 通用二进制**（Apple Silicon + Intel），隐藏式标题栏 + 原生菜单，内置 CLI，一个 `.app` 开箱即用。
 
+## v1.2.1 自动注册 Windows 命令
+
+- 打开 Windows GUI 自动准备同版本 CLI、注册 `vsm` 命令并加入用户 PATH，无需先安装语言或手动重命名下载文件。
+- Windows 安装脚本自动注册，兼容旧 CLI，成功后当前 PowerShell 可直接使用 `vsm`。
+- 注册结果、失败原因与重试入口可见；保留已有 PATH、变量引用和 cmd 启动命令，隔离项目仍使用全局命令入口。
+
+下载 [v1.2.1 正式版](https://github.com/hquip/Vaelen/releases/tag/v1.2.1)，或使用 GUI「检查 VSM 更新」/ `vsm update --gui`。Windows 更新后重新启动 GUI 即自动注册；尚未加载 VSM 的已有 cmd 需执行界面提供的加载命令一次。详见[发布说明](docs/releases/v1.2.1.md)。
+
 ## v1.2.0 语言覆盖与宿主接入
 
 内置 151 项工具链/工具、30 项自动安装来源，以及 17 项宿主接入说明。新增工具按实际能力显示安装、纳管、元数据或手动版本；宿主入口说明要求与切换限制。

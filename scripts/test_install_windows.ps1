@@ -80,3 +80,6 @@ function Test-VsmInstaller([string]$Mode) {
 }
 foreach ($vsmTestMode in @('success','legacy-cli','bad-checksum','rollback','registration-failure')) { Test-VsmInstaller $vsmTestMode }
 Write-Output 'Windows installer checksum, rollback, and automatic command registration checks passed.'
+# The deliberately failing native fixture leaves LASTEXITCODE=7. GitHub's pwsh
+# wrapper uses that value as the step result even after all assertions passed.
+$global:LASTEXITCODE = 0
