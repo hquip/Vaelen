@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 	"runtime"
 	"strings"
 	"time"
+	"unicode/utf16"
 
 	"vsm/internal/config"
 	"vsm/internal/logging"
@@ -74,6 +76,12 @@ func DetectSystem(commands map[string][]string, excludeDir string) []SystemVersi
 			for _, name := range names {
 				for _, ext := range exts {
 					full := filepath.Join(dir, name+ext)
+					if runtime.GOOS == "windows" && tool == "bash" && strings.EqualFold(filepath.Base(dir), "System32") {
+						continue // Windows' WSL launcher is not a Bash runtime.
+					}
+					if runtime.GOOS == "windows" && tool == "j" && strings.EqualFold(strings.TrimSuffix(filepath.Base(full), filepath.Ext(full)), "jconsole") {
+						continue // JDK jconsole is unrelated to the J language engine.
+					}
 					info, err := os.Stat(full)
 					if err != nil || info.IsDir() || info.Size() == 0 {
 						// 0 字节为 Windows“应用执行别名”占位（WindowsApps 下指向商店的重解析点）。
@@ -483,17 +491,18 @@ func runVersionProbe(tool, bin string, env []string, dir string, discovery bool)
 			err = fmt.Errorf("版本探测超时")
 		}
 		cancel()
+		probeText := normalizeProbeText(output.text)
 		if tool == "msvc" && !timedOut {
 			var exit *exec.ExitError
 			bannerExit := err == nil || errors.As(err, &exit) && exit.ExitCode() == 2
-			if m := regexp.MustCompile(`(?im)Microsoft.*C/C\+\+.*Compiler Version\s+(\d+(?:\.\d+)+)`).FindStringSubmatch(output.text); m != nil && bannerExit {
+			if m := regexp.MustCompile(`(?im)Microsoft.*C/C\+\+.*Compiler Version\s+(\d+(?:\.\d+)+)`).FindStringSubmatch(probeText); m != nil && bannerExit {
 				return m[1], nil
 			}
 		}
 		if tool == "delphi" && !timedOut {
 			var exit *exec.ExitError
 			if err == nil || errors.As(err, &exit) && exit.ExitCode() == 1 {
-				if m := regexp.MustCompile(customPattern).FindStringSubmatch(probeANSIEscape.ReplaceAllString(output.text, "")); len(m) == 2 {
+				if m := regexp.MustCompile(customPattern).FindStringSubmatch(probeANSIEscape.ReplaceAllString(probeText, "")); len(m) == 2 {
 					return m[1], nil
 				}
 			}
@@ -503,23 +512,27 @@ func runVersionProbe(tool, bin string, env []string, dir string, discovery bool)
 		// discovery can use its complete banner without waiting for a second
 		// identical timeout. Command execution verification stays strict.
 		if discovery && tool == "redis" && timedOut {
-			if version := completeRedisVersionBanner(output.text); version != "" {
+			if version := completeRedisVersionBanner(probeText); version != "" {
 				logging.Record("warn", "detect", "redis.exit_timeout", logging.Fields{"path": bin, "version": version, "flag": flag, "detail": "已读取完整版本；探测进程退出超时并已终止"})
 				return version, nil
 			}
 		}
-		message := strings.Join(strings.Fields(output.text), " ")
+		message := strings.Join(strings.Fields(probeText), " ")
 		if len(message) > 512 {
 			message = message[:512]
 		}
 		if err != nil {
+			if tool == "node" && strings.Contains(strings.ToLower(probeText), "no active node.js version is configured") {
+				lastErr = fmt.Errorf("检测到 nvm 的 Node.js 入口，但当前没有激活版本；请先执行 nvm use <版本>")
+				continue
+			}
 			lastErr = fmt.Errorf("%s: %w；%s", flag, err, message)
 			if tool == "redis" {
 				redisErrors = append(redisErrors, lastErr)
 			}
 			continue
 		}
-		text := probeANSIEscape.ReplaceAllString(output.text, "")
+		text := probeANSIEscape.ReplaceAllString(probeText, "")
 		if tool == "dotnet" {
 			best := ""
 			for _, line := range strings.Split(text, "\n") {
@@ -611,6 +624,49 @@ func (w *probeOutput) Write(p []byte) (int, error) {
 		w.text += string(p)
 	}
 	return n, nil
+}
+
+// normalizeProbeText handles Windows tools that write UTF-16 directly to a
+// redirected pipe (notably the system bash launcher). Keeping decoding here
+// makes all version parsers and diagnostics see the same readable text.
+func normalizeProbeText(raw string) string {
+	data := []byte(raw)
+	if len(data) >= 2 && (data[0] == 0xff && data[1] == 0xfe || data[0] == 0xfe && data[1] == 0xff) {
+		var order binary.ByteOrder = binary.LittleEndian
+		if data[0] == 0xfe {
+			order = binary.BigEndian
+		}
+		data = data[2:]
+		return string(utf16.Decode(toUTF16(data, order)))
+	}
+	if len(data) >= 4 && len(data)%2 == 0 {
+		var oddZero, evenZero int
+		for i, value := range data {
+			if value == 0 {
+				if i%2 == 0 {
+					evenZero++
+				} else {
+					oddZero++
+				}
+			}
+		}
+		if oddZero >= len(data)/4 || evenZero >= len(data)/4 {
+			var order binary.ByteOrder = binary.LittleEndian
+			if evenZero > oddZero {
+				order = binary.BigEndian
+			}
+			return string(utf16.Decode(toUTF16(data, order)))
+		}
+	}
+	return strings.ReplaceAll(raw, "\x00", "")
+}
+
+func toUTF16(data []byte, order binary.ByteOrder) []uint16 {
+	units := make([]uint16, len(data)/2)
+	for i := range units {
+		units[i] = order.Uint16(data[i*2:])
+	}
+	return units
 }
 
 // DetectEnvVars 返回与语言相关、当前已设置的环境变量（用于诊断已有安装）。

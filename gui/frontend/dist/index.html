@@ -50,12 +50,21 @@
 
   <div class="layout">
     <aside class="sidebar">
-      <div class="sidebar-foot">
-        <div class="foot-text">
-          <span class="foot-label">项目环境与 AI</span>
-          <button id="projectEnvBtn" class="mini" title="选择项目、初始化独立环境，并连接 AI 客户端">隔离环境 / MCP</button>
-          <button id="workbenchBtn" class="mini" title="工具链锁定、项目配置、任务和工具目录">项目工作台</button>
-          <button id="databaseBtn" class="mini">数据库版本 / 实例</button>
+      <div class="sidebar-project">
+        <div class="sidebar-project-head"><span class="foot-label">项目环境与 AI</span><span class="sidebar-project-count">3 项</span></div>
+        <div class="project-tool-list">
+          <button id="projectEnvBtn" class="project-tool" title="选择项目、初始化独立环境，并连接 AI 客户端">
+            <span class="project-tool-icon project-tool-icon-ai">AI</span>
+            <span class="project-tool-copy"><strong>隔离环境 / MCP</strong><small>绑定项目并连接 AI</small></span><span class="project-tool-arrow" aria-hidden="true">›</span>
+          </button>
+          <button id="workbenchBtn" class="project-tool" title="工具链锁定、项目配置、任务和工具目录">
+            <span class="project-tool-icon project-tool-icon-work">◆</span>
+            <span class="project-tool-copy"><strong>项目工作台</strong><small>配置、锁定与任务</small></span><span class="project-tool-arrow" aria-hidden="true">›</span>
+          </button>
+          <button id="databaseBtn" class="project-tool" title="管理数据库版本和本机实例">
+            <span class="project-tool-icon project-tool-icon-db">DB</span>
+            <span class="project-tool-copy"><strong>数据库版本 / 实例</strong><small>Docker 或本机原生</small></span><span class="project-tool-arrow" aria-hidden="true">›</span>
+          </button>
         </div>
       </div>
       <div class="filter-wrap">

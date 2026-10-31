@@ -93,7 +93,11 @@ func (a Activator) Run(tool, startDir, cmdName string, cmdArgs []string) error {
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	cmd.Env = buildEnv(binDirs, p.ExecEnv(installDir))
+	managedDirs, managedEnv, envErr := a.runtimeEnvironment(tool, startDir, installDir, p, binDirs)
+	if envErr != nil {
+		return envErr
+	}
+	cmd.Env = buildEnv(managedDirs, managedEnv)
 	fields := a.activationFields()
 	if a.TraceID == "" {
 		operationID := os.Getenv("VSM_ACTIVATION_OPERATION")
@@ -121,6 +125,49 @@ func (a Activator) Run(tool, startDir, cmdName string, cmdArgs []string) error {
 	}
 	finish(nil)
 	return nil
+}
+
+// runtimeEnvironment adds companion runtimes required by a tool. Maven is a
+// Java application: setting MAVEN_HOME alone is insufficient because mvn.cmd
+// refuses to start when JAVA_HOME is missing and can otherwise pick a different
+// JDK from the inherited PATH.
+func (a Activator) runtimeEnvironment(tool, startDir, installDir string, p plugin.Plugin, binDirs []string) ([]string, map[string]string, error) {
+	dirs := append([]string(nil), binDirs...)
+	env := cloneEnv(p.ExecEnv(installDir))
+	if tool != "maven" {
+		return dirs, env, nil
+	}
+	java, ok := plugin.Get("java")
+	if !ok {
+		return dirs, env, fmt.Errorf("Maven 需要 Java，但 VSM 未加载 Java 工具定义")
+	}
+	javaRes := a.Resolver.Resolve("java", startDir)
+	if javaRes.Error != "" {
+		return nil, nil, fmt.Errorf("Maven 依赖的 Java 版本解析失败: %s", javaRes.Error)
+	}
+	if javaRes.Version == "" {
+		// A user may intentionally use a system JDK. Preserve that supported
+		// fallback, while making the missing VSM selection diagnosable by the
+		// Maven launcher itself instead of silently selecting another VSM JDK.
+		return dirs, env, nil
+	}
+	javaDir := a.Paths.InstallDir("java", javaRes.Version)
+	dirs = append(java.BinPaths(javaDir), dirs...)
+	for key, value := range java.ExecEnv(javaDir) {
+		env[key] = value
+	}
+	return dirs, env, nil
+}
+
+func cloneEnv(values map[string]string) map[string]string {
+	if len(values) == 0 {
+		return map[string]string{}
+	}
+	cloned := make(map[string]string, len(values))
+	for key, value := range values {
+		cloned[key] = value
+	}
+	return cloned
 }
 
 // exitCodeError 携带子进程退出码，供 CLI 层透传给 os.Exit。

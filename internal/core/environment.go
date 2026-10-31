@@ -114,6 +114,36 @@ func (a Activator) planEnvironment(startDir string, preferProject bool) (Environ
 			}
 		}
 	}
+	// Maven can be selected without an explicit Java entry. If a project or
+	// global Java version is available, include it in the same child environment
+	// so mvn.cmd receives JAVA_HOME and cannot pick an unrelated JDK.
+	if hasResolution(plan.Versions, "maven") && !hasResolution(plan.Versions, "java") {
+		javaRes := a.Resolver.Resolve("java", startDir)
+		if javaRes.Error != "" {
+			return EnvironmentPlan{}, fmt.Errorf("Maven 依赖的 Java 版本解析失败: %s", javaRes.Error)
+		}
+		if javaRes.Version != "" {
+			java, ok := plugin.Get("java")
+			if !ok {
+				return EnvironmentPlan{}, fmt.Errorf("Maven 需要 Java，但 VSM 未加载 Java 工具定义")
+			}
+			javaDir := a.Paths.InstallDir("java", javaRes.Version)
+			for _, bin := range java.BinPaths(javaDir) {
+				key := filepath.Clean(bin)
+				if os.PathSeparator == '\\' {
+					key = strings.ToLower(key)
+				}
+				if !seen[key] {
+					plan.Paths = append(plan.Paths, bin)
+					seen[key] = true
+				}
+			}
+			for key, value := range java.ExecEnv(javaDir) {
+				plan.Variables[key] = value
+			}
+			plan.Versions = append(plan.Versions, javaRes)
+		}
+	}
 	workspace, err := a.Resolver.scan.findWorkspace()
 	if err != nil {
 		return EnvironmentPlan{}, err
@@ -128,6 +158,15 @@ func (a Activator) planEnvironment(startDir string, preferProject bool) (Environ
 		}
 	}
 	return plan, nil
+}
+
+func hasResolution(resolutions []Resolution, tool string) bool {
+	for _, resolution := range resolutions {
+		if resolution.Tool == tool {
+			return true
+		}
+	}
+	return false
 }
 
 // ProjectRequirement reports the nearest project declaration, ignoring overrides/global defaults.
