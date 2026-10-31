@@ -15,6 +15,14 @@
 > 镜像切换、网络代理设置、安装进度条、当前目录 local 设置、一键写入用户级 PATH。
 > **macOS 版为 Universal 通用二进制**（Apple Silicon + Intel），隐藏式标题栏 + 原生菜单，内置 CLI，一个 `.app` 开箱即用。
 
+## v1.2.2 Maven 激活与 GUI 侧栏优化
+
+- 修复 Maven shim 缺少 `JAVA_HOME`，自动使用 VSM 选择的 Java 版本。
+- 修复 Windows `System32\\bash.exe`、JDK `jconsole.exe` 误探测和 UTF-16 版本输出解析。
+- nvm 未激活 Node 时显示明确提示；GUI 项目环境入口改为图标卡片布局。
+
+下载 [v1.2.2 正式版](https://github.com/hquip/Vaelen/releases/tag/v1.2.2)，或使用 GUI「检查 VSM 更新」/ `vsm update --gui`。详见[发布说明](docs/releases/v1.2.2.md)。
+
 ## v1.2.1 自动注册 Windows 命令
 
 - 打开 Windows GUI 自动准备同版本 CLI、注册 `vsm` 命令并加入用户 PATH，无需先安装语言或手动重命名下载文件。
