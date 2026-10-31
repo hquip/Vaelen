@@ -139,6 +139,31 @@ body { display: flex; flex-direction: column; height: 100vh; }
   flex-direction: column;
   min-height: 0;
 }
+.sidebar-project {
+  flex: 0 0 auto;
+  padding: 13px 11px 12px;
+  border-bottom: 1px solid var(--border);
+  background: linear-gradient(145deg, var(--bg-soft), var(--bg));
+}
+.sidebar-project-head { display:flex; align-items:center; justify-content:space-between; padding: 0 3px 9px; }
+.sidebar-project-count { color:var(--muted); font-size:10px; padding:2px 7px; border:1px solid var(--border); border-radius:20px; }
+.project-tool-list { display:flex; flex-direction:column; gap:6px; }
+.project-tool {
+  width:100%; min-width:0; display:grid; grid-template-columns:28px minmax(0,1fr) 12px; align-items:center; gap:8px;
+  padding:8px 9px; text-align:left; color:var(--text); background:var(--card); background:color-mix(in srgb, var(--card) 72%, transparent);
+  border:1px solid var(--border-soft); border-radius:9px; box-shadow:0 1px 0 rgba(255,255,255,.025) inset;
+}
+.project-tool:hover { background:var(--card); border-color:var(--accent); transform:translateY(-1px); }
+.project-tool:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
+.project-tool-icon { width:26px; height:26px; display:flex; align-items:center; justify-content:center; border-radius:8px; font-size:9px; font-weight:800; letter-spacing:.2px; color:#fff; box-shadow:0 2px 7px rgba(0,0,0,.22); }
+.project-tool-icon-ai { background:linear-gradient(145deg,#5b8cff,#8c72ff); }
+.project-tool-icon-work { background:linear-gradient(145deg,#35b878,#168b72); font-size:12px; }
+.project-tool-icon-db { background:linear-gradient(145deg,#e19b3c,#c45e47); }
+.project-tool-copy { min-width:0; display:flex; flex-direction:column; gap:2px; }
+.project-tool-copy strong { font-size:12px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.project-tool-copy small { color:var(--muted); font-size:10px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.project-tool-arrow { color:var(--muted); font-size:18px; line-height:1; text-align:right; transition:transform .12s,color .12s; }
+.project-tool:hover .project-tool-arrow { color:var(--accent-strong); transform:translateX(2px); }
 .filter-wrap { padding: 12px; border-bottom: 1px solid var(--border-soft); position: relative; }
 .filter-icon {
   position: absolute; left: 22px; top: 50%; transform: translateY(-50%);
@@ -436,6 +461,12 @@ html.platform-darwin .tbadge {
 @media (max-width: 1100px) {
   .topbar-right { gap: 8px; }
   .topbar-right .ghost-btn { padding: 7px 10px; }
+}
+@media (max-width: 760px) {
+  .sidebar { flex-basis: 210px; }
+  .project-tool { grid-template-columns:24px minmax(0,1fr) 10px; gap:7px; padding:7px; }
+  .project-tool-icon { width:24px; height:24px; border-radius:7px; }
+  .project-tool-copy small { display:none; }
 }
 /* 更窄时：隐藏副标题与统计文字，把空间留给可操作的控件 */
 @media (max-width: 1000px) {
