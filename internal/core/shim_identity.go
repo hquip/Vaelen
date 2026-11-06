@@ -34,7 +34,7 @@ func (a Activator) CommandMatches(tool, actual, expected string) bool {
 	if err != nil || !info.Mode().IsRegular() {
 		return false
 	}
-	commands := append([]string{tool}, plugin.DetectCommands()[tool]...)
+	commands := append([]string{tool}, plugin.ShimCommands(tool)...)
 	for _, command := range commands {
 		alias := command
 		if command == tool {

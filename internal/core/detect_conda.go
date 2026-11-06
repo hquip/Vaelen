@@ -20,6 +20,19 @@ func binaryIdentity(path string) string {
 	return path
 }
 
+func runtimeIdentity(tool, path string) string {
+	if tool == "python" {
+		root := filepath.Dir(path)
+		if strings.EqualFold(filepath.Base(root), "bin") || strings.EqualFold(filepath.Base(root), "Scripts") {
+			root = filepath.Dir(root)
+		}
+		if prefix := plugin.PythonVenvPrefix(root); prefix != "" {
+			return tool + "|venv|" + binaryIdentity(prefix)
+		}
+	}
+	return tool + "|" + binaryIdentity(path)
+}
+
 func describeRuntime(tool, command, path, version string) SystemVersion {
 	s := SystemVersion{Tool: tool, Command: command, Path: path, Version: version}
 	if tool != "python" {
@@ -29,7 +42,11 @@ func describeRuntime(tool, command, path, version string) SystemVersion {
 	if filepath.Base(root) == "bin" || strings.EqualFold(filepath.Base(root), "Scripts") {
 		root = filepath.Dir(root)
 	}
-	if prefix := plugin.CondaPrefix(root); prefix != "" {
+	prefix, kind, labelPrefix := plugin.CondaPrefix(root), "Conda", "conda"
+	if venv := plugin.PythonVenvPrefix(root); venv != "" {
+		prefix, kind, labelPrefix = venv, "venv", "venv"
+	}
+	if prefix != "" {
 		name := filepath.Base(prefix)
 		var slug strings.Builder
 		for _, c := range name {
@@ -45,8 +62,8 @@ func describeRuntime(tool, command, path, version string) SystemVersion {
 			label = label[:32]
 		}
 		digest := sha256.Sum256([]byte(binaryIdentity(prefix)))
-		s.Environment = "Conda: " + name
-		s.ManagedVersion = fmt.Sprintf("conda-%s-%x", label, digest[:4])
+		s.Environment = kind + ": " + name
+		s.ManagedVersion = fmt.Sprintf("%s-%s-%x", labelPrefix, label, digest[:4])
 	}
 	return s
 }

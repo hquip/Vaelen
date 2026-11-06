@@ -32,6 +32,17 @@ func (a Activator) Which(tool, startDir string) (string, error) {
 	if !ok {
 		return "", fmt.Errorf("不支持的工具: %s", tool)
 	}
+	if tool == "python" && a.Paths.ProjectMode != "local" && a.Paths.ProjectMode != "docker" {
+		if venv, err := externalPythonVenv(); err != nil {
+			return "", err
+		} else if venv != "" {
+			for _, name := range plugin.DetectCommands()[tool] {
+				if exe := findExecutable(p.BinPaths(venv), name); exe != "" {
+					return exe, nil
+				}
+			}
+		}
+	}
 	res := a.Resolver.Resolve(tool, startDir)
 	if res.Error != "" {
 		return "", fmt.Errorf("%s", res.Error)
@@ -67,7 +78,20 @@ func (a Activator) Run(tool, startDir, cmdName string, cmdArgs []string) error {
 	if !ok {
 		return fmt.Errorf("不支持的工具: %s", tool)
 	}
-	res := a.Resolver.Resolve(tool, startDir)
+	res := Resolution{}
+	venv := ""
+	if tool == "python" {
+		var err error
+		venv, err = externalPythonVenv()
+		if err != nil {
+			return err
+		}
+	}
+	if venv != "" {
+		res = Resolution{Tool: "python", Version: "venv", Source: "VIRTUAL_ENV"}
+	} else {
+		res = a.Resolver.Resolve(tool, startDir)
+	}
 	if res.Error != "" {
 		return fmt.Errorf("%s", res.Error)
 	}
@@ -75,7 +99,19 @@ func (a Activator) Run(tool, startDir, cmdName string, cmdArgs []string) error {
 		return fmt.Errorf("%s 未找到可用版本（要求 %q），请先 vsm install / vsm use", tool, res.Spec)
 	}
 	installDir := a.Paths.InstallDir(tool, res.Version)
+	if venv != "" {
+		installDir = venv
+	}
 	binDirs := p.BinPaths(installDir)
+	usingPip := tool == "python" && pythonPipCommand(cmdName)
+	if usingPip {
+		// pip launchers can embed an obsolete absolute interpreter path. Always
+		// use the selected Python's pip module, including when pip is missing.
+		cmdName = "python"
+		cmdArgs = append([]string{"-m", "pip"}, cmdArgs...)
+	} else if tool == "python" && pythonCommand(cmdName) {
+		cmdName = "python"
+	}
 
 	exe := findExecutable(binDirs, cmdName)
 	if exe == "" && cmdName == tool {
@@ -112,6 +148,10 @@ func (a Activator) Run(tool, startDir, cmdName string, cmdArgs []string) error {
 	}
 	fields["tool"], fields["selected_version"], fields["source"] = tool, res.Version, res.Source
 	fields["selected_executable"], fields["directory"], fields["parent_pid"] = exe, startDir, os.Getppid()
+	if tool == "python" {
+		fields["virtual_env"] = managedEnv["VIRTUAL_ENV"]
+		fields["pip_module_dispatch"] = usingPip
+	}
 	finish := logging.Start("activation", "runtime.dispatch", fields)
 	if err := cmd.Run(); err != nil {
 		finish(err)
@@ -223,7 +263,7 @@ func (a Activator) GenerateShims() error {
 			return err
 		}
 		if len(versions) == 0 {
-			for _, command := range plugin.DetectCommands()[tool] {
+			for _, command := range plugin.ShimCommands(tool) {
 				if command == tool {
 					continue
 				}
@@ -254,7 +294,7 @@ func (a Activator) GenerateShims() error {
 		if err := a.writeShim(tool); err != nil {
 			return err
 		}
-		for _, command := range plugin.DetectCommands()[tool] {
+		for _, command := range plugin.ShimCommands(tool) {
 			key := command
 			if runtime.GOOS == "windows" {
 				key = strings.ToLower(key)

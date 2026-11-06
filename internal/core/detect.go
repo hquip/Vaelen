@@ -87,7 +87,7 @@ func DetectSystem(commands map[string][]string, excludeDir string) []SystemVersi
 						// 0 字节为 Windows“应用执行别名”占位（WindowsApps 下指向商店的重解析点）。
 						continue
 					}
-					real := tool + "|" + binaryIdentity(full)
+					real := runtimeIdentity(tool, full)
 					if seenBin[real] {
 						continue
 					}
@@ -115,7 +115,7 @@ func DetectSystem(commands map[string][]string, excludeDir string) []SystemVersi
 		if exclude != "" && pathWithin(exclude, normDir(filepath.Dir(sv.Path))) {
 			continue
 		}
-		real := sv.Tool + "|" + binaryIdentity(sv.Path)
+		real := runtimeIdentity(sv.Tool, sv.Path)
 		if seenBin[real] {
 			continue
 		}
@@ -144,6 +144,7 @@ var envRuntimeHints = []struct{ Env, Tool, Cmd string }{
 	{"ZIG", "zig", "zig"},
 	{"ZIG_HOME", "zig", "zig"},
 	{"PYTHONHOME", "python", "python"},
+	{"VIRTUAL_ENV", "python", "python"},
 	{"MAVEN_HOME", "maven", "mvn"},
 	{"M2_HOME", "maven", "mvn"},
 	{"GRADLE_HOME", "gradle", "gradle"},
@@ -168,7 +169,13 @@ func detectFromEnv(filters ...map[string][]string) []SystemVersion {
 			continue
 		}
 		var found string
-		for _, base := range []string{root, filepath.Join(root, "bin")} {
+		bases := []string{root, filepath.Join(root, "bin")}
+		if h.Tool == "python" {
+			if p, ok := plugin.Get("python"); ok {
+				bases = append(bases, p.BinPaths(root)...)
+			}
+		}
+		for _, base := range bases {
 			for _, ext := range exts {
 				full := filepath.Join(base, h.Cmd+ext)
 				if info, err := os.Stat(full); err == nil && !info.IsDir() && info.Size() > 0 {

@@ -127,6 +127,14 @@ func EnvScript(shell string, pathDirs []string, env map[string]string) (string, 
 	if err != nil {
 		return "", err
 	}
+	// Restoring the baseline after an unrelated configuration error must not
+	// undo a venv that an IDE/user activated after the shell's initial baseline.
+	if len(pathDirs) == 0 && len(env) == 0 {
+		if venv, err := externalPythonVenv(); err == nil && venv != "" {
+			python, _ := plugin.Get("python")
+			pathDirs = python.BinPaths(venv)
+		}
+	}
 	keys := make([]string, 0, len(env))
 	for k := range env {
 		if !validEnvKey(k) || strings.ContainsAny(env[k], "\x00\r\n") {
@@ -155,6 +163,7 @@ func EnvScript(shell string, pathDirs []string, env map[string]string) (string, 
 			b.WriteString("export " + k + "=" + quotePOSIX(env[k]) + "\n")
 		}
 		b.WriteString("export " + envKeysVar + "=" + quotePOSIX(strings.Join(keys, " ")) + "\n")
+		b.WriteString("export " + managedVirtualEnvVar + "=" + quotePOSIX(env["VIRTUAL_ENV"]) + "\n")
 	case "fish":
 		b.WriteString(fishPathBase())
 		var parts []string
@@ -169,6 +178,7 @@ func EnvScript(shell string, pathDirs []string, env map[string]string) (string, 
 			b.WriteString("set -gx " + k + " " + quoteFish(env[k]) + "\n")
 		}
 		b.WriteString("set -gx " + envKeysVar + " " + quoteFish(strings.Join(keys, " ")) + "\n")
+		b.WriteString("set -gx " + managedVirtualEnvVar + " " + quoteFish(env["VIRTUAL_ENV"]) + "\n")
 	case "powershell", "pwsh":
 		b.WriteString("if (-not $env:VSM_PATH_BASE) { $env:VSM_PATH_BASE = $env:PATH }\n")
 		if len(pathDirs) == 0 {
@@ -186,6 +196,7 @@ func EnvScript(shell string, pathDirs []string, env map[string]string) (string, 
 			b.WriteString("$env:" + k + " = " + quotePowerShell(env[k]) + "\n")
 		}
 		b.WriteString("$env:" + envKeysVar + " = " + quotePowerShell(strings.Join(keys, " ")) + "\n")
+		b.WriteString("$env:" + managedVirtualEnvVar + " = " + quotePowerShell(env["VIRTUAL_ENV"]) + "\n")
 	case "cmd":
 		// 供批处理调用（vsm env cmd > x.bat && call x.bat）：% 需写成 %%
 		b.WriteString("if not defined VSM_PATH_BASE set \"VSM_PATH_BASE=%PATH%\"\n")
@@ -220,13 +231,20 @@ func EnvScript(shell string, pathDirs []string, env map[string]string) (string, 
 		}
 		sort.Strings(restoreKeys)
 		for _, k := range restoreKeys {
+			if k == "VIRTUAL_ENV" {
+				b.WriteString("if \"%VIRTUAL_ENV%\"==\"%_VSM_MANAGED_VIRTUAL_ENV%\" (\n")
+			}
 			b.WriteString("if defined _VSM_HAD_" + k + " (\n  if \"%_VSM_HAD_" + k + "%\"==\"1\" (set \"" + k + "=%_VSM_ORIG_" + k + "%\") else (set \"" + k + "=\")\n  set \"_VSM_HAD_" + k + "=\"\n  set \"_VSM_ORIG_" + k + "=\"\n)\n")
+			if k == "VIRTUAL_ENV" {
+				b.WriteString(")\nset \"_VSM_HAD_VIRTUAL_ENV=\"\nset \"_VSM_ORIG_VIRTUAL_ENV=\"\n")
+			}
 		}
 		for _, k := range keys {
 			b.WriteString(backupManagedVar(sh, k))
 			b.WriteString("set \"" + k + "=" + quoteCmd(env[k]) + "\"\n")
 		}
 		b.WriteString("set \"" + envKeysVar + "=" + strings.Join(keys, " ") + "\"\n")
+		b.WriteString("set \"" + managedVirtualEnvVar + "=" + quoteCmd(env["VIRTUAL_ENV"]) + "\"\n")
 	}
 	if sh == "cmd" {
 		return strings.ReplaceAll(b.String(), "\n", "\r\n"), nil

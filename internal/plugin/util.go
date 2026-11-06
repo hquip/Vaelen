@@ -1,6 +1,7 @@
 package plugin
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"vsm/internal/logging"
 	"vsm/internal/netcfg"
 )
 
@@ -22,6 +24,28 @@ func fetchJSON(url string, out any) error {
 // slowHTTPClient 用更长超时，应对体积很大的 API 响应（如 python-build-standalone 的 releases，
 // 单页可达数 MB，默认 30s 容易下载超时）。
 var slowHTTPClient = netcfg.Client(2 * time.Minute)
+
+var metadataDirectClient = netcfg.DirectClient(30 * time.Second)
+
+// The updater already uses this route recovery. Language metadata and official
+// checksums need the same behavior when a proxy exit has exhausted GitHub's API
+// quota. Keep the URL on the official API and never send digests to a mirror.
+func doMetadataRequest(client *http.Client, req *http.Request) (*http.Response, error) {
+	resp, err := client.Do(req)
+	if err != nil || req.URL.Scheme != "https" || req.URL.Hostname() != "api.github.com" ||
+		(resp.StatusCode != http.StatusForbidden && resp.StatusCode != http.StatusTooManyRequests) {
+		return resp, err
+	}
+	ctx, cancel := context.WithTimeout(req.Context(), 2*time.Second)
+	route, routeErr := netcfg.RouteForURL(ctx, req.URL.String())
+	cancel()
+	if routeErr != nil || route.Proxy == "" {
+		return resp, nil
+	}
+	resp.Body.Close()
+	logging.Record("info", "plugin", "metadata.direct.fallback", logging.Fields{"reason": "proxy API rate limit", "url": req.URL.String()})
+	return metadataDirectClient.Do(req.Clone(req.Context()))
+}
 
 // fetchJSONSlow 与 fetchJSON 相同，但使用更长超时的 client。
 func fetchJSONSlow(url string, out any) error {
@@ -54,7 +78,7 @@ func fetchJSONOnce(client *http.Client, raw string, out any) error {
 		return err
 	}
 	req.Header.Set("User-Agent", "vsm")
-	resp, err := client.Do(req)
+	resp, err := doMetadataRequest(client, req)
 	if err != nil {
 		return err
 	}

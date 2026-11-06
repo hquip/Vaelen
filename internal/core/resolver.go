@@ -80,7 +80,8 @@ func (r Resolver) match(tool, spec, source string) Resolution {
 		// requirements must not silently select it by interpreter version.
 		filtered := make([]string, 0, len(installed))
 		for _, v := range installed {
-			if v == spec || plugin.CondaPrefix(r.Paths.InstallDir(tool, v)) == "" {
+			dir := r.Paths.InstallDir(tool, v)
+			if v == spec || plugin.CondaPrefix(dir) == "" && plugin.PythonVenvPrefix(dir) == "" {
 				filtered = append(filtered, v)
 			}
 		}
