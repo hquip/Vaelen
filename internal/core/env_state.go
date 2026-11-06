@@ -45,7 +45,8 @@ fi
     for _vsm_k in (string split ' ' -- $_VSM_ENV_KEYS)
         if not string match -rq '^[A-Za-z_][A-Za-z0-9_]*$' -- $_vsm_k; continue; end
         if test "$_vsm_k" = VIRTUAL_ENV; and test "$VIRTUAL_ENV" != "$_VSM_MANAGED_VIRTUAL_ENV"
-            set -e _VSM_HAD_VIRTUAL_ENV _VSM_ORIG_VIRTUAL_ENV
+            set -e _VSM_HAD_VIRTUAL_ENV
+            set -e _VSM_ORIG_VIRTUAL_ENV
             continue
         end
         set -l _vsm_had _VSM_HAD_$_vsm_k

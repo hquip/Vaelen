@@ -54,6 +54,12 @@ pathlib.Path(sys.argv[1]).write_text(json.dumps({'prefix':sys.prefix,'purelib':s
 	shells := []string{"bash"}
 	if runtime.GOOS == "windows" {
 		shells = []string{"powershell", "cmd"}
+	} else {
+		for _, sh := range []string{"zsh", "fish"} {
+			if _, err := exec.LookPath(sh); err == nil {
+				shells = append(shells, sh)
+			}
+		}
 	}
 	for _, sh := range shells {
 		t.Run(sh, func(t *testing.T) {
@@ -84,13 +90,26 @@ pathlib.Path(sys.argv[1]).write_text(json.dumps({'prefix':sys.prefix,'purelib':s
 				script += "call pip install --no-index --no-deps --no-compile --disable-pip-version-check " + q(wheel) + "\r\nif errorlevel 1 exit /b 22\r\ncall python " + q(probe) + " " + q(active) + "\r\n"
 				script += q(bin) + " exec python -- python " + q(probe) + " " + q(shim) + "\r\nif errorlevel 1 exit /b 23\r\n" + refresh + "call " + q(filepath.Join(venv, "Scripts", "deactivate.bat")) + "\r\n" + refresh + "if defined VIRTUAL_ENV exit /b 24\r\ncall python " + q(probe) + " " + q(after) + "\r\n"
 				command = exec.Command("cmd", "/D", "/V:OFF", "/c", writeCLIFixture(t, "venv.cmd", script))
-			case "bash":
+			case "bash", "zsh":
 				q := func(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'" }
-				refresh := "eval \"$(" + q(bin) + " env bash)\"\n"
+				refresh := "eval \"$(" + q(bin) + " env " + sh + ")\"\n"
 				script := "set -e\nunset VSM_PATH_BASE\n" + refresh + ". " + q(filepath.Join(venv, "bin", "activate")) + "\n" + refresh
 				script += "pip install --no-index --no-deps --no-compile --disable-pip-version-check " + q(wheel) + "\npython " + q(probe) + " " + q(active) + "\n"
 				script += q(bin) + " exec python -- python " + q(probe) + " " + q(shim) + "\n" + refresh + "deactivate\n" + refresh + "test -z \"${VIRTUAL_ENV:-}\"\npython " + q(probe) + " " + q(after) + "\n"
-				command = exec.Command("bash", "--noprofile", "--norc", "-c", script)
+				if sh == "bash" {
+					command = exec.Command("bash", "--noprofile", "--norc", "-c", script)
+				} else {
+					command = exec.Command("zsh", "-f", "-c", script)
+				}
+			case "fish":
+				q := func(s string) string {
+					return "'" + strings.ReplaceAll(strings.ReplaceAll(s, `\`, `\\`), "'", `\'`) + "'"
+				}
+				refresh := q(bin) + " env fish | source\n"
+				script := "set -e VSM_PATH_BASE\n" + refresh + "source " + q(filepath.Join(venv, "bin", "activate.fish")) + "\n" + refresh
+				script += "pip install --no-index --no-deps --no-compile --disable-pip-version-check " + q(wheel) + "; or exit 21\npython " + q(probe) + " " + q(active) + "; or exit 22\n"
+				script += q(bin) + " exec python -- python " + q(probe) + " " + q(shim) + "; or exit 23\n" + refresh + "deactivate\n" + refresh + "test -z \"$VIRTUAL_ENV\"; or exit 24\npython " + q(probe) + " " + q(after) + "; or exit 25\n"
+				command = exec.Command("fish", "-c", script)
 			}
 			command.Dir = dir
 			command.Env = append(os.Environ(), "VSM_HOME="+home)
