@@ -52,7 +52,7 @@ func fetchOfficial(raw string) ([]byte, error) {
 		return nil, err
 	}
 	req.Header.Set("User-Agent", "vsm")
-	resp, err := officialHTTPClient.Do(req)
+	resp, err := doMetadataRequest(officialHTTPClient, req)
 	if err != nil {
 		return nil, err
 	}

@@ -1,4 +1,4 @@
-# 已有运行时、手动路径与 Conda Python
+# 已有运行时、手动路径与 Python 环境
 
 GUI 的「系统检测」扫描 PATH、语言环境变量，以及 Conda 的环境登记文件和常见安装目录。每个语言详情只显示该语言；纳管单个或全部版本后复用本次检测结果，不再次扫描。外部安装发生变化时，点击「重新检测」。
 
@@ -121,6 +121,25 @@ vsm logs export vsm-diagnostics.jsonl
 ```
 
 `diagnose` 只读取当前进程继承的配置与命令顺序，不运行语言程序、不修改 PATH，并确认诊断已实际写入。若配置读取失败，会保留 `capture.failed`；自动初始化中的日志失败保持静默，不阻断原有命令。日志沿用本地时间显示、敏感内容脱敏、2 MiB × 4 文件轮换及新文件导出机制。
+
+## PyCharm、venv 与 pip
+
+PyCharm 或 `venv` 已激活虚拟环境（设置 `VIRTUAL_ENV`）时，普通 VSM shell 刷新及 Python shim 优先使用该环境；不会在下一个提示符把 Python/pip 切回纳管的全局解释器。退出虚拟环境后恢复 VSM 的版本选择，不会重新激活已退出的环境。显式声明工具链的 `vsm run` / 锁定执行和 `local` 隔离项目仍按项目配置运行。
+
+Windows venv 的解释器位于 `Scripts/python.exe`，Unix 位于 `bin/python`。可在「手动添加路径」中选择 venv 根目录或该解释器；不同环境即使 Python 版本相同，也会生成独立的 `venv-<名称>-<路径摘要>` 标识。纳管不移动、合并或重装环境；注销只删除 VSM 的链接。普通 `python 3.12` / `latest` 不会自动选中这些携带独立依赖的环境。
+
+Python 的 `pip` / `pip3` 入口通过所选解释器的 `-m pip` 执行，避免旧 pip 启动器内嵌的绝对路径指向另一份 Python。激活的 venv 缺少解释器或 pip 时明确失败，不回退到全局 pip。更新后点击一次「激活 PATH」或执行 `vsm reshim`，生成这两个新入口。
+
+PyCharm 的项目解释器应选择 venv 中的 `python.exe` / `bin/python` 实际文件；Windows `.cmd` shim 适合终端命令，不是 IDE 要求的原生 Python 可执行文件。VSM 不会改写 PyCharm 已保存的解释器设置。可在 PyCharm 终端核对：
+
+```bash
+python -c "import sys; print(sys.executable); print(sys.prefix)"
+python -m pip --version
+```
+
+两者应指向项目虚拟环境。修复不会自动搬迁此前误装进基础 Python 的依赖；在正确的项目解释器中依据项目依赖清单重新安装。
+
+Python 安装元数据与官方校验值请求遇到代理出口的 GitHub API 403/429 时，会尝试官方 API 直连；不会把校验值请求转到第三方镜像。安装明确版本时找到匹配发行包即停止读取历史发布，减少等待及 API 请求。其它下载或权限错误仍会保留具体失败原因。
 
 ## Conda 的 Python 环境
 

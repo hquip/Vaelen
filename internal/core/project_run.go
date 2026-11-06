@@ -65,7 +65,16 @@ func (a Activator) runProjectEnvironment(ctx context.Context, dir, command strin
 	if err := validateComponent(command); err != nil {
 		return fmt.Errorf("run requires a command name (for example go, node or python): %w", err)
 	}
+	if pythonPipCommand(command) {
+		command = "python"
+		args = append([]string{"-m", "pip"}, args...)
+	} else if pythonCommand(command) {
+		command = "python"
+	}
 	program := findExecutable(plan.Paths, command)
+	if command == "python" && program == "" {
+		program = findExecutable(plan.Paths, "python3")
+	}
 	identity := command
 	if runtime.GOOS == "windows" {
 		identity = strings.ToLower(identity)
@@ -110,6 +119,9 @@ func (a Activator) runProjectEnvironment(ctx context.Context, dir, command strin
 					dirs = []string{project.pythonVenvBin(r.Version)}
 				}
 				program = findExecutable(dirs, command)
+				if r.Tool == "python" && command == "python" && program == "" {
+					program = findExecutable(dirs, "python3")
+				}
 				if program == "" {
 					return fmt.Errorf("%s %s is missing executable %s; refusing system fallback", r.Tool, r.Version, command)
 				}

@@ -3,12 +3,72 @@ package plugin
 import (
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync/atomic"
 	"testing"
 )
+
+func TestPythonMetadataRecoversFromProxyRateLimit(t *testing.T) {
+	t.Setenv("VSM_HOME", t.TempDir())
+	t.Setenv("VSM_PROXY", "http://127.0.0.1:7897")
+	previous := metadataDirectClient
+	defer func() { metadataDirectClient = previous }()
+	var directCalls atomic.Int32
+	metadataDirectClient = &http.Client{Transport: metadataTransport(func(r *http.Request) (*http.Response, error) {
+		directCalls.Add(1)
+		if r.URL.Scheme != "https" || r.URL.Hostname() != "api.github.com" {
+			t.Errorf("metadata left the official API: %s", r.URL)
+		}
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(`{"value":42}`)), Header: make(http.Header)}, nil
+	})}
+	limited := &http.Client{Transport: metadataTransport(func(r *http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: http.StatusForbidden, Body: http.NoBody, Header: make(http.Header)}, nil
+	})}
+	var out struct{ Value int }
+	if err := fetchJSONOnce(limited, "https://api.github.com/repos/astral-sh/python-build-standalone/releases", &out); err != nil || out.Value != 42 || directCalls.Load() != 1 {
+		t.Fatalf("rate-limited Python metadata did not recover: %+v %v calls=%d", out, err, directCalls.Load())
+	}
+	t.Setenv("VSM_PROXY", "off")
+	if err := fetchJSONOnce(limited, "https://api.github.com/repos/astral-sh/python-build-standalone/releases", &out); err == nil || directCalls.Load() != 1 {
+		t.Fatal("direct requests must not pretend another route was available")
+	}
+	t.Setenv("VSM_PROXY", "http://127.0.0.1:7897")
+	if err := fetchJSONOnce(limited, "https://example.com/metadata", &out); err == nil || directCalls.Load() != 1 {
+		t.Fatal("non-GitHub/mirrored metadata unexpectedly bypassed the proxy")
+	}
+}
+
+func TestPythonInstallStopsAfterMatchingReleaseWithoutTruncatingCatalog(t *testing.T) {
+	t.Setenv("VSM_HOME", t.TempDir())
+	t.Setenv("VSM_MIRROR", "off")
+	previous := slowHTTPClient
+	defer func() { slowHTTPClient = previous }()
+	var pages atomic.Int32
+	slowHTTPClient = &http.Client{Transport: metadataTransport(func(r *http.Request) (*http.Response, error) {
+		pages.Add(1)
+		body := `[{"assets":[{"name":"cpython-3.12.10+20261013-x86_64-pc-windows-msvc-install_only.tar.gz","browser_download_url":"https://github.com/test/python.tar.gz"}]},{},{},{},{}]`
+		if r.URL.Query().Get("page") != "1" {
+			body = `[{"assets":[{"name":"cpython-3.11.9+20251013-x86_64-pc-windows-msvc-install_only.tar.gz"}]}]`
+		}
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header)}, nil
+	})}
+	p := &pythonPlugin{}
+	for i := 0; i < 2; i++ {
+		if _, err := p.DownloadURL("3.12.10", Target{"windows", "amd64"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if pages.Load() != 1 {
+		t.Fatalf("install fetched unrelated history: %d pages", pages.Load())
+	}
+	versions, err := p.ListAll()
+	if err != nil || len(versions) != 2 || pages.Load() != 3 {
+		t.Fatalf("partial install cache hid older versions: %v %v pages=%d", versions, err, pages.Load())
+	}
+}
 
 func TestMetadataTooLargeIsNotUnexpectedEOF(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

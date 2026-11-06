@@ -106,3 +106,13 @@ func DetectCommands() map[string][]string {
 	}
 	return commands
 }
+
+// Companion package managers need dispatchers but are not interpreter version
+// probes. In particular pip --version reports pip's version, not Python's.
+func ShimCommands(tool string) []string {
+	commands := DetectCommands()[tool]
+	if tool == "python" {
+		commands = append(commands, "pip", "pip3")
+	}
+	return commands
+}

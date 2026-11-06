@@ -28,6 +28,10 @@ func restoreManagedVars(sh string) string {
 		return `if [ -n "${_VSM_ENV_KEYS:-}" ]; then
   for _vsm_k in ` + list + `; do
     case "$_vsm_k" in ''|[0-9]*|*[!a-zA-Z0-9_]*) continue ;; esac
+    if [ "$_vsm_k" = VIRTUAL_ENV ] && [ "${VIRTUAL_ENV:-}" != "${_VSM_MANAGED_VIRTUAL_ENV:-}" ]; then
+      unset _VSM_HAD_VIRTUAL_ENV _VSM_ORIG_VIRTUAL_ENV
+      continue
+    fi
     eval '_vsm_had=${_VSM_HAD_'"$_vsm_k"':-0}'
     eval '_vsm_old=${_VSM_ORIG_'"$_vsm_k"'-}'
     if [ "$_vsm_had" = 1 ]; then export "$_vsm_k=$_vsm_old"; else unset "$_vsm_k"; fi
@@ -40,6 +44,11 @@ fi
 		return `if set -q _VSM_ENV_KEYS
     for _vsm_k in (string split ' ' -- $_VSM_ENV_KEYS)
         if not string match -rq '^[A-Za-z_][A-Za-z0-9_]*$' -- $_vsm_k; continue; end
+        if test "$_vsm_k" = VIRTUAL_ENV; and test "$VIRTUAL_ENV" != "$_VSM_MANAGED_VIRTUAL_ENV"
+            set -e _VSM_HAD_VIRTUAL_ENV
+            set -e _VSM_ORIG_VIRTUAL_ENV
+            continue
+        end
         set -l _vsm_had _VSM_HAD_$_vsm_k
         set -l _vsm_orig _VSM_ORIG_$_vsm_k
         if set -q $_vsm_had; and test "$$_vsm_had" = 1
@@ -56,6 +65,10 @@ end
 		return `if ($env:_VSM_ENV_KEYS) {
   foreach ($_vsm_k in ($env:_VSM_ENV_KEYS -split ' ')) {
     if ($_vsm_k -notmatch '^[A-Za-z_][A-Za-z0-9_]*$') { continue }
+    if ($_vsm_k -eq 'VIRTUAL_ENV' -and [string]$env:VIRTUAL_ENV -cne [string]$env:_VSM_MANAGED_VIRTUAL_ENV) {
+      Remove-Item env:_VSM_HAD_VIRTUAL_ENV,env:_VSM_ORIG_VIRTUAL_ENV -ErrorAction SilentlyContinue
+      continue
+    }
     $_vsm_had = [Environment]::GetEnvironmentVariable("_VSM_HAD_$_vsm_k", 'Process')
     $_vsm_old = if ($_vsm_had -eq '1') { [Environment]::GetEnvironmentVariable("_VSM_ORIG_$_vsm_k", 'Process') } else { $null }
     [Environment]::SetEnvironmentVariable($_vsm_k, $_vsm_old, 'Process')

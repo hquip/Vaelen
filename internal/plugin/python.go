@@ -19,10 +19,11 @@ func init() { register(&pythonPlugin{}) }
 // pythonPlugin 使用 astral-sh/python-build-standalone 的预编译包（install_only，免编译），
 // 从其最新 GitHub Release 中解析可用版本并定位对应平台的下载包。
 type pythonPlugin struct {
-	mu         sync.Mutex
-	cached     []ghRelease
-	cacheKey   string
-	cacheUntil time.Time
+	mu            sync.Mutex
+	cached        []ghRelease
+	cacheKey      string
+	cacheUntil    time.Time
+	cacheComplete bool
 }
 
 var pyAssetRe = regexp.MustCompile(`^cpython-(\d+\.\d+\.\d+)\+\d+-(.+)-install_only\.tar\.gz$`)
@@ -33,6 +34,8 @@ func (p *pythonPlugin) triple(t Target) (string, error) {
 	switch t.OS {
 	case "windows":
 		switch t.Arch {
+		case "arm64":
+			return "aarch64-pc-windows-msvc", nil
 		case "amd64":
 			return "x86_64-pc-windows-msvc", nil
 		case "386":
@@ -60,13 +63,29 @@ const maxPythonReleases = 80
 
 // releases 翻页拉取 python-build-standalone 的多个 release（长超时 + 每页带重试）。
 func (p *pythonPlugin) releases() ([]ghRelease, error) {
+	return p.releasesUntil(nil)
+}
+
+// Installing one known version stops after its matching release. It should not
+// download dozens of unrelated, multi-megabyte release manifests first.
+func (p *pythonPlugin) releasesUntil(match func(ghRelease) bool) ([]ghRelease, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	key := MirrorURL("https://api.github.com/") + netcfg.ProxySetting()
 	if p.cacheKey == key && time.Now().Before(p.cacheUntil) {
-		return p.cached, nil
+		if p.cacheComplete {
+			return p.cached, nil
+		}
+		if match != nil {
+			for _, rel := range p.cached {
+				if match(rel) {
+					return p.cached, nil
+				}
+			}
+		}
 	}
 	var all []ghRelease
+	complete := false
 	pageSize := 5
 	for page := 1; page <= maxPythonReleases/pageSize; page++ {
 		url := fmt.Sprintf("https://api.github.com/repos/astral-sh/python-build-standalone/releases?per_page=%d&page=%d", pageSize, page)
@@ -87,12 +106,23 @@ func (p *pythonPlugin) releases() ([]ghRelease, error) {
 		}
 		all = append(all, pageRels...)
 		if len(pageRels) < pageSize {
+			complete = true
 			break // 不足一页 = 最后一页
+		}
+		found := false
+		if match != nil {
+			for _, rel := range pageRels {
+				found = found || match(rel)
+			}
+		}
+		if found {
+			break
 		}
 	}
 	p.cached = all
 	p.cacheKey = key
 	p.cacheUntil = time.Now().Add(5 * time.Minute)
+	p.cacheComplete = complete || len(all) >= maxPythonReleases
 	return all, nil
 }
 
@@ -137,12 +167,19 @@ func (p *pythonPlugin) DownloadURL(version string, t Target) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	rels, err := p.releases()
+	prefix := fmt.Sprintf("cpython-%s+", version)
+	suffix := fmt.Sprintf("-%s-install_only.tar.gz", triple)
+	rels, err := p.releasesUntil(func(rel ghRelease) bool {
+		for _, a := range rel.Assets {
+			if strings.HasPrefix(a.Name, prefix) && strings.HasSuffix(a.Name, suffix) {
+				return true
+			}
+		}
+		return false
+	})
 	if err != nil {
 		return "", err
 	}
-	prefix := fmt.Sprintf("cpython-%s+", version)
-	suffix := fmt.Sprintf("-%s-install_only.tar.gz", triple)
 	// 较老的 patch 只存在于历史 release，故需遍历多个 release 查找对应 asset。
 	for _, rel := range rels {
 		for _, a := range rel.Assets {
@@ -157,6 +194,9 @@ func (p *pythonPlugin) DownloadURL(version string, t Target) (string, error) {
 func (p *pythonPlugin) BinPaths(installDir string) []string {
 	// install_only 解压后顶层目录 python/，剥层后：Windows 下 python.exe 在根，Unix 在 bin/。
 	if runtime.GOOS == "windows" {
+		if PythonVenvPrefix(installDir) != "" {
+			return []string{filepath.Join(installDir, "Scripts")}
+		}
 		paths := []string{installDir, filepath.Join(installDir, "Scripts")}
 		if CondaPrefix(installDir) != "" {
 			for _, sub := range []string{"Library/mingw-w64/bin", "Library/usr/bin", "Library/bin", "bin"} {
@@ -169,10 +209,25 @@ func (p *pythonPlugin) BinPaths(installDir string) []string {
 }
 
 func (p *pythonPlugin) ExecEnv(installDir string) map[string]string {
+	if prefix := PythonVenvPrefix(installDir); prefix != "" {
+		return map[string]string{"VIRTUAL_ENV": prefix, "PYTHONHOME": ""}
+	}
 	if prefix := CondaPrefix(installDir); prefix != "" {
 		return map[string]string{"CONDA_PREFIX": prefix, "CONDA_DEFAULT_ENV": filepath.Base(prefix), "CONDA_SHLVL": "1", "PYTHONHOME": "", "VIRTUAL_ENV": ""}
 	}
-	return nil
+	return map[string]string{"PYTHONHOME": "", "VIRTUAL_ENV": ""}
+}
+
+// Preserve the environment root instead of resolving its Python executable,
+// which can be a symlink to a shared base interpreter on Unix.
+func PythonVenvPrefix(dir string) string {
+	if info, err := os.Stat(filepath.Join(dir, "pyvenv.cfg")); err != nil || !info.Mode().IsRegular() {
+		return ""
+	}
+	if real, err := filepath.EvalSymlinks(dir); err == nil {
+		return real
+	}
+	return dir
 }
 
 // CondaPrefix follows VSM's adopted link so packages keep their original prefix.
