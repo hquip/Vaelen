@@ -37,6 +37,12 @@ func TestRealIDEVenvKeepsPythonAndPipAfterShellRefresh(t *testing.T) {
 		t.Fatal(err)
 	}
 	bin, home, dir := buildVsm(t), t.TempDir(), t.TempDir()
+	// macOS exposes TempDir through /var -> /private/var. Project boundaries
+	// use canonical paths, so the fixture must use the same actual directory.
+	dir, err = filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
 	t.Setenv("VSM_PROJECT_BOUNDARY", dir)
 	for _, args := range [][]string{{"adopt", "python", "--path", base.Executable}, {"use", "-g", "python", base.Version}, {"reshim"}} {
 		if code, out := runVsm(t, bin, home, dir, args...); code != 0 {

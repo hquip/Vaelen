@@ -119,7 +119,7 @@ func TestAdoptedVenvKeepsItsInterpreterAndPackagePrefix(t *testing.T) {
 	if len(dirs) == 0 || !sameDir(dirs[0], bin) {
 		t.Fatalf("adopted venv interpreter is not in its bin directory: %v", dirs)
 	}
-	if env := p.ExecEnv(venv); !sameDir(env["VIRTUAL_ENV"], venv) || env["PYTHONHOME"] != "" {
+	if env := p.ExecEnv(venv); binaryIdentity(env["VIRTUAL_ENV"]) != binaryIdentity(venv) || env["PYTHONHOME"] != "" {
 		t.Fatalf("adopted venv lost its package prefix: %v", env)
 	}
 	other, otherBin := pythonVenvFixture(t, t.TempDir())
