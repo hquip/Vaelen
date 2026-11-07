@@ -15,6 +15,15 @@
 > 镜像切换、网络代理设置、安装进度条、当前目录 local 设置、一键写入用户级 PATH。
 > **macOS 版为 Universal 通用二进制**（Apple Silicon + Intel），隐藏式标题栏 + 原生菜单，内置 CLI，一个 `.app` 开箱即用。
 
+## v1.2.3 Python 虚拟环境与 pip 修复
+
+- 修复 VSM 提示符刷新及 Python shim 忽略已激活的 PyCharm / venv，导致解释器和 pip 切回全局环境的问题。
+- Windows venv 正确识别 `Scripts/python.exe`；相同 Python 版本的多个 venv 使用独立管理标识。
+- 新增 `pip` / `pip3` 入口，通过所选解释器的 `-m pip` 执行；venv 缺少解释器或 pip 时明确失败。
+- 修复代理出口 GitHub API 403/429 的安装元数据换路，安装明确版本时减少无关历史请求，保留官方校验。
+
+下载 [v1.2.3 正式版](https://github.com/hquip/Vaelen/releases/tag/v1.2.3)，或使用 GUI「检查 VSM 更新」/ `vsm update --gui`。GUI 会一并准备配套 CLI；更新并重启后点击一次「激活 PATH」重建 pip 入口。详见[发布说明](docs/releases/v1.2.3.md)。
+
 ## v1.2.2 Maven 激活与 GUI 侧栏优化
 
 - 修复 Maven shim 缺少 `JAVA_HOME`，自动使用 VSM 选择的 Java 版本。
